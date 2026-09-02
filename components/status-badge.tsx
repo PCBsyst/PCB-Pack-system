@@ -1,0 +1,5 @@
+import { statusLabels } from "@/data/mock-data";
+import type { CertificationStatus } from "@/types/certification";
+import { cn } from "@/lib/utils";
+const styles: Record<CertificationStatus, string> = { DOCUMENT_REVIEW: "bg-slate-100 text-slate-700 ring-slate-200", INVOICE_PENDING: "bg-cyan-50 text-cyan-800 ring-cyan-200", PAYMENT_PENDING: "bg-yellow-50 text-yellow-800 ring-yellow-200", DECISION_PENDING: "bg-amber-50 text-amber-800 ring-amber-200", SUPPLEMENT_PENDING: "bg-orange-50 text-orange-800 ring-orange-200", CERTIFICATE_DRAFT_PENDING: "bg-indigo-50 text-indigo-800 ring-indigo-200", CERTIFICATION_INFO_PENDING: "bg-blue-50 text-blue-800 ring-blue-200", DELIVERY_PENDING: "bg-violet-50 text-violet-800 ring-violet-200", COMPLETED: "bg-emerald-50 text-emerald-800 ring-emerald-200", APPLICATION_CANCELLED: "bg-rose-50 text-rose-800 ring-rose-200" };
+export function StatusBadge({ status }: { status: CertificationStatus }) { return <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset", styles[status])}>{statusLabels[status]}</span>; }

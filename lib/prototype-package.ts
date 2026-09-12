@@ -1,9 +1,12 @@
 import type { Candidate, CertificationApplication, Job } from "@/types/certification";
 
 export type DemoReview = { result: "적합" | "보완필요" | "부적합"; reviewer: string; reviewedAt: string; comment: string };
-export type DemoDecision = Record<string, { result: "" | "승인" | "보완" | "불승인"; comment: string }>;
+export type AssessmentResult = "" | "적합" | "부적합" | "해당없음";
+export type DemoAssessment = Record<string, Record<string, AssessmentResult>>;
+export type DemoPanelMember = { name: string; selected: boolean; decision: "" | "승인" | "불승인" | "재승인"; comment: string };
+export type DemoDecision = Record<string, { result: "" | "승인" | "불승인" | "재승인"; comment: string }>;
 export type DemoCertificate = Record<string, { certificationNo: string; issueDate: string; expiryDate: string; trackingNumber: string }>;
-export type PackageContext = { application: CertificationApplication; candidate: Candidate; jobs: Job[]; review: DemoReview; decisions: DemoDecision; certificates: DemoCertificate; decisionReviewer: string; decisionDate: string };
+export type PackageContext = { application: CertificationApplication; candidate: Candidate; jobs: Job[]; review: DemoReview; assessment: DemoAssessment; panelMembers: DemoPanelMember[]; decisions: DemoDecision; certificates: DemoCertificate; decisionDate: string };
 
 function escapeHtml(value: string | number | undefined) {
   return String(value ?? "-").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
@@ -20,9 +23,11 @@ function commonRows(context: PackageContext, job: Job) {
 export function buildDocuments(context: PackageContext, job: Job) {
   const decision = context.decisions[job.id];
   const certificate = context.certificates[job.id];
+  const assessmentRows = Object.entries(context.assessment[job.id] ?? {}).map(([item, result]) => `<tr><th>${escapeHtml(item)}</th><td>${escapeHtml(result)}</td></tr>`).join("");
+  const panelRows = context.panelMembers.filter((member) => member.selected).map((member) => `<tr><td>${escapeHtml(member.name)}</td><td>${escapeHtml(member.decision)}</td><td>${escapeHtml(member.comment || "-")}</td></tr>`).join("");
   return [
     { fileName: `${job.jobNo}_서류검토서.doc`, title: "서류검토서", html: documentShell("서류검토서", `${commonRows(context, job)}<h2>검토 결과</h2><table><tr><th>종합 결과</th><td>${escapeHtml(context.review.result)}</td></tr><tr><th>검토 의견</th><td>${escapeHtml(context.review.comment)}</td></tr><tr><th>검토자</th><td>${escapeHtml(context.review.reviewer)}</td></tr><tr><th>검토일</th><td>${escapeHtml(context.review.reviewedAt)}</td></tr></table>`) },
-    { fileName: `${job.jobNo}_인증결정보고서.doc`, title: "인증결정보고서", html: documentShell("인증결정보고서", `${commonRows(context, job)}<h2>인증심의 결과</h2><table><tr><th>심의 결과</th><td>${escapeHtml(decision?.result)}</td></tr><tr><th>심의 의견</th><td>${escapeHtml(decision?.comment)}</td></tr><tr><th>심의자</th><td>${escapeHtml(context.decisionReviewer)}</td></tr><tr><th>심의일</th><td>${escapeHtml(context.decisionDate)}</td></tr></table>`) },
+    { fileName: `${job.jobNo}_인증결정보고서.doc`, title: "인증결정보고서", html: documentShell("인증결정보고서", `${commonRows(context, job)}<h2>개인인증 문서 및 기록 평가</h2><table>${assessmentRows}</table><h2>인증패널 결정</h2><table><tr><th>심의위원</th><th>개별 결정</th><th>의견</th></tr>${panelRows}</table><h2>최종 인증결정</h2><table><tr><th>최종 결과</th><td>${escapeHtml(decision?.result)}</td></tr><tr><th>결정 의견</th><td>${escapeHtml(decision?.comment)}</td></tr><tr><th>심의일</th><td>${escapeHtml(context.decisionDate)}</td></tr><tr><th>인증번호</th><td>${escapeHtml(certificate?.certificationNo)}</td></tr><tr><th>유효기간</th><td>${escapeHtml(certificate ? `${certificate.issueDate} ~ ${certificate.expiryDate}` : "-")}</td></tr></table>`) },
     { fileName: `${job.jobNo}_인증정보_요약.doc`, title: "인증정보 요약", html: documentShell("인증정보 요약", `${commonRows(context, job)}<h2>발행 정보</h2><table><tr><th>인증번호</th><td>${escapeHtml(certificate?.certificationNo)}</td></tr><tr><th>인증발행일</th><td>${escapeHtml(certificate?.issueDate)}</td></tr><tr><th>만료일</th><td>${escapeHtml(certificate?.expiryDate)}</td></tr><tr><th>Revision</th><td>Rev.0</td></tr></table>`) },
     { fileName: `${job.jobNo}_문서전달확인서.doc`, title: "문서전달확인서", html: documentShell("문서전달확인서", `${commonRows(context, job)}<h2>전달 기록</h2><table><tr><th>PDF 전달</th><td>이메일 전달 완료</td></tr><tr><th>전달일</th><td>${escapeHtml(certificate?.issueDate)}</td></tr><tr><th>원본 추적번호</th><td>${escapeHtml(certificate?.trackingNumber || "미입력")}</td></tr><tr><th>담당자</th><td>${escapeHtml(context.application.primaryOwner)}</td></tr></table>`) },
   ];

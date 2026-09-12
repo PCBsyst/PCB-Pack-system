@@ -14,7 +14,7 @@ import { buildDocuments, createZip, downloadBlob, downloadWord, printAsPdf, type
 const tabs = ["신청 개요", "자료보관", "서류검토", "인보이스·입금", "인증심의", "Job·패키지"] as const;
 type Tab = (typeof tabs)[number];
 type DemoStage = "DOCUMENT_REVIEW" | "INVOICE_PENDING" | "PAYMENT_PENDING" | "DECISION_PENDING" | "CERTIFICATION_INFO_PENDING" | "PACKAGE_READY" | "COMPLETED";
-type DemoState = { stage: DemoStage; review: DemoReview; invoiceNo: string; invoiceAmount: string; assessment: DemoAssessment; panelMembers: DemoPanelMember[]; decisionDate: string; finalApprover: string; finalApprovalDate: string; decisions: DemoDecision; certificates: DemoCertificate; englishText: DemoEnglishText; generated: boolean };
+type DemoState = { stage: DemoStage; review: DemoReview; invoiceNo: string; invoiceAmount: string; invoiceRecipientType: "개인" | "파트너사"; invoiceRecipientName: string; invoiceIssuedAt: string; paidAmount: string; payerName: string; paymentConfirmedAt: string; paymentConfirmedBy: string; assessment: DemoAssessment; panelMembers: DemoPanelMember[]; decisionDate: string; finalApprover: string; finalApprovalDate: string; decisions: DemoDecision; certificates: DemoCertificate; englishText: DemoEnglishText; generated: boolean };
 
 const assessmentItems = ["지식 시험", "인성 시험", "교육 요구사항", "학력 요구사항", "심사이력"] as const;
 const panelRoster = ["박심의", "이위원", "최위원"];
@@ -29,6 +29,13 @@ function makeInitial(application: CertificationApplication, jobs: Job[]): DemoSt
     review: { result: "적합", reviewer: application.primaryOwner, reviewedAt: isLeeRenewal ? "2026-08-15" : "2026-09-12", comment: isLeeRenewal ? "갱신 신청 제출자료 및 자격유지 요건을 확인함." : "제출자료 및 자격요건 관련 기록을 확인함.", verifier: isLeeRenewal ? "오검증" : "", verifiedAt: isLeeRenewal ? "2026-08-16" : "2026-09-12", verificationResult: "확인", verificationComment: isLeeRenewal ? "검토내용 및 제출 증빙을 확인함." : "" },
     invoiceNo: `INV-DEMO-${application.managementNoFrom}`,
     invoiceAmount: String(jobs.length * 450000),
+    invoiceRecipientType: application.partnerCompany === "직접접수" ? "개인" : "파트너사",
+    invoiceRecipientName: application.partnerCompany === "직접접수" ? "후보자 본인" : application.partnerCompany,
+    invoiceIssuedAt: isLeeRenewal ? "2026-08-18" : "2026-09-12",
+    paidAmount: isLeeRenewal ? String(jobs.length * 450000) : "",
+    payerName: isLeeRenewal ? "이영희" : "",
+    paymentConfirmedAt: isLeeRenewal ? "2026-08-19" : "",
+    paymentConfirmedBy: isLeeRenewal ? application.primaryOwner : "",
     assessment: Object.fromEntries(jobs.map((job) => [job.id, Object.fromEntries(assessmentItems.map((item) => [item, isLeeRenewal ? "적합" : ""]))])),
     panelMembers: panelRoster.map((name, index) => ({ name, selected: isLeeRenewal && index < 2, decision: isLeeRenewal && index < 2 ? "재승인" : "", comment: isLeeRenewal && index < 2 ? "갱신요건 충족 확인" : "" })),
     decisionDate: isLeeRenewal ? "2026-08-22" : "2026-09-12",
@@ -61,6 +68,15 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     if (!demo.review.verifier || !demo.review.verifiedAt) { setNotice("2차 검증인과 검증일을 입력해 주세요."); return; }
     if (demo.review.verificationResult === "재검토요청") { setNotice("검증인이 재검토를 요청했습니다. 검토내용을 보완한 뒤 다시 검증해 주세요."); return; }
     move("INVOICE_PENDING", "인보이스·입금", "검토자와 검증인의 확인이 완료되었습니다. 인보이스를 발행하세요.");
+  };
+  const recordInvoice = () => {
+    if (!demo.invoiceNo || !demo.invoiceAmount || !demo.invoiceRecipientName || !demo.invoiceIssuedAt) { setNotice("인보이스 번호, 금액, 수신자와 발행일을 모두 입력해 주세요."); return; }
+    move("PAYMENT_PENDING", "인보이스·입금", "인보이스 발행을 기록했습니다. 입금내역을 확인해 주세요.");
+  };
+  const confirmPayment = () => {
+    if (!demo.paidAmount || !demo.payerName || !demo.paymentConfirmedAt || !demo.paymentConfirmedBy) { setNotice("입금액, 입금자, 입금 확인일과 확인 담당자를 모두 입력해 주세요."); return; }
+    if (Number(demo.paidAmount) < Number(demo.invoiceAmount)) { setNotice("입금액이 청구금액보다 적습니다. 전액 입금을 확인한 뒤 진행해 주세요."); return; }
+    move("DECISION_PENDING", "인증심의", "전액 입금 확인이 완료되었습니다. 인증심의를 진행하세요.");
   };
 
   const finishDecision = () => {
@@ -108,7 +124,11 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
       <Section title="2차 검증" description="검증인이 1차 검토내용과 제출 증빙의 일치 여부를 확인합니다."><div className="grid gap-4 sm:grid-cols-2"><Field label="검증 결과"><select className={controlClass} value={demo.review.verificationResult} onChange={(event) => setDemo((current) => ({ ...current, review: { ...current.review, verificationResult: event.target.value as DemoReview["verificationResult"] } }))}><option>확인</option><option>재검토요청</option></select></Field><Field label="검증인"><input className={controlClass} value={demo.review.verifier} onChange={(event) => setDemo((current) => ({ ...current, review: { ...current.review, verifier: event.target.value } }))}/></Field><Field label="검증일"><input type="date" className={controlClass} value={demo.review.verifiedAt} onChange={(event) => setDemo((current) => ({ ...current, review: { ...current.review, verifiedAt: event.target.value } }))}/></Field><Field label="검증의견" className="sm:col-span-2"><textarea className={textareaClass} value={demo.review.verificationComment} onChange={(event) => setDemo((current) => ({ ...current, review: { ...current.review, verificationComment: event.target.value } }))}/></Field></div><div className="mt-5 flex justify-end gap-2"><Button variant="outline" onClick={() => setNotice("서류검토 및 검증 내용을 임시 저장했습니다.")}>임시저장</Button><Button onClick={finishReview}><Check/>검토·검증 완료</Button></div></Section>
     </div>}
 
-    {active === "인보이스·입금" && <Section title="인보이스 및 입금"><div className="grid gap-4 sm:grid-cols-3"><Field label="인보이스 번호"><input className={controlClass} value={demo.invoiceNo} onChange={(event) => setDemo((current) => ({ ...current, invoiceNo: event.target.value }))}/></Field><Field label="청구금액"><input type="number" className={controlClass} value={demo.invoiceAmount} onChange={(event) => setDemo((current) => ({ ...current, invoiceAmount: event.target.value }))}/></Field><Field label="수신자"><input className={controlClass} value={application.partnerCompany} readOnly/></Field></div>{invoices.length > 0 && <p className="mt-3 text-xs text-slate-500">기존 가상 인보이스: {invoices.map((invoice) => invoice.invoiceNo).join(", ")}</p>}<div className="mt-5 flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={() => move("PAYMENT_PENDING", "인보이스·입금", "인보이스 발행을 기록했습니다. 입금을 확인하세요.")}><FileText/>인보이스 발행 기록</Button><Button disabled={demo.stage === "INVOICE_PENDING"} onClick={() => move("DECISION_PENDING", "인증심의", "입금 확인이 완료되었습니다. 심의결과를 입력하세요.")}><Check/>입금 확인</Button></div></Section>}
+    {active === "인보이스·입금" && <div className="space-y-5">
+      <Section title="청구 대상 Job" description="한 신청에 포함된 Job은 하나의 인보이스로 통합 청구합니다."><div className="space-y-2">{linkedJobs.map((job) => <div key={job.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3"><div><p className="text-sm font-semibold">{job.jobNo} · {job.standard}</p><p className="mt-1 text-xs text-slate-500">{job.currentGrade} · {accreditationLabels[application.accreditationTrack]}</p></div><span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-800">청구 포함</span></div>)}</div></Section>
+      <Section title="1. 인보이스 발행 기록" description="시스템은 발행 사실만 기록하며 실제 인보이스 생성과 이메일 발송은 현재 범위에 포함하지 않습니다."><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"><Field label="수신자 구분"><select className={controlClass} value={demo.invoiceRecipientType} onChange={(event) => setDemo((current) => ({ ...current, invoiceRecipientType: event.target.value as DemoState["invoiceRecipientType"] }))}><option>개인</option><option>파트너사</option></select></Field><Field label="수신자"><input className={controlClass} value={demo.invoiceRecipientName} onChange={(event) => setDemo((current) => ({ ...current, invoiceRecipientName: event.target.value }))}/></Field><Field label="인보이스 번호"><input className={controlClass} value={demo.invoiceNo} onChange={(event) => setDemo((current) => ({ ...current, invoiceNo: event.target.value }))}/></Field><Field label="청구금액"><input type="number" className={controlClass} value={demo.invoiceAmount} onChange={(event) => setDemo((current) => ({ ...current, invoiceAmount: event.target.value }))}/></Field><Field label="발행일"><input type="date" className={controlClass} value={demo.invoiceIssuedAt} onChange={(event) => setDemo((current) => ({ ...current, invoiceIssuedAt: event.target.value }))}/></Field></div>{invoices.length > 0 && <p className="mt-3 text-xs text-slate-500">기존 가상 인보이스: {invoices.map((invoice) => invoice.invoiceNo).join(", ")}</p>}<div className="mt-5 flex justify-end"><Button variant="outline" onClick={recordInvoice}><FileText/>인보이스 발행 기록</Button></div></Section>
+      <Section title="2. 입금 확인" description="청구금액 전액의 입금과 확인 담당자를 기록해야 인증심의로 진행할 수 있습니다."><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><Field label="입금액"><input type="number" className={controlClass} value={demo.paidAmount} onChange={(event) => setDemo((current) => ({ ...current, paidAmount: event.target.value }))}/></Field><Field label="입금자"><input className={controlClass} value={demo.payerName} onChange={(event) => setDemo((current) => ({ ...current, payerName: event.target.value }))}/></Field><Field label="입금 확인일"><input type="date" className={controlClass} value={demo.paymentConfirmedAt} onChange={(event) => setDemo((current) => ({ ...current, paymentConfirmedAt: event.target.value }))}/></Field><Field label="확인 담당자"><input className={controlClass} value={demo.paymentConfirmedBy} onChange={(event) => setDemo((current) => ({ ...current, paymentConfirmedBy: event.target.value }))}/></Field></div><div className="mt-4 rounded-md bg-slate-50 p-3 text-sm"><span className="text-slate-500">청구금액 </span><strong>{Number(demo.invoiceAmount || 0).toLocaleString()}원</strong><span className="mx-2 text-slate-300">·</span><span className="text-slate-500">입금액 </span><strong>{Number(demo.paidAmount || 0).toLocaleString()}원</strong></div><div className="mt-5 flex justify-end"><Button disabled={demo.stage === "INVOICE_PENDING"} onClick={confirmPayment}><Check/>전액 입금 확인</Button></div></Section>
+    </div>}
 
     {active === "인증심의" && <div className="space-y-5">
       <Section title="1. 개인인증 문서 및 기록 평가" description="보고서 생성 전에 Job별 5개 항목을 실무자가 직접 판정합니다. 시스템은 결과를 추천하지 않습니다.">

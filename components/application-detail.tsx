@@ -14,7 +14,7 @@ import { buildDocuments, createZip, downloadBlob, downloadWord, printAsPdf, type
 const tabs = ["신청 개요", "자료보관", "서류검토", "인보이스·입금", "인증심의", "Job·패키지"] as const;
 type Tab = (typeof tabs)[number];
 type DemoStage = "DOCUMENT_REVIEW" | "INVOICE_PENDING" | "PAYMENT_PENDING" | "DECISION_PENDING" | "CERTIFICATION_INFO_PENDING" | "PACKAGE_READY" | "COMPLETED";
-type DemoState = { stage: DemoStage; review: DemoReview; invoiceNo: string; invoiceAmount: string; assessment: DemoAssessment; panelMembers: DemoPanelMember[]; decisionDate: string; decisions: DemoDecision; certificates: DemoCertificate; generated: boolean };
+type DemoState = { stage: DemoStage; review: DemoReview; invoiceNo: string; invoiceAmount: string; assessment: DemoAssessment; panelMembers: DemoPanelMember[]; decisionDate: string; finalApprover: string; finalApprovalDate: string; decisions: DemoDecision; certificates: DemoCertificate; generated: boolean };
 
 const assessmentItems = ["지식 시험", "인성 시험", "교육 요구사항", "학력 요구사항", "심사이력"] as const;
 const panelRoster = ["박심의", "이위원", "최위원"];
@@ -32,6 +32,8 @@ function makeInitial(application: CertificationApplication, jobs: Job[]): DemoSt
     assessment: Object.fromEntries(jobs.map((job) => [job.id, Object.fromEntries(assessmentItems.map((item) => [item, isLeeRenewal ? "적합" : ""]))])),
     panelMembers: panelRoster.map((name, index) => ({ name, selected: isLeeRenewal && index < 2, decision: isLeeRenewal && index < 2 ? "재승인" : "", comment: isLeeRenewal && index < 2 ? "갱신요건 충족 확인" : "" })),
     decisionDate: isLeeRenewal ? "2026-08-22" : "2026-09-12",
+    finalApprover: "대표자",
+    finalApprovalDate: isLeeRenewal ? "2026-08-22" : "2026-09-12",
     decisions: Object.fromEntries(jobs.map((job) => [job.id, { result: isLeeRenewal ? "재승인" : "", comment: isLeeRenewal ? "갱신 재승인" : "" }])),
     certificates: Object.fromEntries(jobs.map((job, index) => [job.id, { certificationNo: isLeeRenewal ? "26-4-0091" : job.certificationNo ?? `DEMO-${application.managementNoFrom + index}`, issueDate: isLeeRenewal ? "2026-08-29" : "2026-09-18", expiryDate: isLeeRenewal ? "2029-08-28" : "2029-09-17", trackingNumber: "" }])),
     generated: application.packageStatus === "GENERATED",
@@ -47,7 +49,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   useEffect(() => { const stored = window.localStorage.getItem(storageKey); if (stored) { const initial = makeInitial(application, linkedJobs); const saved = JSON.parse(stored) as Partial<DemoState>; setDemo({ ...initial, ...saved, assessment: saved.assessment ?? initial.assessment, panelMembers: saved.panelMembers ?? initial.panelMembers }); } }, [application, linkedJobs, storageKey]);
   useEffect(() => { window.localStorage.setItem(storageKey, JSON.stringify(demo)); }, [demo, storageKey]);
 
-  const packageContext = useMemo(() => ({ application, candidate, jobs: linkedJobs, review: demo.review, assessment: demo.assessment, panelMembers: demo.panelMembers, decisions: demo.decisions, certificates: demo.certificates, decisionDate: demo.decisionDate }), [application, candidate, linkedJobs, demo]);
+  const packageContext = useMemo(() => ({ application, candidate, jobs: linkedJobs, review: demo.review, assessment: demo.assessment, panelMembers: demo.panelMembers, decisions: demo.decisions, certificates: demo.certificates, decisionDate: demo.decisionDate, finalApprover: demo.finalApprover, finalApprovalDate: demo.finalApprovalDate }), [application, candidate, linkedJobs, demo]);
   const currentIndex = stageOrder.indexOf(demo.stage);
   const move = (stage: DemoStage, tab: Tab, message: string) => { setDemo((current) => ({ ...current, stage })); setActive(tab); setNotice(message); };
   const reset = () => { setDemo(makeInitial(application, linkedJobs)); window.localStorage.removeItem(storageKey); setActive("서류검토"); setNotice("샘플 진행상태를 처음으로 되돌렸습니다."); };
@@ -57,7 +59,8 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     const selectedMembers = demo.panelMembers.filter((member) => member.selected);
     if (selectedMembers.length < 2) { setNotice("등록된 패널 3명 중 최소 2명을 선택해 주세요."); return; }
     if (selectedMembers.some((member) => !member.decision)) { setNotice("선택한 모든 심의위원의 개별 결정을 입력해 주세요."); return; }
-    if (!demo.decisionDate || linkedJobs.some((job) => !demo.decisions[job.id]?.result)) { setNotice("심의일과 모든 Job의 최종결과를 직접 선택해 주세요."); return; }
+    if (!demo.decisionDate) { setNotice("패널 심의일을 입력해 주세요."); return; }
+    if (!demo.finalApprover || !demo.finalApprovalDate || linkedJobs.some((job) => !demo.decisions[job.id]?.result)) { setNotice("대표자, 최종 승인일과 모든 Job의 최종 승인 결과를 입력해 주세요."); return; }
     move("CERTIFICATION_INFO_PENDING", "Job·패키지", "심의가 완료되었습니다. 승인 Job의 인증정보를 확인하세요.");
   };
   const finishCertification = () => {
@@ -101,6 +104,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
       </Section>
 
       <Section title="2. 인증패널 구성 및 개별 결정" description="관리자가 등록한 패널 3명 중 실제 심의에 참여한 위원을 최소 2명 선택하고, 각 위원의 결정을 기록합니다.">
+        <div className="mb-5 max-w-sm"><Field label="패널 심의일"><input type="date" className={controlClass} value={demo.decisionDate} onChange={(event) => setDemo((current) => ({ ...current, decisionDate: event.target.value }))}/></Field></div>
         <div className="grid gap-4 lg:grid-cols-3">{demo.panelMembers.map((member, index) => <div key={member.name} className={`rounded-lg border p-4 ${member.selected ? "border-blue-300 bg-blue-50/50" : "bg-white"}`}>
           <label className="flex cursor-pointer items-center gap-3 font-semibold"><input type="checkbox" checked={member.selected} onChange={(event) => changePanelMember(index, { selected: event.target.checked }, setDemo)}/>{member.name}</label>
           <div className="mt-4 space-y-3"><Field label="개별 결정"><select className={controlClass} disabled={!member.selected} value={member.decision} onChange={(event) => changePanelMember(index, { decision: event.target.value as DemoPanelMember["decision"] }, setDemo)}><option value="">직접 선택</option><option>승인</option><option>불승인</option><option>재승인</option></select></Field><Field label="위원 의견"><textarea className={textareaClass} disabled={!member.selected} value={member.comment} onChange={(event) => changePanelMember(index, { comment: event.target.value }, setDemo)}/></Field></div>
@@ -108,10 +112,10 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
         <p className="mt-4 text-xs text-slate-500">현재 선택: {demo.panelMembers.filter((member) => member.selected).length}명 / 최소 2명</p>
       </Section>
 
-      <Section title="3. 최종 인증결정" description="패널의 개별 결정을 확인한 후 Job별 최종결과는 실무자가 직접 확정합니다.">
-        <div className="mb-5 max-w-sm"><Field label="심의일"><input type="date" className={controlClass} value={demo.decisionDate} onChange={(event) => setDemo((current) => ({ ...current, decisionDate: event.target.value }))}/></Field></div>
-        <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-500"><tr><th className="px-4 py-3">Job No.</th><th className="px-4 py-3">분야 / 등급</th><th className="px-4 py-3">최종결과</th><th className="px-4 py-3">결정 의견</th></tr></thead><tbody className="divide-y">{linkedJobs.map((job) => <tr key={job.id}><td className="px-4 py-3 font-medium text-blue-800">{job.jobNo}</td><td className="px-4 py-3">{job.standard} / {job.currentGrade}</td><td className="px-4 py-3"><select className={controlClass} value={demo.decisions[job.id]?.result ?? ""} onChange={(event) => setDemo((current) => ({ ...current, decisions: { ...current.decisions, [job.id]: { ...current.decisions[job.id], result: event.target.value as DemoDecision[string]["result"] } } }))}><option value="">직접 선택</option><option>승인</option><option>불승인</option><option>재승인</option></select></td><td className="px-4 py-3"><input className={controlClass} value={demo.decisions[job.id]?.comment ?? ""} onChange={(event) => setDemo((current) => ({ ...current, decisions: { ...current.decisions, [job.id]: { ...current.decisions[job.id], comment: event.target.value } } }))}/></td></tr>)}</tbody></table></div>
-        <div className="mt-5 flex justify-end"><Button onClick={finishDecision}><Check/>심의 완료 및 보고서 준비</Button></div>
+      <Section title="3. 대표자 최종 승인" description="심의위원의 결정을 확인한 대표자가 Job별 최종 승인을 확정합니다.">
+        <div className="mb-5 grid gap-4 sm:grid-cols-2"><Field label="최종 승인자"><input className={controlClass} value={demo.finalApprover} onChange={(event) => setDemo((current) => ({ ...current, finalApprover: event.target.value }))}/></Field><Field label="최종 승인일"><input type="date" className={controlClass} value={demo.finalApprovalDate} onChange={(event) => setDemo((current) => ({ ...current, finalApprovalDate: event.target.value }))}/></Field></div>
+        <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-500"><tr><th className="px-4 py-3">Job No.</th><th className="px-4 py-3">분야 / 등급</th><th className="px-4 py-3">최종 승인 결과</th><th className="px-4 py-3">승인 의견</th></tr></thead><tbody className="divide-y">{linkedJobs.map((job) => <tr key={job.id}><td className="px-4 py-3 font-medium text-blue-800">{job.jobNo}</td><td className="px-4 py-3">{job.standard} / {job.currentGrade}</td><td className="px-4 py-3"><select className={controlClass} value={demo.decisions[job.id]?.result ?? ""} onChange={(event) => setDemo((current) => ({ ...current, decisions: { ...current.decisions, [job.id]: { ...current.decisions[job.id], result: event.target.value as DemoDecision[string]["result"] } } }))}><option value="">직접 선택</option><option>승인</option><option>불승인</option><option>재승인</option></select></td><td className="px-4 py-3"><input className={controlClass} value={demo.decisions[job.id]?.comment ?? ""} onChange={(event) => setDemo((current) => ({ ...current, decisions: { ...current.decisions, [job.id]: { ...current.decisions[job.id], comment: event.target.value } } }))}/></td></tr>)}</tbody></table></div>
+        <div className="mt-5 flex justify-end"><Button onClick={finishDecision}><Check/>최종 승인 및 보고서 준비</Button></div>
       </Section>
     </div>}
 

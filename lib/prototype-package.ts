@@ -1,13 +1,13 @@
 import type { Candidate, CertificationApplication, Job } from "@/types/certification";
 
-export type DemoReview = { result: "적합" | "보완필요" | "부적합"; reviewer: string; reviewedAt: string; comment: string };
+export type DemoReview = { result: "적합" | "보완필요" | "부적합"; reviewer: string; reviewedAt: string; comment: string; verifier: string; verifiedAt: string; verificationResult: "확인" | "재검토요청"; verificationComment: string };
 export type AssessmentResult = "" | "적합" | "부적합" | "해당없음";
 export type DemoAssessment = Record<string, Record<string, AssessmentResult>>;
 export type DemoPanelMember = { name: string; selected: boolean; decision: "" | "승인" | "불승인" | "재승인"; comment: string };
 export type DemoDecision = Record<string, { result: "" | "승인" | "불승인" | "재승인"; comment: string }>;
 export type DemoCertificate = Record<string, { certificationNo: string; issueDate: string; expiryDate: string; trackingNumber: string }>;
 export type DocumentLanguage = "KR" | "EN";
-export type DemoEnglishText = { reviewComment: string; panelComments: Record<string, string>; decisionComments: Record<string, string> };
+export type DemoEnglishText = { reviewComment: string; verificationComment: string; panelComments: Record<string, string>; decisionComments: Record<string, string> };
 export type PackageContext = { application: CertificationApplication; candidate: Candidate; jobs: Job[]; review: DemoReview; assessment: DemoAssessment; panelMembers: DemoPanelMember[]; decisions: DemoDecision; certificates: DemoCertificate; decisionDate: string; finalApprover: string; finalApprovalDate: string; englishText: DemoEnglishText };
 
 function escapeHtml(value: string | number | undefined) {
@@ -28,7 +28,7 @@ function buildKoreanDocuments(context: PackageContext, job: Job) {
   const assessmentRows = Object.entries(context.assessment[job.id] ?? {}).map(([item, result]) => `<tr><th>${escapeHtml(item)}</th><td>${escapeHtml(result)}</td></tr>`).join("");
   const panelRows = context.panelMembers.filter((member) => member.selected).map((member) => `<tr><td>${escapeHtml(member.name)}</td><td>${escapeHtml(member.decision)}</td><td>${escapeHtml(member.comment || "-")}</td></tr>`).join("");
   return [
-    { fileName: `${job.jobNo}_서류검토서.doc`, title: "서류검토서", html: documentShell("서류검토서", `${commonRows(context, job)}<h2>검토 결과</h2><table><tr><th>종합 결과</th><td>${escapeHtml(context.review.result)}</td></tr><tr><th>검토 의견</th><td>${escapeHtml(context.review.comment)}</td></tr><tr><th>검토자</th><td>${escapeHtml(context.review.reviewer)}</td></tr><tr><th>검토일</th><td>${escapeHtml(context.review.reviewedAt)}</td></tr></table>`) },
+    { fileName: `${job.jobNo}_서류검토서.doc`, title: "서류검토서", html: documentShell("서류검토서", `${commonRows(context, job)}<h2>1차 검토</h2><table><tr><th>종합 결과</th><td>${escapeHtml(context.review.result)}</td></tr><tr><th>검토 의견</th><td>${escapeHtml(context.review.comment)}</td></tr><tr><th>검토자</th><td>${escapeHtml(context.review.reviewer)}</td></tr><tr><th>검토일</th><td>${escapeHtml(context.review.reviewedAt)}</td></tr></table><h2>2차 검증</h2><table><tr><th>검증 결과</th><td>${escapeHtml(context.review.verificationResult)}</td></tr><tr><th>검증 의견</th><td>${escapeHtml(context.review.verificationComment)}</td></tr><tr><th>검증인</th><td>${escapeHtml(context.review.verifier)}</td></tr><tr><th>검증일</th><td>${escapeHtml(context.review.verifiedAt)}</td></tr></table>`) },
     { fileName: `${job.jobNo}_인증결정보고서.doc`, title: "인증결정보고서", html: documentShell("인증결정보고서", `${commonRows(context, job)}<h2>개인인증 문서 및 기록 평가</h2><table>${assessmentRows}</table><h2>인증패널 결정</h2><table><tr><th>심의위원</th><th>개별 결정</th><th>의견</th></tr>${panelRows}<tr><th>패널 심의일</th><td colspan="2">${escapeHtml(context.decisionDate)}</td></tr></table><h2>대표자 최종 승인</h2><table><tr><th>최종 승인 결과</th><td>${escapeHtml(decision?.result)}</td></tr><tr><th>승인 의견</th><td>${escapeHtml(decision?.comment)}</td></tr><tr><th>최종 승인자</th><td>${escapeHtml(context.finalApprover)}</td></tr><tr><th>최종 승인일</th><td>${escapeHtml(context.finalApprovalDate)}</td></tr><tr><th>인증번호</th><td>${escapeHtml(certificate?.certificationNo)}</td></tr><tr><th>유효기간</th><td>${escapeHtml(certificate ? `${certificate.issueDate} ~ ${certificate.expiryDate}` : "-")}</td></tr></table>`) },
     { fileName: `${job.jobNo}_인증정보_요약.doc`, title: "인증정보 요약", html: documentShell("인증정보 요약", `${commonRows(context, job)}<h2>발행 정보</h2><table><tr><th>인증번호</th><td>${escapeHtml(certificate?.certificationNo)}</td></tr><tr><th>인증발행일</th><td>${escapeHtml(certificate?.issueDate)}</td></tr><tr><th>만료일</th><td>${escapeHtml(certificate?.expiryDate)}</td></tr><tr><th>Revision</th><td>Rev.0</td></tr></table>`) },
     { fileName: `${job.jobNo}_문서전달확인서.doc`, title: "문서전달확인서", html: documentShell("문서전달확인서", `${commonRows(context, job)}<h2>전달 기록</h2><table><tr><th>PDF 전달</th><td>이메일 전달 완료</td></tr><tr><th>전달일</th><td>${escapeHtml(certificate?.issueDate)}</td></tr><tr><th>원본 추적번호</th><td>${escapeHtml(certificate?.trackingNumber || "미입력")}</td></tr><tr><th>담당자</th><td>${escapeHtml(context.application.primaryOwner)}</td></tr></table>`) },
@@ -44,6 +44,7 @@ const fixedEnglish: Array<[string, string]> = [
   ["지식 시험", "Knowledge Examination"], ["인성 시험", "Personality Examination"], ["교육 요구사항", "Education Requirements"], ["학력 요구사항", "Academic Requirements"], ["심사이력", "Audit Experience"],
   ["심의위원", "Panel Member"], ["개별 결정", "Individual Decision"], ["패널 심의일", "Panel Decision Date"], ["최종 승인 결과", "Final Approval Result"], ["승인 의견", "Approval Comment"], ["최종 승인자", "Final Approver"], ["최종 승인일", "Final Approval Date"],
   ["검토 결과", "Review Result"], ["종합 결과", "Overall Result"], ["검토 의견", "Review Comment"], ["검토자", "Reviewer"], ["검토일", "Review Date"],
+  ["1차 검토", "Primary Review"], ["2차 검증", "Secondary Verification"], ["검증 결과", "Verification Result"], ["검증 의견", "Verification Comment"], ["검증인", "Verifier"], ["검증일", "Verification Date"], ["재검토요청", "Re-review Requested"], ["확인", "Confirmed"],
   ["발행 정보", "Issuance Information"], ["인증번호", "Certificate No."], ["인증발행일", "Issue Date"], ["만료일", "Expiry Date"], ["유효기간", "Validity Period"],
   ["전달 기록", "Delivery Record"], ["PDF 전달", "PDF Delivery"], ["이메일 전달 완료", "Delivered by Email"], ["전달일", "Delivery Date"], ["원본 추적번호", "Tracking No."], ["담당자", "Person in Charge"], ["미입력", "Not Entered"],
   ["적합", "Conforming"], ["부적합", "Nonconforming"], ["해당없음", "Not Applicable"], ["재승인", "Reapproved"], ["불승인", "Not Approved"], ["승인", "Approved"], ["의견", "Comment"],
@@ -55,6 +56,7 @@ export function buildDocuments(context: PackageContext, job: Job, language: Docu
   return documents.map((document) => {
     let html = document.html.replace('lang="ko"', 'lang="en"').replaceAll(context.candidate.name, context.candidate.nameEn || context.candidate.name);
     if (context.review.comment) html = html.replaceAll(context.review.comment, context.englishText.reviewComment || "-");
+    if (context.review.verificationComment) html = html.replaceAll(context.review.verificationComment, context.englishText.verificationComment || "-");
     for (const member of context.panelMembers) if (member.comment) html = html.replaceAll(member.comment, context.englishText.panelComments[member.name] || "-");
     const decisionComment = context.decisions[job.id]?.comment;
     if (decisionComment) html = html.replaceAll(decisionComment, context.englishText.decisionComments[job.id] || "-");

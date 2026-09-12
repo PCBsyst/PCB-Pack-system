@@ -22,7 +22,7 @@ const stageLabels: Record<DemoStage, string> = { DOCUMENT_REVIEW: "서류검토"
 function makeInitial(application: CertificationApplication, jobs: Job[]): DemoState {
   const isLeeRenewal = application.id === "app-003";
   return {
-    stage: isLeeRenewal ? "PACKAGE_READY" : application.id === "app-001" ? "DOCUMENT_REVIEW" : application.status === "COMPLETED" ? "COMPLETED" : "DOCUMENT_REVIEW",
+    stage: isLeeRenewal ? (application.packageStatus === "GENERATED" ? "COMPLETED" : "PACKAGE_READY") : application.id === "app-001" ? "DOCUMENT_REVIEW" : application.status === "COMPLETED" ? "COMPLETED" : "DOCUMENT_REVIEW",
     review: { result: "적합", reviewer: application.primaryOwner, reviewedAt: isLeeRenewal ? "2026-08-15" : "2026-09-12", comment: isLeeRenewal ? "갱신 신청 제출자료 및 자격유지 요건을 확인함." : "제출자료 및 자격요건 관련 기록을 확인함." },
     invoiceNo: `INV-DEMO-${application.managementNoFrom}`,
     invoiceAmount: String(jobs.length * 450000),

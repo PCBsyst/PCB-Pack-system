@@ -6,7 +6,9 @@ export type DemoAssessment = Record<string, Record<string, AssessmentResult>>;
 export type DemoPanelMember = { name: string; selected: boolean; decision: "" | "승인" | "불승인" | "재승인"; comment: string };
 export type DemoDecision = Record<string, { result: "" | "승인" | "불승인" | "재승인"; comment: string }>;
 export type DemoCertificate = Record<string, { certificationNo: string; issueDate: string; expiryDate: string; trackingNumber: string }>;
-export type PackageContext = { application: CertificationApplication; candidate: Candidate; jobs: Job[]; review: DemoReview; assessment: DemoAssessment; panelMembers: DemoPanelMember[]; decisions: DemoDecision; certificates: DemoCertificate; decisionDate: string; finalApprover: string; finalApprovalDate: string };
+export type DocumentLanguage = "KR" | "EN";
+export type DemoEnglishText = { reviewComment: string; panelComments: Record<string, string>; decisionComments: Record<string, string> };
+export type PackageContext = { application: CertificationApplication; candidate: Candidate; jobs: Job[]; review: DemoReview; assessment: DemoAssessment; panelMembers: DemoPanelMember[]; decisions: DemoDecision; certificates: DemoCertificate; decisionDate: string; finalApprover: string; finalApprovalDate: string; englishText: DemoEnglishText };
 
 function escapeHtml(value: string | number | undefined) {
   return String(value ?? "-").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
@@ -20,7 +22,7 @@ function commonRows(context: PackageContext, job: Job) {
   return `<table><tr><th>후보자</th><td>${escapeHtml(context.candidate.name)}</td><th>신청번호</th><td>${escapeHtml(context.application.applicationNo)}</td></tr><tr><th>Job No.</th><td>${escapeHtml(job.jobNo)}</td><th>관리 No.</th><td>${escapeHtml(job.managementNo ?? context.application.managementNoFrom)}</td></tr><tr><th>세부 분야</th><td>${escapeHtml(job.standard)}</td><th>등급</th><td>${escapeHtml(job.currentGrade)}</td></tr></table>`;
 }
 
-export function buildDocuments(context: PackageContext, job: Job) {
+function buildKoreanDocuments(context: PackageContext, job: Job) {
   const decision = context.decisions[job.id];
   const certificate = context.certificates[job.id];
   const assessmentRows = Object.entries(context.assessment[job.id] ?? {}).map(([item, result]) => `<tr><th>${escapeHtml(item)}</th><td>${escapeHtml(result)}</td></tr>`).join("");
@@ -31,6 +33,36 @@ export function buildDocuments(context: PackageContext, job: Job) {
     { fileName: `${job.jobNo}_인증정보_요약.doc`, title: "인증정보 요약", html: documentShell("인증정보 요약", `${commonRows(context, job)}<h2>발행 정보</h2><table><tr><th>인증번호</th><td>${escapeHtml(certificate?.certificationNo)}</td></tr><tr><th>인증발행일</th><td>${escapeHtml(certificate?.issueDate)}</td></tr><tr><th>만료일</th><td>${escapeHtml(certificate?.expiryDate)}</td></tr><tr><th>Revision</th><td>Rev.0</td></tr></table>`) },
     { fileName: `${job.jobNo}_문서전달확인서.doc`, title: "문서전달확인서", html: documentShell("문서전달확인서", `${commonRows(context, job)}<h2>전달 기록</h2><table><tr><th>PDF 전달</th><td>이메일 전달 완료</td></tr><tr><th>전달일</th><td>${escapeHtml(certificate?.issueDate)}</td></tr><tr><th>원본 추적번호</th><td>${escapeHtml(certificate?.trackingNumber || "미입력")}</td></tr><tr><th>담당자</th><td>${escapeHtml(context.application.primaryOwner)}</td></tr></table>`) },
   ];
+}
+
+const englishTitles: Record<string, string> = { "서류검토서": "Document Review Report", "인증결정보고서": "Certification Decision Report", "인증정보 요약": "Certification Information", "문서전달확인서": "Document Delivery Confirmation" };
+const englishFileNames: Record<string, string> = { "서류검토서": "Document_Review", "인증결정보고서": "Certification_Decision_Report", "인증정보 요약": "Certification_Information", "문서전달확인서": "Document_Delivery_Confirmation" };
+const fixedEnglish: Array<[string, string]> = [
+  ["개발용 가상 데이터로 생성된 프로토타입 문서이며 공식 기록이 아닙니다.", "Prototype document generated with fictional development data. Not an official record."],
+  ["개인인증 문서 및 기록 평가", "Evaluation of Documents and Records"], ["인증패널 결정", "Certification Panel Decision"], ["대표자 최종 승인", "Final Approval by Representative"], ["대표자", "Representative"],
+  ["후보자", "Candidate"], ["신청번호", "Application No."], ["관리 No.", "Management No."], ["세부 분야", "Certification Field"], ["등급", "Grade"],
+  ["지식 시험", "Knowledge Examination"], ["인성 시험", "Personality Examination"], ["교육 요구사항", "Education Requirements"], ["학력 요구사항", "Academic Requirements"], ["심사이력", "Audit Experience"],
+  ["심의위원", "Panel Member"], ["개별 결정", "Individual Decision"], ["패널 심의일", "Panel Decision Date"], ["최종 승인 결과", "Final Approval Result"], ["승인 의견", "Approval Comment"], ["최종 승인자", "Final Approver"], ["최종 승인일", "Final Approval Date"],
+  ["검토 결과", "Review Result"], ["종합 결과", "Overall Result"], ["검토 의견", "Review Comment"], ["검토자", "Reviewer"], ["검토일", "Review Date"],
+  ["발행 정보", "Issuance Information"], ["인증번호", "Certificate No."], ["인증발행일", "Issue Date"], ["만료일", "Expiry Date"], ["유효기간", "Validity Period"],
+  ["전달 기록", "Delivery Record"], ["PDF 전달", "PDF Delivery"], ["이메일 전달 완료", "Delivered by Email"], ["전달일", "Delivery Date"], ["원본 추적번호", "Tracking No."], ["담당자", "Person in Charge"], ["미입력", "Not Entered"],
+  ["적합", "Conforming"], ["부적합", "Nonconforming"], ["해당없음", "Not Applicable"], ["재승인", "Reapproved"], ["불승인", "Not Approved"], ["승인", "Approved"], ["의견", "Comment"],
+];
+
+export function buildDocuments(context: PackageContext, job: Job, language: DocumentLanguage = "KR") {
+  const documents = buildKoreanDocuments(context, job);
+  if (language === "KR") return documents.map((document) => ({ ...document, fileName: document.fileName.replace(".doc", "_KR.doc") }));
+  return documents.map((document) => {
+    let html = document.html.replace('lang="ko"', 'lang="en"').replaceAll(context.candidate.name, context.candidate.nameEn || context.candidate.name);
+    if (context.review.comment) html = html.replaceAll(context.review.comment, context.englishText.reviewComment || "-");
+    for (const member of context.panelMembers) if (member.comment) html = html.replaceAll(member.comment, context.englishText.panelComments[member.name] || "-");
+    const decisionComment = context.decisions[job.id]?.comment;
+    if (decisionComment) html = html.replaceAll(decisionComment, context.englishText.decisionComments[job.id] || "-");
+    for (const [korean, english] of fixedEnglish) html = html.replaceAll(korean, english);
+    const title = englishTitles[document.title] ?? document.title;
+    html = html.replaceAll(document.title, title);
+    return { fileName: `${job.jobNo}_${englishFileNames[document.title] ?? document.title}_EN.doc`, title, html };
+  });
 }
 
 export function downloadBlob(fileName: string, blob: Blob) {

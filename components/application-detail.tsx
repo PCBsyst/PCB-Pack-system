@@ -20,15 +20,16 @@ const stageOrder: DemoStage[] = ["DOCUMENT_REVIEW", "INVOICE_PENDING", "PAYMENT_
 const stageLabels: Record<DemoStage, string> = { DOCUMENT_REVIEW: "서류검토", INVOICE_PENDING: "인보이스", PAYMENT_PENDING: "입금 확인", DECISION_PENDING: "인증심의", CERTIFICATION_INFO_PENDING: "인증정보", PACKAGE_READY: "패키지", COMPLETED: "완료" };
 
 function makeInitial(application: CertificationApplication, jobs: Job[]): DemoState {
+  const isLeeRenewal = application.id === "app-003";
   return {
-    stage: application.id === "app-001" ? "DOCUMENT_REVIEW" : application.status === "COMPLETED" ? "COMPLETED" : "DOCUMENT_REVIEW",
-    review: { result: "적합", reviewer: application.primaryOwner, reviewedAt: "2026-09-12", comment: "제출자료 및 자격요건 관련 기록을 확인함." },
+    stage: isLeeRenewal ? "PACKAGE_READY" : application.id === "app-001" ? "DOCUMENT_REVIEW" : application.status === "COMPLETED" ? "COMPLETED" : "DOCUMENT_REVIEW",
+    review: { result: "적합", reviewer: application.primaryOwner, reviewedAt: isLeeRenewal ? "2026-08-15" : "2026-09-12", comment: isLeeRenewal ? "갱신 신청 제출자료 및 자격유지 요건을 확인함." : "제출자료 및 자격요건 관련 기록을 확인함." },
     invoiceNo: `INV-DEMO-${application.managementNoFrom}`,
     invoiceAmount: String(jobs.length * 450000),
-    decisionReviewer: "",
-    decisionDate: "2026-09-12",
-    decisions: Object.fromEntries(jobs.map((job) => [job.id, { result: "", comment: "" }])),
-    certificates: Object.fromEntries(jobs.map((job, index) => [job.id, { certificationNo: job.certificationNo ?? `DEMO-${application.managementNoFrom + index}`, issueDate: "2026-09-18", expiryDate: "2029-09-17", trackingNumber: "" }])),
+    decisionReviewer: isLeeRenewal ? "박심의" : "",
+    decisionDate: isLeeRenewal ? "2026-08-22" : "2026-09-12",
+    decisions: Object.fromEntries(jobs.map((job) => [job.id, { result: isLeeRenewal ? "승인" : "", comment: isLeeRenewal ? "갱신 승인" : "" }])),
+    certificates: Object.fromEntries(jobs.map((job, index) => [job.id, { certificationNo: isLeeRenewal ? "26-4-0091" : job.certificationNo ?? `DEMO-${application.managementNoFrom + index}`, issueDate: isLeeRenewal ? "2026-08-29" : "2026-09-18", expiryDate: isLeeRenewal ? "2029-08-28" : "2029-09-17", trackingNumber: "" }])),
     generated: application.packageStatus === "GENERATED",
   };
 }

@@ -1,27 +1,9 @@
 import type { Job } from "@/types/certification";
+import { gradeCodes, numberingRules } from "@/lib/numbering-rules";
 
-export const certificationStandardCodes: Record<string, string> = {
-  "ISO 9001": "1",
-  "ISO 13485": "2",
-  "ISO 14001": "3",
-  "ISO 45001": "4",
-  "ISO 22000": "5",
-  "ISO 22301": "6",
-  "ISO/IEC 27001": "7",
-};
+export const certificationStandardCodes: Record<string, string> = Object.fromEntries(numberingRules.filter((rule) => rule.businessArea === "ISO" && rule.scheme === "GPC").map((rule) => [rule.field, rule.certificateCode]));
 
-export const certificationGradeCodes: Record<string, string> = {
-  "심사원보": "1",
-  "Provisional Auditor": "1",
-  "내부심사원": "2",
-  "Internal Auditor": "2",
-  "심사원": "3",
-  "Auditor": "3",
-  "선임심사원": "4",
-  "Lead Auditor": "4",
-  "검증심사원": "5",
-  "Verification Auditor": "5",
-};
+export const certificationGradeCodes = gradeCodes;
 
 export function getCertificationNumber(standard: string, grade: string, issueDate: string, existingJobs: Job[]) {
   const year = issueDate.slice(2, 4);

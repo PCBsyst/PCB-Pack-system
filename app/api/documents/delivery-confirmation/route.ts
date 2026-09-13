@@ -24,7 +24,7 @@ export async function POST(request: Request) {
   };
   for (const row of deliveryDocumentRows) {
     const record = records?.[row.key];
-    values[`${row.key}Mark`] = record?.received ? "☒" : "☐";
+    values[`${row.key}Mark`] = record?.applicability === "NOT_APPLICABLE" ? "N/A" : record?.received ? "☒" : "☐";
     values[`${row.key}Date`] = record?.date || "-";
     values[`${row.key}Comment`] = record?.comment || "";
   }

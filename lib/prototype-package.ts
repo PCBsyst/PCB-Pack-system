@@ -7,7 +7,8 @@ export type DemoPanelMember = { name: string; selected: boolean; decision: "" | 
 export type DemoDecision = Record<string, { result: "" | "승인" | "불승인" | "재승인"; comment: string }>;
 export type DemoCertificate = Record<string, { certificationNo: string; draftIssuedAt: string; issueDate: string; expiryDate: string; originalSentAt: string; trackingNumber: string }>;
 export type DeliveryDocumentKey = "application" | "career" | "education" | "diploma" | "auditLog" | "agreement" | "examNotice" | "examAnswers" | "decisionReport" | "certificate" | "survey" | "deliveryConfirmation";
-export type DemoDeliveryDocuments = Record<string, Record<DeliveryDocumentKey, { received: boolean; date: string; comment: string }>>;
+export type DocumentApplicability = "REQUIRED" | "CONDITIONAL" | "NOT_APPLICABLE";
+export type DemoDeliveryDocuments = Record<string, Record<DeliveryDocumentKey, { applicability: DocumentApplicability; received: boolean; date: string; comment: string }>>;
 export const deliveryDocumentRows: Array<{ key: DeliveryDocumentKey; form: string; document: string }> = [
   { key: "application", form: "FGPC-008-01", document: "신청서" },
   { key: "career", form: "-", document: "경력 증명" },

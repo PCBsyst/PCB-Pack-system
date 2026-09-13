@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, controlClass, textareaClass } from "@/components/form-fields";
 import { buildDocuments, createZip, downloadBlob, downloadWord, printAsPdf, type AssessmentResult, type DemoAssessment, type DemoCertificate, type DemoDecision, type DemoEnglishText, type DemoPanelMember, type DemoReview, type DocumentLanguage } from "@/lib/prototype-package";
+import { getCertificationNumber } from "@/lib/certification-number";
+import { jobs as allJobs } from "@/data/mock-data";
 
 const tabs = ["신청 개요", "자료보관", "서류검토", "인보이스·입금", "인증심의", "Job·패키지"] as const;
 type Tab = (typeof tabs)[number];
@@ -42,7 +44,7 @@ function makeInitial(application: CertificationApplication, jobs: Job[]): DemoSt
     finalApprover: "대표자",
     finalApprovalDate: isLeeRenewal ? "2026-08-22" : "2026-09-12",
     decisions: Object.fromEntries(jobs.map((job) => [job.id, { result: isLeeRenewal ? "재승인" : "", comment: isLeeRenewal ? "갱신 재승인" : "" }])),
-    certificates: Object.fromEntries(jobs.map((job, index) => [job.id, { certificationNo: isLeeRenewal ? "26-4-0091" : job.certificationNo ?? `DEMO-${application.managementNoFrom + index}`, draftIssuedAt: isLeeRenewal ? "2026-08-23" : "", issueDate: isLeeRenewal ? "2026-08-29" : "", expiryDate: isLeeRenewal ? "2029-08-28" : "", originalSentAt: isLeeRenewal ? "2026-08-29" : "", trackingNumber: isLeeRenewal ? "DEMO-45001-0829" : "" }])),
+    certificates: Object.fromEntries(jobs.map((job) => { const issueDate = isLeeRenewal ? "2026-08-29" : "2026-09-12"; return [job.id, { certificationNo: getCertificationNumber(job.standard, job.currentGrade, issueDate, allJobs), draftIssuedAt: isLeeRenewal ? "2026-08-23" : "", issueDate: isLeeRenewal ? issueDate : "", expiryDate: isLeeRenewal ? "2029-08-28" : "", originalSentAt: isLeeRenewal ? "2026-08-29" : "", trackingNumber: isLeeRenewal ? "DEMO-45001-0829" : "" }]; })),
     englishText: { reviewComment: isLeeRenewal ? "Renewal application documents and continued certification requirements were verified." : "", verificationComment: isLeeRenewal ? "The review and supporting evidence were verified." : "", panelComments: Object.fromEntries(panelRoster.map((name, index) => [name, isLeeRenewal && index < 2 ? "Renewal requirements verified." : ""])), decisionComments: Object.fromEntries(jobs.map((job) => [job.id, isLeeRenewal ? "Renewal reapproved." : ""])) },
     generated: application.packageStatus === "GENERATED",
   };
@@ -53,7 +55,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   const [demo, setDemo] = useState(() => makeInitial(application, linkedJobs));
   const [languages, setLanguages] = useState<Record<DocumentLanguage, boolean>>({ KR: true, EN: true });
   const [notice, setNotice] = useState("서류검토 탭에서 샘플 업무를 시작하세요.");
-  const storageKey = `certification-demo:${application.id}`;
+  const storageKey = `certification-demo:v2:${application.id}`;
 
   useEffect(() => { const stored = window.localStorage.getItem(storageKey); if (stored) { const initial = makeInitial(application, linkedJobs); const saved = JSON.parse(stored) as Partial<DemoState>; const certificates = Object.fromEntries(linkedJobs.map((job) => [job.id, { ...initial.certificates[job.id], ...saved.certificates?.[job.id] }])); setDemo({ ...initial, ...saved, review: { ...initial.review, ...saved.review }, englishText: { ...initial.englishText, ...saved.englishText }, assessment: saved.assessment ?? initial.assessment, panelMembers: saved.panelMembers ?? initial.panelMembers, certificates }); } }, [application, linkedJobs, storageKey]);
   useEffect(() => { window.localStorage.setItem(storageKey, JSON.stringify(demo)); }, [demo, storageKey]);
@@ -97,6 +99,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     const approved = linkedJobs.filter((job) => ["승인", "재승인"].includes(demo.decisions[job.id]?.result));
     if (!approved.length) { setNotice("승인된 Job이 없어 패키지 생성 단계로 진행할 수 없습니다."); return; }
     if (approved.some((job) => !demo.certificates[job.id]?.certificationNo || !demo.certificates[job.id]?.issueDate || !demo.certificates[job.id]?.expiryDate)) { setNotice("승인 Job의 인증번호·발행일·만료일을 입력해 주세요."); return; }
+    if (approved.some((job) => !/^\d{8}$/.test(demo.certificates[job.id]?.certificationNo ?? ""))) { setNotice("인증번호는 숫자 8자리 형식이어야 합니다."); return; }
     move("ORIGINAL_DELIVERY_PENDING", "Job·패키지", "전자본 PDF 발행을 기록했습니다. 원본 송부정보를 입력하세요.");
   };
   const finishOriginalDelivery = () => {

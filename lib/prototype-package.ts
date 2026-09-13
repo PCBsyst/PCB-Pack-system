@@ -74,6 +74,13 @@ export function downloadBlob(fileName: string, blob: Blob) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 export function downloadWord(fileName: string, html: string) { downloadBlob(fileName, new Blob(["\ufeff", html], { type: "application/msword;charset=utf-8" })); }
+export async function downloadDecisionReportDocx(context: PackageContext, job: Job) {
+  const response = await fetch("/api/documents/decision-report", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context, job }) });
+  if (!response.ok) throw new Error("DOCX 생성에 실패했습니다.");
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const fileName = disposition.match(/filename="([^"]+)"/)?.[1] ?? `${job.jobNo}_인증결정보고서_KR.docx`;
+  downloadBlob(fileName, await response.blob());
+}
 export function printAsPdf(title: string, html: string) {
   const popup = window.open("", "_blank");
   if (!popup) throw new Error("팝업이 차단되었습니다.");

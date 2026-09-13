@@ -43,17 +43,17 @@ function makeInitial(application: CertificationApplication, jobs: Job[]): DemoSt
     paymentConfirmedBy: isLeeRenewal ? application.primaryOwner : "",
     assessment: Object.fromEntries(jobs.map((job) => [job.id, Object.fromEntries(assessmentItems.map((item) => [item, isLeeRenewal ? "적합" : ""]))])),
     panelMembers: panelRoster.map((name, index) => ({ name, selected: isLeeRenewal && index < 2, decision: isLeeRenewal && index < 2 ? "재승인" : "", comment: isLeeRenewal && index < 2 ? "갱신요건 충족 확인" : "" })),
-    decisionDate: isLeeRenewal ? "2026-08-22" : "2026-09-12",
+    decisionDate: isLeeRenewal ? "2026-08-24" : "2026-09-14",
     dateOverrideReasons: { decision: "", delivery: Object.fromEntries(jobs.map((job) => [job.id, ""])) },
     dateAuditLogs: [],
     finalApprover: "대표자",
     finalApprovalDate: isLeeRenewal ? "2026-08-22" : "2026-09-12",
     decisions: Object.fromEntries(jobs.map((job) => [job.id, { result: isLeeRenewal ? "재승인" : "", comment: isLeeRenewal ? "갱신 재승인" : "" }])),
-    certificates: Object.fromEntries(jobs.map((job) => { const issueDate = isLeeRenewal ? "2026-08-29" : "2026-09-12"; return [job.id, { certificationNo: getCertificationNumber(job.standard, job.currentGrade, issueDate, allJobs), draftIssuedAt: isLeeRenewal ? "2026-08-23" : "", issueDate: isLeeRenewal ? issueDate : "", expiryDate: isLeeRenewal ? "2029-08-28" : "", originalSentAt: isLeeRenewal ? "2026-08-29" : "", trackingNumber: isLeeRenewal ? "DEMO-45001-0829" : "" }]; })),
+    certificates: Object.fromEntries(jobs.map((job) => { const issueDate = isLeeRenewal ? "2026-08-31" : "2026-09-14"; return [job.id, { certificationNo: getCertificationNumber(job.standard, job.currentGrade, issueDate, allJobs), draftIssuedAt: isLeeRenewal ? "2026-08-24" : "", issueDate: isLeeRenewal ? issueDate : "", expiryDate: isLeeRenewal ? "2029-08-28" : "", originalSentAt: isLeeRenewal ? issueDate : "", trackingNumber: isLeeRenewal ? "DEMO-45001-0829" : "" }]; })),
     deliveryDocuments: Object.fromEntries(jobs.map((job) => [job.id, Object.fromEntries(deliveryDocumentRows.map(({ key }) => {
-      const date = ["application", "career", "education", "diploma", "auditLog", "agreement"].includes(key) ? application.receivedAt : key === "decisionReport" ? (isLeeRenewal ? "2026-08-22" : "") : key === "certificate" ? (isLeeRenewal ? "2026-08-29" : "") : key === "deliveryConfirmation" ? (isLeeRenewal ? "2026-08-29" : "") : "";
+      const date = ["application", "career", "education", "diploma", "auditLog", "agreement"].includes(key) ? (isLeeRenewal ? "2026-08-18" : application.receivedAt) : key === "decisionReport" ? (isLeeRenewal ? "2026-08-24" : "") : key === "certificate" ? (isLeeRenewal ? "2026-08-31" : "") : key === "deliveryConfirmation" ? (isLeeRenewal ? "2026-09-01" : "") : "";
       const applicability = defaultApplicability(job.businessArea ?? application.businessArea, key);
-      return [key, { applicability, received: isLeeRenewal || ["application", "career", "education", "diploma", "agreement"].includes(key), date, comment: "" }];
+      return [key, { applicability, received: Boolean(date), date, comment: "" }];
     }))])) as DemoDeliveryDocuments,
     englishText: { reviewComment: isLeeRenewal ? "Renewal application documents and continued certification requirements were verified." : "", verificationComment: isLeeRenewal ? "The review and supporting evidence were verified." : "", panelComments: Object.fromEntries(panelRoster.map((name, index) => [name, isLeeRenewal && index < 2 ? "Renewal requirements verified." : ""])), decisionComments: Object.fromEntries(jobs.map((job) => [job.id, isLeeRenewal ? "Renewal reapproved." : ""])) },
     generated: application.packageStatus === "GENERATED",
@@ -65,7 +65,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   const [demo, setDemo] = useState(() => makeInitial(application, linkedJobs));
   const [languages, setLanguages] = useState<Record<DocumentLanguage, boolean>>({ KR: true, EN: true });
   const [notice, setNotice] = useState("서류검토 탭에서 샘플 업무를 시작하세요.");
-  const storageKey = `certification-demo:v3:${application.id}`;
+  const storageKey = `certification-demo:v4:${application.id}`;
 
   useEffect(() => { const stored = window.localStorage.getItem(storageKey); if (stored) { const initial = makeInitial(application, linkedJobs); const saved = JSON.parse(stored) as Partial<DemoState>; const certificates = Object.fromEntries(linkedJobs.map((job) => [job.id, { ...initial.certificates[job.id], ...saved.certificates?.[job.id] }])); const deliveryDocuments = Object.fromEntries(linkedJobs.map((job) => [job.id, { ...initial.deliveryDocuments[job.id], ...saved.deliveryDocuments?.[job.id] }])); setDemo({ ...initial, ...saved, review: { ...initial.review, ...saved.review }, englishText: { ...initial.englishText, ...saved.englishText }, assessment: saved.assessment ?? initial.assessment, panelMembers: saved.panelMembers ?? initial.panelMembers, certificates, deliveryDocuments }); return; } const profiles = readStoredProfiles(); if (profiles.length) setDemo((current) => ({ ...current, deliveryDocuments: Object.fromEntries(linkedJobs.map((job) => { const profile = profiles.find((item) => profileKey(item) === profileKey({ businessArea: job.businessArea ?? application.businessArea, standard: job.standard, grade: job.currentGrade })); return [job.id, Object.fromEntries(deliveryDocumentRows.map(({ key }) => [key, { ...current.deliveryDocuments[job.id][key], applicability: profile?.rules[key] ?? current.deliveryDocuments[job.id][key].applicability }]))]; })) as DemoDeliveryDocuments })); }, [application, linkedJobs, storageKey]);
   useEffect(() => { window.localStorage.setItem(storageKey, JSON.stringify(demo)); }, [demo, storageKey]);

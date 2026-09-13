@@ -6,9 +6,25 @@ export type DemoAssessment = Record<string, Record<string, AssessmentResult>>;
 export type DemoPanelMember = { name: string; selected: boolean; decision: "" | "승인" | "불승인" | "재승인"; comment: string };
 export type DemoDecision = Record<string, { result: "" | "승인" | "불승인" | "재승인"; comment: string }>;
 export type DemoCertificate = Record<string, { certificationNo: string; draftIssuedAt: string; issueDate: string; expiryDate: string; originalSentAt: string; trackingNumber: string }>;
+export type DeliveryDocumentKey = "application" | "career" | "education" | "diploma" | "auditLog" | "agreement" | "examNotice" | "examAnswers" | "decisionReport" | "certificate" | "survey" | "deliveryConfirmation";
+export type DemoDeliveryDocuments = Record<string, Record<DeliveryDocumentKey, { received: boolean; date: string; comment: string }>>;
+export const deliveryDocumentRows: Array<{ key: DeliveryDocumentKey; form: string; document: string }> = [
+  { key: "application", form: "FGPC-008-01", document: "신청서" },
+  { key: "career", form: "-", document: "경력 증명" },
+  { key: "education", form: "-", document: "교육 수료증" },
+  { key: "diploma", form: "-", document: "학력 증명" },
+  { key: "auditLog", form: "FGPC-008-02", document: "심사이력표(해당 시)" },
+  { key: "agreement", form: "FGPC-008-04", document: "인증 계약서" },
+  { key: "examNotice", form: "FGPC-010-04", document: "시험 안내서(해당 시)" },
+  { key: "examAnswers", form: "GPC-EXAM-ANS", document: "시험 답안지" },
+  { key: "decisionReport", form: "FGPC-012-01", document: "인증결정보고서" },
+  { key: "certificate", form: "FGPC-012-02", document: "개인인증서 / 비용 입금" },
+  { key: "survey", form: "FGPC-010-03", document: "고객 설문지" },
+  { key: "deliveryConfirmation", form: "FGPC-014-02", document: "문서전달확인서" },
+];
 export type DocumentLanguage = "KR" | "EN";
 export type DemoEnglishText = { reviewComment: string; verificationComment: string; panelComments: Record<string, string>; decisionComments: Record<string, string> };
-export type PackageContext = { application: CertificationApplication; candidate: Candidate; jobs: Job[]; review: DemoReview; assessment: DemoAssessment; panelMembers: DemoPanelMember[]; decisions: DemoDecision; certificates: DemoCertificate; decisionDate: string; finalApprover: string; finalApprovalDate: string; englishText: DemoEnglishText };
+export type PackageContext = { application: CertificationApplication; candidate: Candidate; jobs: Job[]; review: DemoReview; assessment: DemoAssessment; panelMembers: DemoPanelMember[]; decisions: DemoDecision; certificates: DemoCertificate; deliveryDocuments: DemoDeliveryDocuments; decisionDate: string; finalApprover: string; finalApprovalDate: string; englishText: DemoEnglishText };
 
 function escapeHtml(value: string | number | undefined) {
   return String(value ?? "-").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
@@ -79,6 +95,13 @@ export async function downloadDecisionReportDocx(context: PackageContext, job: J
   if (!response.ok) throw new Error("DOCX 생성에 실패했습니다.");
   const disposition = response.headers.get("Content-Disposition") ?? "";
   const fileName = disposition.match(/filename="([^"]+)"/)?.[1] ?? `${job.jobNo}_인증결정보고서_KR.docx`;
+  downloadBlob(fileName, await response.blob());
+}
+export async function downloadDeliveryConfirmationDocx(context: PackageContext, job: Job) {
+  const response = await fetch("/api/documents/delivery-confirmation", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context, job }) });
+  if (!response.ok) throw new Error("DOCX 생성에 실패했습니다.");
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const fileName = disposition.match(/filename="([^"]+)"/)?.[1] ?? `${job.jobNo}_Document_Delivery_Confirmation_EN.docx`;
   downloadBlob(fileName, await response.blob());
 }
 export function printAsPdf(title: string, html: string) {

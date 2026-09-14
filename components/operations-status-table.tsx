@@ -35,15 +35,15 @@ export function OperationsStatusTable() {
     return matchesQuery && matchesArea && matchesProgress;
   }), [area, progress, query]);
 
-  return <section className="overflow-hidden rounded-lg border bg-white shadow-sm">
-    <div className="flex flex-col gap-3 border-b p-4 lg:flex-row">
-      <label className="relative flex-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400"/><input className={`${inputClass} w-full pl-9`} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="후보자, Job No., 파트너사, 규격 검색"/></label>
-      <select className={inputClass} value={area} onChange={(event) => setArea(event.target.value)}><option value="전체">전체 분야</option><option value="ISO">ISO</option><option value="K_BEAUTY">K-Beauty</option></select>
-      <select className={inputClass} value={progress} onChange={(event) => setProgress(event.target.value)}><option>전체</option><option>진행 중</option><option>완료</option></select>
+  return <section className="min-w-0 max-w-full overflow-hidden rounded-lg border bg-white shadow-sm">
+    <div className="grid gap-3 border-b p-4 md:grid-cols-[minmax(0,1fr)_160px_140px]">
+      <label className="relative min-w-0"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400"/><input className={`${inputClass} w-full pl-9`} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="후보자, Job No., 파트너사, 규격 검색"/></label>
+      <select className={`${inputClass} w-full`} value={area} onChange={(event) => setArea(event.target.value)}><option value="전체">전체 분야</option><option value="ISO">ISO</option><option value="K_BEAUTY">K-Beauty</option></select>
+      <select className={`${inputClass} w-full`} value={progress} onChange={(event) => setProgress(event.target.value)}><option>전체</option><option>진행 중</option><option>완료</option></select>
     </div>
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[2050px] text-left text-xs">
-        <thead className="sticky top-16 z-10 bg-slate-100 text-slate-600"><tr>{["관리 No.","후보자","파트너사","Job No.","Standard","Grade","검토사항","INVOICE","비용","인보이스 발행일","입금일","초안 발행일","초안 확인","전자본 발행일","원본 송부일","운송장번호","현재상태"].map((heading) => <th key={heading} className="whitespace-nowrap border-b border-r px-3 py-3 font-semibold last:border-r-0">{heading}</th>)}</tr></thead>
+    <div className="max-w-full overflow-x-auto overscroll-x-contain" aria-label="통합 업무현황 표">
+      <table className="w-full min-w-[2050px] table-auto text-left text-xs">
+        <thead className="bg-slate-100 text-slate-600"><tr>{["관리 No.","후보자","파트너사","Job No.","Standard","Grade","검토사항","INVOICE","비용","인보이스 발행일","입금일","초안 발행일","초안 확인","전자본 발행일","원본 송부일","운송장번호","현재상태"].map((heading) => <th key={heading} scope="col" className="whitespace-nowrap border-b border-r bg-slate-100 px-3 py-3 font-semibold last:border-r-0">{heading}</th>)}</tr></thead>
         <tbody className="divide-y">{rows.map(({ job, candidate, application, cycle, invoice, review, draftDate, draftChecked, electronicDate, originalDate }) => <tr key={job.id} className="hover:bg-blue-50/40">
           <td className="whitespace-nowrap border-r px-3 py-3">{job.managementNo ?? "-"}</td>
           <td className="whitespace-nowrap border-r px-3 py-3 font-semibold">{candidate.name}</td>

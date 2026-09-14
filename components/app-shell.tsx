@@ -28,7 +28,7 @@ export function AppShell({ title, description, actions, children }: { title: str
       const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
       return <Link key={href} href={href} onClick={() => setOpen(false)} className={cn("flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium", active ? "bg-blue-50 text-blue-800" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950")}><Icon className="h-4 w-4" />{label}{active && <ChevronRight className="ml-auto h-4 w-4" />}</Link>;
     })}</nav>
-    <div className="absolute bottom-0 w-full border-t p-4"><div className="rounded-md bg-slate-50 p-3"><p className="text-xs font-semibold text-slate-700">프로토타입 모드</p><p className="mt-1 text-[11px] leading-4 text-slate-500">가상 데이터만 사용하며 저장되지 않습니다.</p></div></div>
+    <div className="absolute bottom-0 w-full border-t p-4"><div className="rounded-md bg-slate-50 p-3"><p className="text-xs font-semibold text-slate-700">프로토타입 모드</p><p className="mt-1 text-[11px] leading-4 text-slate-500">가상 데이터는 현재 브라우저에만 저장됩니다.</p></div></div>
   </>;
   return <div className="min-h-screen bg-slate-50">
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r bg-white lg:block">{sidebar}</aside>

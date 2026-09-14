@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowUpDown, FolderOpen, RotateCcw, Search } from "lucide-react";
 import { ApplicationStatusBadge } from "@/components/application-status-badge";
 import { Button } from "@/components/ui/button";
 import { getCandidate, jobs } from "@/data/mock-data";
 import { accreditationLabels, applicationStatusLabels, applications, businessAreaLabels } from "@/data/workflow-data";
+import { readPrototypeApplications, type PrototypeApplicationRecord } from "@/lib/prototype-storage";
 
 const controlClass = "h-9 rounded-md border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-blue-200";
 type SortKey = "received-desc" | "received-asc" | "candidate" | "standard" | "partner" | "status";
@@ -20,6 +21,9 @@ export function ApplicationsTable() {
   const [track, setTrack] = useState("ALL");
   const [status, setStatus] = useState("ALL");
   const [sort, setSort] = useState<SortKey>("received-desc");
+  const [localRows, setLocalRows] = useState<PrototypeApplicationRecord[]>([]);
+
+  useEffect(() => setLocalRows(readPrototypeApplications()), []);
 
   const standards = useMemo(() => [...new Set(jobs.map((job) => job.standard))].sort(), []);
   const grades = useMemo(() => [...new Set(jobs.map((job) => job.currentGrade))].sort(), []);
@@ -47,6 +51,17 @@ export function ApplicationsTable() {
     return applicationStatusLabels[a.application.status].localeCompare(applicationStatusLabels[b.application.status], "ko");
   }), [area, grade, partner, query, sort, standard, status, track]);
 
+  const visibleLocalRows = useMemo(() => localRows.filter((record) => {
+    const haystack = `${record.applicationNo} ${record.candidateName} ${record.partnerCompany} ${record.jobNo} ${record.standard} ${record.grade}`.toLowerCase();
+    return haystack.includes(query.trim().toLowerCase())
+      && (area === "ALL" || record.businessArea === area)
+      && (standard === "ALL" || record.standard === standard)
+      && (grade === "ALL" || record.grade === grade)
+      && (partner === "ALL" || record.partnerCompany === partner)
+      && (track === "ALL" || record.accreditationTrack === track)
+      && (status === "ALL" || record.status === status);
+  }), [area, grade, localRows, partner, query, standard, status, track]);
+
   const reset = () => { setQuery(""); setArea("ALL"); setStandard("ALL"); setGrade("ALL"); setPartner("ALL"); setTrack("ALL"); setStatus("ALL"); setSort("received-desc"); };
 
   return <section className="overflow-hidden rounded-lg border bg-white shadow-sm">
@@ -61,8 +76,8 @@ export function ApplicationsTable() {
         <Filter value={status} onChange={setStatus} allLabel="전체 상태" options={Object.entries(applicationStatusLabels)}/>
       </div>
     </div>
-    <div className="overflow-x-auto"><table className="w-full min-w-[1200px] text-left text-sm"><thead className="bg-slate-50 text-xs font-semibold text-slate-500"><tr>{["신청번호","공식 접수일","후보자","분야 / 인정","신청구분","관리 No.","표준 / 등급 / Job No.","파트너사","Dropbox 폴더","현재상태","담당자"].map((heading) => <th key={heading} className="px-4 py-3">{heading}</th>)}</tr></thead><tbody className="divide-y">{rows.map(({ application, candidate, linkedJobs }) => <tr key={application.id} className="hover:bg-blue-50/40"><td className="px-4 py-4 font-semibold text-blue-800"><Link href={`/applications/${application.id}`}>{application.applicationNo}</Link></td><td className="whitespace-nowrap px-4 py-4 text-slate-600">{application.receivedAt}</td><td className="whitespace-nowrap px-4 py-4 font-medium">{candidate.name}</td><td className="px-4 py-4 text-slate-600">{businessAreaLabels[application.businessArea]}<br/><span className="text-xs text-slate-400">{accreditationLabels[application.accreditationTrack]}</span></td><td className="px-4 py-4">{application.applicationType}</td><td className="px-4 py-4 font-medium">{application.managementNoFrom === application.managementNoTo ? application.managementNoFrom : `${application.managementNoFrom}~${application.managementNoTo}`}</td><td className="min-w-64 px-4 py-4">{linkedJobs.map((job) => <div key={job.id} className="mb-1 last:mb-0"><span className="font-medium">{job.standard}</span><span className="text-slate-500"> · {job.currentGrade} · {job.jobNo}</span></div>)}</td><td className="whitespace-nowrap px-4 py-4 text-slate-600">{application.partnerCompany}</td><td className="max-w-56 px-4 py-4"><div className="flex items-start gap-2"><FolderOpen className="mt-0.5 h-4 w-4 shrink-0 text-slate-400"/><span className="truncate text-xs text-slate-600">{application.dropboxFolderName}</span></div></td><td className="px-4 py-4"><ApplicationStatusBadge status={application.status}/></td><td className="whitespace-nowrap px-4 py-4 text-slate-600">{application.primaryOwner}</td></tr>)}</tbody></table></div>
-    <div className="border-t px-5 py-3 text-xs text-slate-500">조회 결과 {rows.length}건 / 전체 {applications.length}건</div>
+    <div className="overflow-x-auto"><table className="w-full min-w-[1200px] text-left text-sm"><thead className="bg-slate-50 text-xs font-semibold text-slate-500"><tr>{["신청번호","공식 접수일","후보자","분야 / 인정","신청구분","관리 No.","표준 / 등급 / Job No.","파트너사","Dropbox 폴더","현재상태","담당자"].map((heading) => <th key={heading} className="px-4 py-3">{heading}</th>)}</tr></thead><tbody className="divide-y">{visibleLocalRows.map((record) => <tr key={record.id} className="bg-blue-50/30 hover:bg-blue-50"><td className="px-4 py-4 font-semibold text-blue-800">{record.applicationNo}<span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-[10px]">신규</span></td><td className="whitespace-nowrap px-4 py-4 text-slate-600">{record.receivedAt}</td><td className="whitespace-nowrap px-4 py-4 font-medium">{record.candidateName}</td><td className="px-4 py-4 text-slate-600">{businessAreaLabels[record.businessArea]}<br/><span className="text-xs text-slate-400">{accreditationLabels[record.accreditationTrack]}{record.accreditationHidden ? " · 숨김" : ""}</span></td><td className="px-4 py-4">{record.applicationType}</td><td className="px-4 py-4 font-medium">{record.managementNo}</td><td className="min-w-64 px-4 py-4"><span className="font-medium">{record.standard}</span><span className="text-slate-500"> · {record.grade} · {record.jobNo}</span></td><td className="whitespace-nowrap px-4 py-4 text-slate-600">{record.partnerCompany}</td><td className="max-w-56 px-4 py-4 text-xs text-slate-400">Dropbox 생성 대기</td><td className="px-4 py-4"><ApplicationStatusBadge status={record.status}/></td><td className="whitespace-nowrap px-4 py-4 text-slate-600">{record.primaryOwner}</td></tr>)}{rows.map(({ application, candidate, linkedJobs }) => <tr key={application.id} className="hover:bg-blue-50/40"><td className="px-4 py-4 font-semibold text-blue-800"><Link href={`/applications/${application.id}`}>{application.applicationNo}</Link></td><td className="whitespace-nowrap px-4 py-4 text-slate-600">{application.receivedAt}</td><td className="whitespace-nowrap px-4 py-4 font-medium">{candidate.name}</td><td className="px-4 py-4 text-slate-600">{businessAreaLabels[application.businessArea]}<br/><span className="text-xs text-slate-400">{accreditationLabels[application.accreditationTrack]}</span></td><td className="px-4 py-4">{application.applicationType}</td><td className="px-4 py-4 font-medium">{application.managementNoFrom === application.managementNoTo ? application.managementNoFrom : `${application.managementNoFrom}~${application.managementNoTo}`}</td><td className="min-w-64 px-4 py-4">{linkedJobs.map((job) => <div key={job.id} className="mb-1 last:mb-0"><span className="font-medium">{job.standard}</span><span className="text-slate-500"> · {job.currentGrade} · {job.jobNo}</span></div>)}</td><td className="whitespace-nowrap px-4 py-4 text-slate-600">{application.partnerCompany}</td><td className="max-w-56 px-4 py-4"><div className="flex items-start gap-2"><FolderOpen className="mt-0.5 h-4 w-4 shrink-0 text-slate-400"/><span className="truncate text-xs text-slate-600">{application.dropboxFolderName}</span></div></td><td className="px-4 py-4"><ApplicationStatusBadge status={application.status}/></td><td className="whitespace-nowrap px-4 py-4 text-slate-600">{application.primaryOwner}</td></tr>)}</tbody></table></div>
+    <div className="border-t px-5 py-3 text-xs text-slate-500">조회 결과 {rows.length + visibleLocalRows.length}건 / 전체 {applications.length + localRows.length}건</div>
   </section>;
 }
 

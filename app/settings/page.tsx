@@ -1,4 +1,4 @@
-import { CalendarDays, ChevronRight, ListChecks, ShieldCheck, UserCog, UsersRound } from "lucide-react";
+import { Building2, CalendarDays, ChevronRight, ListChecks, ShieldCheck, UserCog, UsersRound } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { DocumentRuleSettings } from "@/components/document-rule-settings";
 import { GeneralSettings } from "@/components/general-settings";
@@ -8,6 +8,7 @@ const sections = [
   { id: "date-rules", icon: CalendarDays, title: "업무일자 계산 규칙", description: "인증발행일 기준 전·후 영업일 간격을 설정합니다.", meta: "새 회차부터 적용" },
   { id: "reasons", icon: ListChecks, title: "정지·철회 표준 사유", description: "보고서 집계에 사용할 표준 사유를 관리합니다.", meta: "사유 편집 가능" },
   { id: "users", icon: UserCog, title: "사용자 및 권한", description: "실무자와 관리자 초대 및 비활성화를 관리합니다.", meta: "테스트 명단 관리" },
+  { id: "training-institutions", icon: Building2, title: "협약 연수기관", description: "지정번호, 유효기간과 교육 가능한 신청표준을 관리합니다.", meta: "등록·수정·비활성화" },
 ];
 
 export default function SettingsPage() {

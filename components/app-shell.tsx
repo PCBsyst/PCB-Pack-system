@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, BriefcaseBusiness, ChevronRight, ClipboardList, LayoutDashboard, Menu, PackageCheck, Settings, ShieldCheck, TableProperties, Users, X } from "lucide-react";
+import { Bell, BriefcaseBusiness, Building2, ChevronRight, ClipboardList, LayoutDashboard, Menu, PackageCheck, Settings, ShieldCheck, TableProperties, Users, X } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +13,7 @@ const navigation = [
   { href: "/candidates", label: "후보자", icon: Users },
   { href: "/jobs", label: "Job 관리", icon: BriefcaseBusiness },
   { href: "/packages", label: "패키지", icon: PackageCheck },
+  { href: "/training-institutions", label: "협약 연수기관", icon: Building2 },
   { href: "/settings", label: "설정", icon: Settings },
 ];
 

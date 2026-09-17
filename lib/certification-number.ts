@@ -1,7 +1,7 @@
 import type { Job } from "@/types/certification";
 import { gradeCodes, numberingRules } from "@/lib/numbering-rules";
 
-export const certificationStandardCodes: Record<string, string> = Object.fromEntries(numberingRules.filter((rule) => rule.businessArea === "ISO" && rule.scheme === "GPC").map((rule) => [rule.field, rule.certificateCode]));
+export const certificationStandardCodes: Record<string, string> = Object.fromEntries(numberingRules.filter((rule) => rule.businessArea === "ISO" && rule.scheme === "IAS").map((rule) => [rule.field, rule.certificateCode]));
 
 export const certificationGradeCodes = gradeCodes;
 

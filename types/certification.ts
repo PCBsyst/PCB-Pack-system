@@ -2,7 +2,7 @@ export type BusinessArea = "ISO" | "K_BEAUTY";
 export type AccreditationTrack = "ACCREDITED" | "NON_ACCREDITED";
 export type ApplicationStatus = "INTAKE_REVIEW" | "DOCUMENT_REVIEW" | "SUPPLEMENT_PENDING" | "INVOICE_PENDING" | "PAYMENT_PENDING" | "DECISION_PENDING" | "PARTIALLY_COMPLETED" | "COMPLETED" | "CANCELLED";
 export type ProcessingStatus = "DOCUMENT_REVIEW" | "INVOICE_PENDING" | "PAYMENT_PENDING" | "DECISION_PENDING" | "SUPPLEMENT_PENDING" | "CERTIFICATE_DRAFT_PENDING" | "CERTIFICATION_INFO_PENDING" | "DELIVERY_PENDING" | "COMPLETED" | "APPLICATION_CANCELLED";
-export type ApplicationType = "최초" | "갱신" | "등급변경" | "기타";
+export type ApplicationType = "최초" | "갱신" | "등급변경" | "전환" | "기타";
 export type CertificationState = "ACTIVE" | "SUSPENDED" | "WITHDRAWN" | "NONE";
 export type CertificateHistoryState = "CURRENT" | "REPLACED_BY_RENEWAL" | "REPLACED_BY_GRADE_CHANGE" | "EXPIRED" | "SUSPENDED" | "WITHDRAWN";
 

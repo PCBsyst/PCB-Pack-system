@@ -1,4 +1,5 @@
 import type { AccreditationTrack, ApplicationType, BusinessArea } from "@/types/certification";
+import type { NumberingScheme } from "@/lib/numbering-rules";
 
 export const PROTOTYPE_APPLICATIONS_KEY = "certification-prototype-applications";
 
@@ -8,6 +9,7 @@ export interface PrototypeApplicationRecord {
   receivedAt: string;
   candidateName: string;
   businessArea: BusinessArea;
+  scheme?: NumberingScheme;
   accreditationTrack: AccreditationTrack;
   accreditationHidden: boolean;
   applicationType: ApplicationType;

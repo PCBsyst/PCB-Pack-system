@@ -9,7 +9,7 @@ import { getNumberingRule, getNumberingRules, type NumberingScheme } from "@/lib
 import type { BusinessArea } from "@/types/certification";
 import { Field, controlClass } from "@/components/form-fields";
 import { Button } from "@/components/ui/button";
-import { readPrototypeApplications, savePrototypeApplication } from "@/lib/prototype-storage";
+import { readPrototypeApplications, savePrototypeApplication, type PrototypeApplicationRecord } from "@/lib/prototype-storage";
 import type { ApplicationType } from "@/types/certification";
 
 export function NewApplicationForm() {
@@ -25,12 +25,13 @@ export function NewApplicationForm() {
   const [grade, setGrade] = useState("Auditor");
   const [notice, setNotice] = useState("");
   const [storedCount, setStoredCount] = useState(0);
+  const [storedApplications, setStoredApplications] = useState<PrototypeApplicationRecord[]>([]);
   const rules = useMemo(() => getNumberingRules(businessArea, scheme, accreditationTrack), [businessArea, scheme, accreditationTrack]);
   const selectedRule = getNumberingRule(businessArea, scheme, accreditationTrack, standard) ?? rules[0];
   const activeStandard = selectedRule?.field ?? "";
-  const jobNo = useMemo(() => getJobNumber(businessArea, scheme, accreditationTrack, activeStandard, receivedAt, jobs), [businessArea, scheme, accreditationTrack, activeStandard, receivedAt]);
+  const jobNo = useMemo(() => getJobNumber(businessArea, scheme, accreditationTrack, activeStandard, receivedAt, [...jobs, ...storedApplications.map((record) => ({ jobNo: record.jobNo }))]), [businessArea, scheme, accreditationTrack, activeStandard, receivedAt, storedApplications]);
   const sequence = selectedRule && jobNo ? jobNo.replace(selectedRule.jobPrefix, "").slice(2) : "";
-  const managementNo = 1295 + storedCount;
+  const managementNo = Math.max(1294, ...storedApplications.map((record) => record.managementNo)) + 1;
   const applicationNo = `APP-${businessArea === "ISO" ? "ISO" : "KB"}-${receivedAt.slice(0, 4)}-${String(82 + storedCount).padStart(3, "0")}`;
 
   function changeRuleContext(area: BusinessArea, nextScheme: NumberingScheme, track: "ACCREDITED" | "NON_ACCREDITED") {
@@ -38,7 +39,7 @@ export function NewApplicationForm() {
     setBusinessArea(area); setScheme(nextScheme); setAccreditationTrack(track); setStandard(nextRules[0]?.field ?? "");
   }
 
-  useEffect(() => setStoredCount(readPrototypeApplications().length), []);
+  useEffect(() => { const records = readPrototypeApplications(); setStoredApplications(records); setStoredCount(records.length); }, []);
 
   function registerApplication() {
     if (!candidateName.trim()) {
@@ -49,7 +50,9 @@ export function NewApplicationForm() {
       setNotice("확정된 번호 규칙과 접수일을 확인해 주세요.");
       return;
     }
-    savePrototypeApplication({ id: `local-${Date.now()}`, applicationNo, receivedAt, candidateName: candidateName.trim(), businessArea, scheme, accreditationTrack, accreditationHidden, applicationType, managementNo, jobNo, standard: activeStandard, grade, partnerCompany, primaryOwner: "김담당", status: "INTAKE_REVIEW", createdAt: new Date().toISOString() });
+    const record: PrototypeApplicationRecord = { id: `local-${Date.now()}`, applicationNo, receivedAt, candidateName: candidateName.trim(), businessArea, scheme, accreditationTrack, accreditationHidden, applicationType, managementNo, jobNo, standard: activeStandard, grade, partnerCompany, primaryOwner: "김담당", status: "INTAKE_REVIEW", createdAt: new Date().toISOString() };
+    savePrototypeApplication(record);
+    setStoredApplications((records) => [record, ...records]);
     setStoredCount((count) => count + 1);
     setNotice(`${applicationNo} 신청이 브라우저에 등록되었습니다.`);
   }

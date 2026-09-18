@@ -23,6 +23,17 @@ export interface PrototypeApplicationRecord {
   createdAt: string;
 }
 
+export function prototypeCandidateId(record: PrototypeApplicationRecord) { return `candidate-${record.id}`; }
+export function prototypeJobId(record: PrototypeApplicationRecord) { return `job-${record.id}`; }
+
+export function findPrototypeByCandidateId(id: string) {
+  return readPrototypeApplications().find((record) => prototypeCandidateId(record) === id);
+}
+
+export function findPrototypeByJobId(id: string) {
+  return readPrototypeApplications().find((record) => prototypeJobId(record) === id);
+}
+
 export function readPrototypeApplications(): PrototypeApplicationRecord[] {
   if (typeof window === "undefined") return [];
   try {

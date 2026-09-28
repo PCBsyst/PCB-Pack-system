@@ -10,15 +10,18 @@ function xml(value: unknown) { return String(value ?? "-").replaceAll("&", "&amp
 export async function POST(request: Request) {
   const { context, job } = await request.json() as RequestBody;
   const records = context.deliveryDocuments[job.id];
-  const mark = (key: keyof typeof records) => records?.[key]?.applicability === "NOT_APPLICABLE" ? "해당 없음" : records?.[key]?.received ? "☒" : "☐";
+  const mark = (key: keyof typeof records) => records?.[key]?.applicability === "NOT_APPLICABLE" ? "해당 없음" : records?.[key]?.received ? "■" : "□";
+  const requirementSummary = Object.entries(context.reviewRequirements ?? {}).map(([item, result]) => `${item}: ${result}`).join(" / ");
+  const reviewComment = [requirementSummary, context.review.comment, context.review.verificationComment ? `2차 검증: ${context.review.verificationComment}` : ""].filter(Boolean).join("\n");
   const values: Record<string, unknown> = {
     jobNo: job.jobNo, candidateName: context.candidate.name, candidateNameEn: context.candidate.nameEn,
     birthDate: context.candidate.birthDate, nationality: context.candidate.nationality, address: context.candidate.address,
     email: context.candidate.email, phone: context.candidate.phone, initialMark: context.application.applicationType === "최초" ? "☒" : "☐",
     renewalMark: context.application.applicationType === "갱신" ? "☒" : "☐", standard: job.standard, grade: job.currentGrade,
-    specialRequirements: "없음", academicDocumentMark: mark("diploma"), careerDocumentMark: mark("career"), educationDocumentMark: mark("education"),
-    auditLogDocumentMark: mark("auditLog"), otherDocumentMark: "☐", receivedAt: context.application.receivedAt,
-    reviewResult: context.review.result, reviewComment: context.review.comment, reviewer: context.review.reviewer, reviewedAt: context.review.reviewedAt,
+    specialRequirements: context.application.applicationType === "최초" || context.application.applicationType === "갱신" ? "없음" : `신청구분: ${context.application.applicationType}`,
+    academicDocumentMark: mark("diploma"), careerDocumentMark: mark("career"), educationDocumentMark: mark("education"),
+    auditLogDocumentMark: mark("auditLog"), otherDocumentMark: records ? mark("agreement") : "□", receivedAt: context.application.receivedAt,
+    reviewResult: context.review.result, reviewComment, reviewer: context.review.reviewer, reviewedAt: context.review.reviewedAt,
     verifier: context.review.verifier, verifiedAt: context.review.verifiedAt, verificationResult: context.review.verificationResult,
   };
   const template = await readFile(path.join(process.cwd(), "templates", "FGPC-008-01-application-review-kr.docx"));

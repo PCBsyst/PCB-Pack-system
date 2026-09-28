@@ -14,17 +14,22 @@ export async function POST(request: Request) {
   const { context, job } = await request.json() as RequestBody;
   const certificate = context.certificates[job.id];
   const records = context.deliveryDocuments[job.id];
+  const note = [
+    context.invoiceNo ? `Invoice: ${context.invoiceNo} / Issued: ${context.invoiceIssuedAt || "-"} / Paid: ${context.paymentConfirmedAt || "-"}` : "",
+    certificate?.originalSentAt ? `Original dispatched: ${certificate.originalSentAt} / Tracking No.: ${certificate.trackingNumber || "-"}` : "",
+    `Person in charge: ${context.application.primaryOwner}`,
+  ].filter(Boolean).join(" | ");
   const values: Record<string, unknown> = {
     candidateName: context.candidate.nameEn || context.candidate.name,
     standard: job.standard,
     grade: job.currentGrade,
     jobNo: job.jobNo,
     certificationNo: certificate?.certificationNo,
-    note: "Prototype record generated from the FGPC-012-03 structure.",
+    note,
   };
   for (const row of deliveryDocumentRows) {
     const record = records?.[row.key];
-    values[`${row.key}Mark`] = record?.applicability === "NOT_APPLICABLE" ? "N/A" : record?.received ? "☒" : "☐";
+    values[`${row.key}Mark`] = record?.applicability === "NOT_APPLICABLE" ? "N/A" : record?.received ? "■" : "□";
     values[`${row.key}Date`] = record?.date || "-";
     values[`${row.key}Comment`] = record?.comment || "";
   }

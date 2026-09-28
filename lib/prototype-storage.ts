@@ -5,6 +5,8 @@ export const PROTOTYPE_APPLICATIONS_KEY = "certification-prototype-applications"
 
 export interface PrototypeApplicationRecord {
   id: string;
+  candidateId?: string;
+  jobId?: string;
   applicationNo: string;
   receivedAt: string;
   candidateName: string;
@@ -21,6 +23,7 @@ export interface PrototypeApplicationRecord {
   primaryOwner: string;
   status: "INTAKE_REVIEW";
   createdAt: string;
+  workflow?: PrototypeWorkflowSnapshot;
 }
 
 export type PrototypeWorkflowStage = "DOCUMENT_REVIEW" | "INVOICE_PENDING" | "PAYMENT_PENDING" | "DECISION_PENDING" | "CERTIFICATE_DRAFT_PENDING" | "CERTIFICATION_INFO_PENDING" | "ORIGINAL_DELIVERY_PENDING" | "PACKAGE_READY" | "COMPLETED";
@@ -52,6 +55,7 @@ export function prototypeCandidateId(record: PrototypeApplicationRecord) { retur
 export function prototypeJobId(record: PrototypeApplicationRecord) { return `job-${record.id}`; }
 
 export function readPrototypeWorkflow(record: PrototypeApplicationRecord): PrototypeWorkflowSnapshot {
+  if (record.workflow) return record.workflow;
   if (typeof window === "undefined") return {};
   try {
     return JSON.parse(window.localStorage.getItem(`certification-demo:v4:${record.id}`) ?? "{}") as PrototypeWorkflowSnapshot;

@@ -9,6 +9,8 @@ import { getCandidate, getJob } from "@/data/mock-data";
 import { packageDocuments } from "@/data/workflow-data";
 import { PrototypePackageCards } from "@/components/prototype-linked-rows";
 import { readPrototypeApplications, readPrototypeWorkflow } from "@/lib/prototype-storage";
+import { createClient } from "@/lib/supabase/client";
+import { hasEnvVars } from "@/lib/utils";
 
 export default function PackagesPage() {
   const grouped = useMemo(() => [...new Set(packageDocuments.map((document) => document.jobId))], []);
@@ -17,7 +19,22 @@ export default function PackagesPage() {
   const [notice, setNotice] = useState("");
   const [prototypeCount, setPrototypeCount] = useState(0);
   const [prototypeGeneratedCount, setPrototypeGeneratedCount] = useState(0);
-  useEffect(() => { const records = readPrototypeApplications(); setPrototypeCount(records.length); setPrototypeGeneratedCount(records.filter((record) => { const workflow = readPrototypeWorkflow(record); return workflow.generated || workflow.stage === "COMPLETED"; }).length); }, []);
+  useEffect(() => {
+    const records = readPrototypeApplications();
+    setPrototypeCount(records.length);
+    setPrototypeGeneratedCount(records.filter((record) => { const workflow = readPrototypeWorkflow(record); return workflow.generated || workflow.stage === "COMPLETED"; }).length);
+    if (!hasEnvVars) return;
+    const supabase = createClient();
+    void supabase.from("applications").select("id, application_workspaces(state)").then(({ data }) => {
+      if (!data) return;
+      setPrototypeCount(data.length);
+      setPrototypeGeneratedCount(data.filter((item) => {
+        const workspace = Array.isArray(item.application_workspaces) ? item.application_workspaces[0] : item.application_workspaces;
+        const state = workspace?.state as { generated?: boolean; stage?: string } | undefined;
+        return state?.generated || state?.stage === "COMPLETED";
+      }).length);
+    });
+  }, []);
 
   const toggle = (jobId: string) => setSelected((items) => items.includes(jobId) ? items.filter((id) => id !== jobId) : [...items, jobId]);
   const generate = (jobIds: string[]) => {

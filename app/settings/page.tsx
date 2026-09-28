@@ -4,6 +4,7 @@ import { DocumentRuleSettings } from "@/components/document-rule-settings";
 import { GeneralSettings } from "@/components/general-settings";
 import { hasEnvVars } from "@/lib/utils";
 import { requireAdmin } from "@/lib/supabase/access";
+import { Suspense } from "react";
 
 const sections = [
   { id: "reviewers", icon: UsersRound, title: "심의자 명단", description: "계정 없이 심의기록에서 선택할 심의자를 관리합니다.", meta: "명단 편집 가능" },
@@ -12,7 +13,11 @@ const sections = [
   { id: "users", icon: UserCog, title: "사용자 및 권한", description: "실무자와 관리자 초대 및 비활성화를 관리합니다.", meta: "테스트 명단 관리" },
 ];
 
-export default async function SettingsPage() {
+export default function SettingsPage() {
+  return <Suspense fallback={<AppShell title="설정" description="관리자 권한을 확인하고 있습니다."><div className="rounded-lg border bg-white p-8 text-center text-sm text-slate-500">설정을 불러오는 중입니다.</div></AppShell>}><SettingsContent/></Suspense>;
+}
+
+async function SettingsContent() {
   await requireAdmin();
   return <AppShell title="설정" description="관리자 전용 기준정보와 업무 규칙을 관리합니다.">
     <div className="mb-5 rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900"><ShieldCheck className="mr-2 inline h-4 w-4"/>현재 규칙은 테스트 브라우저에만 저장됩니다.</div>

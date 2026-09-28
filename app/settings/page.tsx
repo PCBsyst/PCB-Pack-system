@@ -3,6 +3,7 @@ import { AppShell } from "@/components/app-shell";
 import { DocumentRuleSettings } from "@/components/document-rule-settings";
 import { GeneralSettings } from "@/components/general-settings";
 import { hasEnvVars } from "@/lib/utils";
+import { requireAdmin } from "@/lib/supabase/access";
 
 const sections = [
   { id: "reviewers", icon: UsersRound, title: "심의자 명단", description: "계정 없이 심의기록에서 선택할 심의자를 관리합니다.", meta: "명단 편집 가능" },
@@ -11,7 +12,8 @@ const sections = [
   { id: "users", icon: UserCog, title: "사용자 및 권한", description: "실무자와 관리자 초대 및 비활성화를 관리합니다.", meta: "테스트 명단 관리" },
 ];
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  await requireAdmin();
   return <AppShell title="설정" description="관리자 전용 기준정보와 업무 규칙을 관리합니다.">
     <div className="mb-5 rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900"><ShieldCheck className="mr-2 inline h-4 w-4"/>현재 규칙은 테스트 브라우저에만 저장됩니다.</div>
     <div className={`mb-5 flex items-start gap-3 rounded-lg border p-4 text-sm ${hasEnvVars ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-amber-200 bg-amber-50 text-amber-950"}`}><Database className="mt-0.5 h-4 w-4 shrink-0"/><div><p className="font-semibold">Supabase {hasEnvVars ? "연결 설정 완료" : "연결 준비 중"}</p><p className="mt-1 text-xs leading-5">{hasEnvVars ? "환경변수가 등록되어 있습니다. 데이터 이관 검증 후 화면별 저장 경로를 전환할 수 있습니다." : "DB 스키마는 준비됐으며 프로젝트 URL과 Publishable Key 등록 전까지 가상데이터 모드로 안전하게 동작합니다."}</p></div></div>

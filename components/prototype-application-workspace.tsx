@@ -17,11 +17,11 @@ export function PrototypeApplicationWorkspace({ id }: { id: string }) {
   const candidate: Candidate = {
     id: candidateId,
     name: record.candidateName,
-    nameEn: "미입력",
-    birthDate: "미입력",
-    nationality: "미입력",
-    phone: "미입력",
-    email: "미입력",
+    nameEn: record.candidateNameEn || "미입력",
+    birthDate: record.candidateBirthDate || "미입력",
+    nationality: record.candidateNationality || "미입력",
+    phone: record.candidatePhone || "미입력",
+    email: record.candidateEmail || "미입력",
     address: "미입력",
     jobIds: [jobId],
   };

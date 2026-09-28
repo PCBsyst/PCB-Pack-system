@@ -10,6 +10,11 @@ export interface PrototypeApplicationRecord {
   applicationNo: string;
   receivedAt: string;
   candidateName: string;
+  candidateNameEn?: string;
+  candidateBirthDate?: string;
+  candidateNationality?: string;
+  candidateEmail?: string;
+  candidatePhone?: string;
   businessArea: BusinessArea;
   scheme?: NumberingScheme;
   accreditationTrack: AccreditationTrack;

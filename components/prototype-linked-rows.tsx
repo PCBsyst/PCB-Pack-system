@@ -13,13 +13,13 @@ function useLinkedRecords() {
     setRecords(readPrototypeApplications());
     if (!hasEnvVars) return;
     const supabase = createClient();
-    void supabase.from("applications").select("*, candidates(id, name), jobs(id, job_no, management_no, standard, grade), application_workspaces(state)").order("received_at", { ascending: false }).then(({ data }) => {
+    void supabase.from("applications").select("*, candidates(id, name, name_en, birth_date, nationality, email, phone), jobs(id, job_no, management_no, standard, grade), application_workspaces(state)").order("received_at", { ascending: false }).then(({ data }) => {
       if (!data) return;
       const mapped: PrototypeApplicationRecord[] = data.flatMap((item) => {
         const candidate = Array.isArray(item.candidates) ? item.candidates[0] : item.candidates;
         const workspace = Array.isArray(item.application_workspaces) ? item.application_workspaces[0] : item.application_workspaces;
         const jobRows = (Array.isArray(item.jobs) ? item.jobs : []) as LinkedJobRow[];
-        return jobRows.map((job) => ({ id: item.id, candidateId: candidate?.id, jobId: job.id, applicationNo: item.application_no, receivedAt: item.received_at, candidateName: candidate?.name ?? "이름 미입력", businessArea: item.business_area, scheme: item.accreditation_scheme === "PJLA" ? "PJLA" : "IAS", accreditationTrack: item.accreditation_track, accreditationHidden: item.accreditation_hidden, applicationType: item.application_type, managementNo: job.management_no, jobNo: job.job_no, standard: job.standard, grade: job.grade, partnerCompany: item.partner_name_snapshot, primaryOwner: "로그인 사용자", status: "INTAKE_REVIEW", createdAt: item.created_at, workflow: workspace?.state ?? undefined }));
+        return jobRows.map((job) => ({ id: item.id, candidateId: candidate?.id, jobId: job.id, applicationNo: item.application_no, receivedAt: item.received_at, candidateName: candidate?.name ?? "이름 미입력", candidateNameEn: candidate?.name_en ?? undefined, candidateBirthDate: candidate?.birth_date ?? undefined, candidateNationality: candidate?.nationality ?? undefined, candidateEmail: candidate?.email ?? undefined, candidatePhone: candidate?.phone ?? undefined, businessArea: item.business_area, scheme: item.accreditation_scheme === "PJLA" ? "PJLA" : "IAS", accreditationTrack: item.accreditation_track, accreditationHidden: item.accreditation_hidden, applicationType: item.application_type, managementNo: job.management_no, jobNo: job.job_no, standard: job.standard, grade: job.grade, partnerCompany: item.partner_name_snapshot, primaryOwner: "로그인 사용자", status: "INTAKE_REVIEW", createdAt: item.created_at, workflow: workspace?.state ?? undefined }));
       });
       setRecords(mapped);
     });
@@ -34,7 +34,7 @@ export function PrototypeTotal({ base, unit }: { base: number; unit: string }) {
 
 export function PrototypeCandidateRows() {
   const records = useLinkedRecords();
-  return <>{records.map((record) => <tr key={`${record.id}-${record.jobNo}`} className="bg-blue-50/30 hover:bg-blue-50"><td className="px-5 py-4 font-semibold text-blue-800"><Link href={candidateLink(record)}>{record.candidateName}</Link><span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-[10px]">DB</span></td><td className="px-5 py-4 text-slate-400">미입력</td><td className="px-5 py-4 text-slate-400">미입력</td><td className="px-5 py-4 text-slate-400">미입력</td><td className="px-5 py-4 text-slate-400">미입력</td><td className="px-5 py-4">1건</td><td className="px-5 py-4"><Link href={jobLink(record)}>{record.jobNo}</Link></td></tr>)}</>;
+  return <>{records.map((record) => <tr key={`${record.id}-${record.jobNo}`} className="bg-blue-50/30 hover:bg-blue-50"><td className="px-5 py-4 font-semibold text-blue-800"><Link href={candidateLink(record)}>{record.candidateName}</Link><span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-[10px]">DB</span></td><td className="px-5 py-4 text-slate-600">{record.candidateNameEn || "미입력"}</td><td className="px-5 py-4 text-slate-600">{record.candidatePhone || "미입력"}</td><td className="px-5 py-4 text-slate-600">{record.candidateEmail || "미입력"}</td><td className="px-5 py-4 text-slate-600">{record.candidateNationality || "미입력"}</td><td className="px-5 py-4">1건</td><td className="px-5 py-4"><Link href={jobLink(record)}>{record.jobNo}</Link></td></tr>)}</>;
 }
 
 export function PrototypeJobRows() {

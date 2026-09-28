@@ -11,6 +11,8 @@ import { Field, controlClass } from "@/components/form-fields";
 import { Button } from "@/components/ui/button";
 import { readPrototypeApplications, savePrototypeApplication, type PrototypeApplicationRecord } from "@/lib/prototype-storage";
 import type { ApplicationType } from "@/types/certification";
+import { createClient } from "@/lib/supabase/client";
+import { hasEnvVars } from "@/lib/utils";
 
 export function NewApplicationForm() {
   const [receivedAt, setReceivedAt] = useState("2026-09-02");
@@ -26,6 +28,7 @@ export function NewApplicationForm() {
   const [notice, setNotice] = useState("");
   const [storedCount, setStoredCount] = useState(0);
   const [storedApplications, setStoredApplications] = useState<PrototypeApplicationRecord[]>([]);
+  const [saving, setSaving] = useState(false);
   const rules = useMemo(() => getNumberingRules(businessArea, scheme, accreditationTrack), [businessArea, scheme, accreditationTrack]);
   const selectedRule = getNumberingRule(businessArea, scheme, accreditationTrack, standard) ?? rules[0];
   const activeStandard = selectedRule?.field ?? "";
@@ -41,7 +44,7 @@ export function NewApplicationForm() {
 
   useEffect(() => { const records = readPrototypeApplications(); setStoredApplications(records); setStoredCount(records.length); }, []);
 
-  function registerApplication() {
+  async function registerApplication() {
     if (!candidateName.trim()) {
       setNotice("후보자 이름을 입력해 주세요.");
       return;
@@ -51,6 +54,22 @@ export function NewApplicationForm() {
       return;
     }
     const record: PrototypeApplicationRecord = { id: `local-${Date.now()}`, applicationNo, receivedAt, candidateName: candidateName.trim(), businessArea, scheme, accreditationTrack, accreditationHidden, applicationType, managementNo, jobNo, standard: activeStandard, grade, partnerCompany, primaryOwner: "김담당", status: "INTAKE_REVIEW", createdAt: new Date().toISOString() };
+    if (hasEnvVars) {
+      setSaving(true);
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase.rpc("create_application_bundle", { candidate_name: record.candidateName, application_no: record.applicationNo, received_at: record.receivedAt, business_area: record.businessArea, accreditation_scheme: record.scheme ?? "IAS", accreditation_track: record.accreditationTrack, accreditation_hidden: record.accreditationHidden, application_type: record.applicationType, partner_name: record.partnerCompany, management_no: record.managementNo, job_no: record.jobNo, standard: record.standard, grade: record.grade });
+        if (error) throw error;
+        record.id = String((data as { application_id?: string } | null)?.application_id ?? record.id);
+        setStoredApplications((records) => [record, ...records]);
+        setStoredCount((count) => count + 1);
+        setNotice(`${applicationNo} 신청이 Supabase DB에 등록되었습니다.`);
+        return;
+      } catch (error) {
+        setNotice(`DB 등록에 실패했습니다: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+        return;
+      } finally { setSaving(false); }
+    }
     savePrototypeApplication(record);
     setStoredApplications((records) => [record, ...records]);
     setStoredCount((count) => count + 1);
@@ -65,7 +84,7 @@ export function NewApplicationForm() {
         <p className="mt-3 text-xs text-slate-500">근거 시트: {selectedRule?.sourceSheet ?? "-"} · G는 등급 코드입니다. {selectedRule && !selectedRule.verified && "현재 시트에서 번호 예시를 확정하지 못해 자동 부여를 차단했습니다."}</p></div></section>
       <section className="rounded-lg border border-blue-100 bg-blue-50 p-5"><div className="flex items-start gap-3"><FolderPlus className="mt-0.5 h-5 w-5 text-blue-800"/><div><p className="font-semibold text-blue-950">권장 Dropbox 폴더명</p><p className="mt-2 rounded-md bg-white px-4 py-3 font-mono text-sm text-slate-800">{managementNo} {candidateName.trim() || "후보자명"} ({grade} {activeStandard} {applicationType})</p><p className="mt-2 text-xs text-blue-700">현재는 폴더명을 복사해 수동 생성하고, 향후 Dropbox 연결 시 버튼으로 생성할 수 있습니다.</p></div></div></section>
       {notice && <div role="status" className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900"><CheckCircle2 className="h-4 w-4"/>{notice}{notice.includes("등록되었습니다") && <Link href="/applications" className="ml-auto underline">목록에서 확인</Link>}</div>}
-      <div className="flex justify-end gap-2"><Button variant="outline" asChild><Link href="/applications">취소</Link></Button><Button type="button" className="bg-blue-800 hover:bg-blue-900" onClick={registerApplication}><Save/>번호 확정 및 신청 등록</Button></div>
+      <div className="flex justify-end gap-2"><Button variant="outline" asChild><Link href="/applications">취소</Link></Button><Button type="button" disabled={saving} className="bg-blue-800 hover:bg-blue-900" onClick={registerApplication}><Save/>{saving ? "DB 저장 중..." : "번호 확정 및 신청 등록"}</Button></div>
     </form>
   </div>;
 }

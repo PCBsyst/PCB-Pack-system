@@ -4,6 +4,8 @@ import { ApplicationDetail } from "@/components/application-detail";
 import { getCandidate, jobs } from "@/data/mock-data";
 import { applications, getApplication, getApplicationInvoices } from "@/data/workflow-data";
 import { PrototypeApplicationWorkspace } from "@/components/prototype-application-workspace";
+import { SupabaseApplicationWorkspace } from "@/components/supabase-application-workspace";
+import { hasEnvVars } from "@/lib/utils";
 
 export function generateStaticParams() { return applications.map((application) => ({ id: application.id })); }
 
@@ -11,6 +13,7 @@ export default async function ApplicationDetailPage({ params }: { params: Promis
   const { id } = await params;
   if (id.startsWith("local-")) return <AppShell title="신규 신청 업무" description="서류검토부터 최종 패키지까지 전체 업무를 처리합니다."><PrototypeApplicationWorkspace id={id}/></AppShell>;
   const application = getApplication(id);
+  if (!application && hasEnvVars) return <AppShell title="신규 신청 업무" description="Supabase에 저장된 신청의 전체 업무를 처리합니다."><SupabaseApplicationWorkspace id={id}/></AppShell>;
   if (!application) notFound();
   const candidate = getCandidate(application.candidateId);
   if (!candidate) notFound();

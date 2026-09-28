@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { getCandidate, jobs } from "@/data/mock-data";
 import { accreditationLabels, applicationStatusLabels, applications, businessAreaLabels } from "@/data/workflow-data";
 import { prototypeApplicationStatus, prototypeCandidateId, prototypeJobId, readPrototypeApplications, readPrototypeWorkflow, type PrototypeApplicationRecord } from "@/lib/prototype-storage";
+import { createClient } from "@/lib/supabase/client";
+import { hasEnvVars } from "@/lib/utils";
 
 const controlClass = "h-9 rounded-md border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-blue-200";
 type SortKey = "received-desc" | "received-asc" | "candidate" | "standard" | "partner" | "status";
@@ -23,7 +25,21 @@ export function ApplicationsTable() {
   const [sort, setSort] = useState<SortKey>("received-desc");
   const [localRows, setLocalRows] = useState<PrototypeApplicationRecord[]>([]);
 
-  useEffect(() => setLocalRows(readPrototypeApplications()), []);
+  useEffect(() => {
+    setLocalRows(readPrototypeApplications());
+    if (!hasEnvVars) return;
+    const supabase = createClient();
+    void supabase.from("applications").select("*, candidates(name), jobs(id, job_no, management_no, standard, grade)").order("received_at", { ascending: false }).then(({ data }) => {
+      if (!data) return;
+      const databaseRows: PrototypeApplicationRecord[] = data.flatMap((item) => {
+        const job = Array.isArray(item.jobs) ? item.jobs[0] : undefined;
+        const candidate = Array.isArray(item.candidates) ? item.candidates[0] : item.candidates;
+        if (!job) return [];
+        return [{ id: item.id, applicationNo: item.application_no, receivedAt: item.received_at, candidateName: candidate?.name ?? "이름 미입력", businessArea: item.business_area, scheme: item.accreditation_scheme === "PJLA" ? "PJLA" : "IAS", accreditationTrack: item.accreditation_track, accreditationHidden: item.accreditation_hidden, applicationType: item.application_type, managementNo: job.management_no, jobNo: job.job_no, standard: job.standard, grade: job.grade, partnerCompany: item.partner_name_snapshot, primaryOwner: "로그인 사용자", status: "INTAKE_REVIEW", createdAt: item.created_at } satisfies PrototypeApplicationRecord];
+      });
+      setLocalRows(databaseRows);
+    });
+  }, []);
 
   const standards = useMemo(() => [...new Set([...jobs.map((job) => job.standard), ...localRows.map((record) => record.standard)])].sort(), [localRows]);
   const grades = useMemo(() => [...new Set([...jobs.map((job) => job.currentGrade), ...localRows.map((record) => record.grade)])].sort(), [localRows]);

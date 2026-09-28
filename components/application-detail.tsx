@@ -16,10 +16,10 @@ import { addKoreanBusinessDays, nextKoreanBusinessDay } from "@/lib/business-day
 import { jobs as allJobs } from "@/data/mock-data";
 import { readTrainingInstitutions, type TrainingInstitution } from "@/lib/training-institutions";
 
-const tabs = ["신청 개요", "자료보관", "서류검토", "인보이스·입금", "인증심의", "Job·패키지"] as const;
+const tabs = ["신청 개요", "자료보관", "서류검토", "인보이스·입금", "인증심의", "Job·패키지", "처리이력"] as const;
 type Tab = (typeof tabs)[number];
 type DemoStage = "DOCUMENT_REVIEW" | "INVOICE_PENDING" | "PAYMENT_PENDING" | "DECISION_PENDING" | "CERTIFICATE_DRAFT_PENDING" | "CERTIFICATION_INFO_PENDING" | "ORIGINAL_DELIVERY_PENDING" | "PACKAGE_READY" | "COMPLETED";
-type DateAuditLog = { id: string; jobId: string; field: string; before: string; after: string; reason: string; actor: string; occurredAt: string };
+type DateAuditLog = { id: string; category: "처리" | "정정"; jobId: string; field: string; before: string; after: string; reason: string; actor: string; occurredAt: string };
 type TrainingProviderType = "PARTNER" | "NON_PARTNER";
 type ExamSchedule = Record<string, { providerType: TrainingProviderType; providerName: string; trainingEndDate: string; examNoticeDate: string; examDate: string }>;
 type RequirementResult = "충족" | "미충족" | "해당없음";
@@ -54,7 +54,10 @@ function makeInitial(application: CertificationApplication, jobs: Job[]): DemoSt
     panelMembers: panelRoster.map((name, index) => ({ name, selected: isLeeRenewal && index < 2, decision: isLeeRenewal && index < 2 ? "재승인" : "", comment: isLeeRenewal && index < 2 ? "갱신요건 충족 확인" : "" })),
     decisionDate: isLeeRenewal ? "2026-08-24" : "2026-09-14",
     dateOverrideReasons: { decision: "", delivery: Object.fromEntries(jobs.map((job) => [job.id, ""])) },
-    dateAuditLogs: [],
+    dateAuditLogs: isLeeRenewal ? [
+      { id: "seed-review", category: "처리", jobId: jobs[0]?.id ?? "", field: "서류검토", before: "서류검토", after: "인보이스", reason: "1·2차 서류검토 완료", actor: application.primaryOwner, occurredAt: "2026. 8. 16. 10:20" },
+      { id: "seed-decision", category: "처리", jobId: jobs[0]?.id ?? "", field: "인증심의", before: "인증심의", after: "초안 발행", reason: "패널 심의 및 대표자 최종 승인", actor: application.primaryOwner, occurredAt: "2026. 8. 24. 14:10" },
+    ] : [],
     finalApprover: "대표자",
     finalApprovalDate: isLeeRenewal ? "2026-08-22" : "2026-09-12",
     decisions: Object.fromEntries(jobs.map((job) => [job.id, { result: isLeeRenewal ? "재승인" : "", comment: isLeeRenewal ? "갱신 재승인" : "" }])),
@@ -77,9 +80,12 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   const [trainingInstitutions, setTrainingInstitutions] = useState<TrainingInstitution[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState("");
+  const [correctionTarget, setCorrectionTarget] = useState("review.result");
+  const [correctionValue, setCorrectionValue] = useState("");
+  const [correctionReason, setCorrectionReason] = useState("");
   const storageKey = `certification-demo:v4:${application.id}`;
 
-  useEffect(() => { try { const stored = window.localStorage.getItem(storageKey); if (stored) { const initial = makeInitial(application, linkedJobs); const saved = JSON.parse(stored) as Partial<DemoState>; const certificates = Object.fromEntries(linkedJobs.map((job) => [job.id, { ...initial.certificates[job.id], ...saved.certificates?.[job.id] }])); const deliveryDocuments = Object.fromEntries(linkedJobs.map((job) => [job.id, { ...initial.deliveryDocuments[job.id], ...saved.deliveryDocuments?.[job.id], education: { ...initial.deliveryDocuments[job.id].education, ...saved.deliveryDocuments?.[job.id]?.education, applicability: "REQUIRED" as DocumentApplicability } }])) as DemoDeliveryDocuments; setDemo({ ...initial, ...saved, storedDocuments: { ...initial.storedDocuments, ...saved.storedDocuments }, reviewRequirements: { ...initial.reviewRequirements, ...saved.reviewRequirements }, review: { ...initial.review, ...saved.review }, englishText: { ...initial.englishText, ...saved.englishText }, examSchedules: { ...initial.examSchedules, ...saved.examSchedules }, assessment: saved.assessment ?? initial.assessment, panelMembers: saved.panelMembers ?? initial.panelMembers, certificates, deliveryDocuments }); setLastSavedAt("저장된 내용을 불러왔습니다."); } else { const profiles = readStoredProfiles(); if (profiles.length) setDemo((current) => ({ ...current, deliveryDocuments: Object.fromEntries(linkedJobs.map((job) => { const profile = profiles.find((item) => profileKey(item) === profileKey({ businessArea: job.businessArea ?? application.businessArea, standard: job.standard, grade: job.currentGrade })); return [job.id, Object.fromEntries(deliveryDocumentRows.map(({ key }) => [key, { ...current.deliveryDocuments[job.id][key], applicability: key === "education" ? "REQUIRED" : profile?.rules[key] ?? current.deliveryDocuments[job.id][key].applicability }]))]; })) as DemoDeliveryDocuments })); } } catch { setNotice("저장된 업무기록을 읽지 못했습니다. 다시 저장해 주세요."); } finally { setHydrated(true); } }, [application, linkedJobs, storageKey]);
+  useEffect(() => { try { const stored = window.localStorage.getItem(storageKey); if (stored) { const initial = makeInitial(application, linkedJobs); const saved = JSON.parse(stored) as Partial<DemoState>; const certificates = Object.fromEntries(linkedJobs.map((job) => [job.id, { ...initial.certificates[job.id], ...saved.certificates?.[job.id] }])); const deliveryDocuments = Object.fromEntries(linkedJobs.map((job) => [job.id, { ...initial.deliveryDocuments[job.id], ...saved.deliveryDocuments?.[job.id], education: { ...initial.deliveryDocuments[job.id].education, ...saved.deliveryDocuments?.[job.id]?.education, applicability: "REQUIRED" as DocumentApplicability } }])) as DemoDeliveryDocuments; const dateAuditLogs = (saved.dateAuditLogs ?? initial.dateAuditLogs).map((log) => ({ ...log, category: log.category ?? "정정" as const })); setDemo({ ...initial, ...saved, storedDocuments: { ...initial.storedDocuments, ...saved.storedDocuments }, reviewRequirements: { ...initial.reviewRequirements, ...saved.reviewRequirements }, review: { ...initial.review, ...saved.review }, englishText: { ...initial.englishText, ...saved.englishText }, examSchedules: { ...initial.examSchedules, ...saved.examSchedules }, assessment: saved.assessment ?? initial.assessment, panelMembers: saved.panelMembers ?? initial.panelMembers, certificates, deliveryDocuments, dateAuditLogs }); setLastSavedAt("저장된 내용을 불러왔습니다."); } else { const profiles = readStoredProfiles(); if (profiles.length) setDemo((current) => ({ ...current, deliveryDocuments: Object.fromEntries(linkedJobs.map((job) => { const profile = profiles.find((item) => profileKey(item) === profileKey({ businessArea: job.businessArea ?? application.businessArea, standard: job.standard, grade: job.currentGrade })); return [job.id, Object.fromEntries(deliveryDocumentRows.map(({ key }) => [key, { ...current.deliveryDocuments[job.id][key], applicability: key === "education" ? "REQUIRED" : profile?.rules[key] ?? current.deliveryDocuments[job.id][key].applicability }]))]; })) as DemoDeliveryDocuments })); } } catch { setNotice("저장된 업무기록을 읽지 못했습니다. 다시 저장해 주세요."); } finally { setHydrated(true); } }, [application, linkedJobs, storageKey]);
   useEffect(() => { if (!hydrated) return; try { window.localStorage.setItem(storageKey, JSON.stringify(demo)); } catch { setNotice("브라우저 저장공간에 기록하지 못했습니다."); } }, [demo, hydrated, storageKey]);
   useEffect(() => { if (new URLSearchParams(window.location.search).get("tab") === "package") setActive("Job·패키지"); }, []);
   useEffect(() => setTrainingInstitutions(readTrainingInstitutions()), []);
@@ -89,7 +95,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   const packageContext = useMemo(() => ({ application, candidate, jobs: linkedJobs, reviewRequirements: demo.reviewRequirements, review: demo.review, invoiceNo: demo.invoiceNo, invoiceAmount: demo.invoiceAmount, invoiceIssuedAt: demo.invoiceIssuedAt, paidAmount: demo.paidAmount, paymentConfirmedAt: demo.paymentConfirmedAt, assessment: demo.assessment, panelMembers: demo.panelMembers, decisions: demo.decisions, certificates: demo.certificates, deliveryDocuments: demo.deliveryDocuments, decisionDate: demo.decisionDate, finalApprover: demo.finalApprover, finalApprovalDate: demo.finalApprovalDate, englishText: demo.englishText }), [application, candidate, linkedJobs, demo]);
   const currentIndex = stageOrder.indexOf(demo.stage);
   const saveDraft = () => { try { window.localStorage.setItem(storageKey, JSON.stringify(demo)); const savedAt = new Date().toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" }); setLastSavedAt(`${savedAt} 저장 완료`); setNotice("현재 화면의 업무 입력값을 저장했습니다."); } catch { setNotice("브라우저 저장공간에 기록하지 못했습니다."); } };
-  const move = (stage: DemoStage, tab: Tab, message: string) => { setDemo((current) => ({ ...current, stage })); setActive(tab); setNotice(message); };
+  const move = (stage: DemoStage, tab: Tab, message: string) => { setDemo((current) => ({ ...current, stage, dateAuditLogs: [...current.dateAuditLogs, createAuditLog("처리", "", "업무 단계", stageLabels[current.stage], stageLabels[stage], message, application.primaryOwner)] })); setActive(tab); setNotice(message); };
   const reset = () => { setDemo(makeInitial(application, linkedJobs)); window.localStorage.removeItem(storageKey); setActive("서류검토"); setNotice("샘플 진행상태를 처음으로 되돌렸습니다."); };
 
   const finishReview = () => {
@@ -152,6 +158,39 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     const selected = (["KR", "EN"] as DocumentLanguage[]).filter((language) => languages[language]);
     const files = linkedJobs.flatMap((job) => selected.flatMap((language) => buildDocuments(packageContext, job, language).map((document) => ({ name: `${job.jobNo}/${language}/${document.fileName}`, content: document.html }))));
     downloadBlob(`${application.applicationNo}_기록패키지.zip`, createZip(files));
+  };
+  const correctionOptions = [
+    { key: "review.result", label: "1차 검토결과", value: demo.review.result },
+    { key: "review.comment", label: "1차 검토의견", value: demo.review.comment },
+    { key: "review.verificationResult", label: "2차 검증결과", value: demo.review.verificationResult },
+    { key: "invoiceNo", label: "인보이스 번호", value: demo.invoiceNo },
+    { key: "invoiceIssuedAt", label: "인보이스 발행일", value: demo.invoiceIssuedAt, type: "date" },
+    { key: "paymentConfirmedAt", label: "입금 확인일", value: demo.paymentConfirmedAt, type: "date" },
+    { key: "decisionDate", label: "패널 심의일", value: demo.decisionDate, type: "date" },
+    { key: "finalApprovalDate", label: "최종 승인일", value: demo.finalApprovalDate, type: "date" },
+    ...linkedJobs.flatMap((job) => [
+      { key: `certificateNo:${job.id}`, label: `${job.jobNo} · 인증번호`, value: demo.certificates[job.id]?.certificationNo ?? "" },
+      { key: `expiryDate:${job.id}`, label: `${job.jobNo} · 만료일`, value: demo.certificates[job.id]?.expiryDate ?? "", type: "date" },
+      { key: `draftIssuedAt:${job.id}`, label: `${job.jobNo} · 초안 발행일`, value: demo.certificates[job.id]?.draftIssuedAt ?? "", type: "date" },
+      { key: `originalSentAt:${job.id}`, label: `${job.jobNo} · 원본 송부일`, value: demo.certificates[job.id]?.originalSentAt ?? "", type: "date" },
+      { key: `trackingNumber:${job.id}`, label: `${job.jobNo} · 운송장 번호`, value: demo.certificates[job.id]?.trackingNumber ?? "" },
+    ]),
+  ];
+  const selectedCorrection = correctionOptions.find((item) => item.key === correctionTarget) ?? correctionOptions[0];
+  const applyCorrection = () => {
+    const after = correctionValue.trim();
+    const before = selectedCorrection.value ?? "";
+    if (!after || !correctionReason.trim()) { setNotice("정정값과 정정 사유를 모두 입력해 주세요."); return; }
+    if (after === before) { setNotice("변경 전과 다른 값을 입력해 주세요."); return; }
+    setDemo((current) => {
+      let next = applyCorrectionValue(current, correctionTarget, after);
+      const jobId = correctionTarget.includes(":") ? correctionTarget.split(":")[1] : "";
+      next = { ...next, dateAuditLogs: [...next.dateAuditLogs, createAuditLog("정정", jobId, selectedCorrection.label, before, after, correctionReason.trim(), application.primaryOwner)] };
+      return next;
+    });
+    setCorrectionValue("");
+    setCorrectionReason("");
+    setNotice(`${selectedCorrection.label}을(를) 정정하고 변경이력을 기록했습니다.`);
   };
 
   return <div className="space-y-5">
@@ -219,6 +258,17 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
       <div className="space-y-4">{linkedJobs.map((job) => { const certificate = demo.certificates[job.id]; const koreanDocuments = buildDocuments(packageContext, job, "KR"); const englishDocuments = buildDocuments(packageContext, job, "EN"); return <div key={job.id} className="rounded-lg border"><div className="flex flex-col gap-3 border-b bg-slate-50 p-4 sm:flex-row sm:items-center"><div className="flex-1"><p className="font-semibold">{job.standard} / {job.currentGrade}</p><p className="mt-1 text-xs text-slate-500">{job.jobNo} · 최종 승인 {demo.decisions[job.id]?.result || "미입력"}</p></div><Button variant="outline" asChild><Link href={`/jobs/${job.id}`}>Job 열기</Link></Button></div><div className="grid gap-4 p-4 xl:grid-cols-3"><div className="rounded-md border p-4"><p className="text-sm font-semibold">1. 인증서 초안</p><p className="mt-1 text-xs leading-5 text-slate-500">후보자·규격·등급 등 기본 신청정보만 표시하며 인증번호와 유효기간 등 핵심 발행정보는 제외합니다.</p><div className="mt-4"><CertificateField type="date" label="초안 발행일" value={certificate?.draftIssuedAt} onChange={(value) => changeCertificate(job.id, "draftIssuedAt", value, setDemo)}/></div></div><div className="rounded-md border p-4"><p className="text-sm font-semibold">2. 인증서 전자본 PDF</p><div className="mt-4 space-y-4"><CertificateField label="인증번호" value={certificate?.certificationNo} onChange={(value) => changeCertificate(job.id, "certificationNo", value, setDemo)}/><CertificateField type="date" label="전자본 발행일" value={certificate?.issueDate} onChange={(value) => changeCertificate(job.id, "issueDate", value, setDemo)}/><CertificateField type="date" label="만료일" value={certificate?.expiryDate} onChange={(value) => changeCertificate(job.id, "expiryDate", value, setDemo)}/></div></div><div className="rounded-md border p-4"><p className="text-sm font-semibold">3. 인증서 원본 송부</p><div className="mt-4 space-y-4"><CertificateField type="date" label="원본 송부일" value={certificate?.originalSentAt} onChange={(value) => changeCertificate(job.id, "originalSentAt", value, setDemo)}/><CertificateField label="운송장 번호" value={certificate?.trackingNumber} placeholder="필수 입력" onChange={(value) => changeCertificate(job.id, "trackingNumber", value, setDemo)}/></div></div></div>{demo.generated && <div className="border-t p-4"><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead className="bg-slate-50 text-xs text-slate-500"><tr><th className="px-3 py-3 text-left">문서</th><th className="px-3 py-3 text-left">국문</th><th className="px-3 py-3 text-left">영문</th></tr></thead><tbody className="divide-y">{koreanDocuments.map((document, index) => <tr key={document.fileName}><td className="px-3 py-3 font-medium">{document.title}</td><td className="px-3 py-3"><DocumentButtons document={document} enabled={languages.KR} setNotice={setNotice} onWord={document.title === "인증결정보고서" ? async () => { try { await downloadDecisionReportDocx(packageContext, job); setNotice("기업 머리글·바닥글·워터마크가 포함된 실제 DOCX를 생성했습니다."); } catch { setNotice("DOCX 생성에 실패했습니다. 다시 시도해 주세요."); } } : undefined}/></td><td className="px-3 py-3"><DocumentButtons document={englishDocuments[index]} enabled={languages.EN} setNotice={setNotice}/></td></tr>)}</tbody></table></div></div>}</div>; })}</div>
       <div className="mt-5 flex flex-wrap justify-end gap-2"><Button variant="outline" disabled={demo.stage !== "CERTIFICATE_DRAFT_PENDING"} onClick={finishDraft}><FileText/>초안 발행 기록</Button><Button variant="outline" disabled={demo.stage !== "CERTIFICATION_INFO_PENDING"} onClick={finishCertification}><Check/>전자본 PDF 발행 확정</Button><Button variant="outline" disabled={demo.stage !== "ORIGINAL_DELIVERY_PENDING"} onClick={finishOriginalDelivery}><Check/>원본 송부 확인</Button><Button disabled={demo.stage !== "PACKAGE_READY"} onClick={generate}><PackageCheck/>선택 문서 생성</Button><Button variant="outline" disabled={!demo.generated || (!languages.KR && !languages.EN)} onClick={downloadZip}><FileArchive/>국·영문 전체 ZIP 다운로드</Button></div>
     </Section>}
+
+    {active === "처리이력" && <div className="space-y-5">
+      <Section title="업무정보 정정" description="완료된 업무정보를 수정할 때 변경 전·후 값과 사유를 함께 보존합니다.">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p className="font-semibold">변경 불가 기준값</p><p className="mt-1">인증서 발행일은 확정 후 정정 대상에서 제외됩니다. 변경이 필요한 경우 신규 회차 또는 별도 승인 절차로 처리합니다.</p></div>
+        <div className="mt-5 grid gap-4 lg:grid-cols-2"><Field label="정정 항목"><select className={controlClass} value={correctionTarget} onChange={(event) => { const target = event.target.value; setCorrectionTarget(target); setCorrectionValue(""); }}>{correctionOptions.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></Field><Field label="현재 값"><input className={`${controlClass} bg-slate-50`} readOnly value={selectedCorrection.value ?? ""}/></Field><Field label="정정 후 값"><input type={selectedCorrection.type ?? "text"} className={controlClass} value={correctionValue} onChange={(event) => setCorrectionValue(event.target.value)} placeholder="변경할 값을 입력"/></Field><Field label="정정 사유"><input className={controlClass} value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} placeholder="필수 입력"/></Field></div>
+        <div className="mt-5 flex justify-end"><Button disabled={!correctionValue.trim() || !correctionReason.trim()} onClick={applyCorrection}><Save/>정정 적용 및 이력 저장</Button></div>
+      </Section>
+      <Section title="처리·정정 이력" description="업무 단계 진행과 핵심정보 정정 내역을 시간순으로 추적합니다.">
+        {demo.dateAuditLogs.length === 0 ? <div className="py-10 text-center text-sm text-slate-500">아직 기록된 처리이력이 없습니다.</div> : <div className="relative ml-2 border-l border-slate-200 pl-6">{demo.dateAuditLogs.slice().reverse().map((log) => <div key={log.id} className="relative pb-6 last:pb-0"><span className={`absolute -left-[31px] top-1 h-3 w-3 rounded-full ring-4 ring-white ${log.category === "정정" ? "bg-amber-500" : "bg-blue-700"}`}/><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${log.category === "정정" ? "bg-amber-100 text-amber-900" : "bg-blue-50 text-blue-800"}`}>{log.category}</span><p className="font-semibold">{log.field}</p>{log.jobId && <span className="text-xs text-slate-500">{linkedJobs.find((job) => job.id === log.jobId)?.jobNo}</span>}</div><p className="mt-2 text-sm"><span className="text-slate-500">변경 전 </span>{log.before || "미입력"}<span className="mx-2 text-slate-300">→</span><span className="text-slate-500">변경 후 </span>{log.after || "미입력"}</p><p className="mt-1 text-sm text-slate-700">{log.reason}</p><p className="mt-1 text-xs text-slate-500">{log.actor} · {log.occurredAt}</p></div>)}</div>}
+      </Section>
+    </div>}
   </div>;
 }
 
@@ -248,7 +298,20 @@ function DateOverrideFields({ job, issueDate, decisionDate, deliveryDate, reason
 
 function ReadinessCard({ label, value, alert = false }: { label: string; value: string; alert?: boolean }) { return <div className={`rounded-md border p-3 ${alert ? "border-amber-300 bg-amber-50" : "bg-white"}`}><p className="text-xs text-slate-500">{label}</p><p className={`mt-1 text-sm font-semibold ${alert ? "text-amber-900" : "text-slate-900"}`}>{value}</p></div>; }
 
-function recordDateAudit(jobId: string, field: string, before: string, after: string, reason: string, actor: string, setDemo: React.Dispatch<React.SetStateAction<DemoState>>) { setDemo((current) => ({ ...current, dateAuditLogs: [...current.dateAuditLogs, { id: `${Date.now()}-${jobId}-${field}`, jobId, field, before, after, reason, actor, occurredAt: new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) }] })); }
+function createAuditLog(category: DateAuditLog["category"], jobId: string, field: string, before: string, after: string, reason: string, actor: string): DateAuditLog { return { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, category, jobId, field, before, after, reason, actor, occurredAt: new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) }; }
+function recordDateAudit(jobId: string, field: string, before: string, after: string, reason: string, actor: string, setDemo: React.Dispatch<React.SetStateAction<DemoState>>) { setDemo((current) => ({ ...current, dateAuditLogs: [...current.dateAuditLogs, createAuditLog("정정", jobId, field, before, after, reason, actor)] })); }
+
+function applyCorrectionValue(current: DemoState, key: string, value: string): DemoState {
+  if (key === "review.result") return { ...current, review: { ...current.review, result: value as DemoReview["result"] } };
+  if (key === "review.comment") return { ...current, review: { ...current.review, comment: value } };
+  if (key === "review.verificationResult") return { ...current, review: { ...current.review, verificationResult: value as DemoReview["verificationResult"] } };
+  if (key === "invoiceNo") return { ...current, invoiceNo: value };
+  if (key === "invoiceIssuedAt" || key === "paymentConfirmedAt" || key === "decisionDate" || key === "finalApprovalDate") return { ...current, [key]: nextKoreanBusinessDay(value) };
+  const [field, jobId] = key.split(":");
+  if (!jobId || !current.certificates[jobId]) return current;
+  const adjusted = ["expiryDate", "draftIssuedAt", "originalSentAt"].includes(field) ? nextKoreanBusinessDay(value) : value;
+  return { ...current, certificates: { ...current.certificates, [jobId]: { ...current.certificates[jobId], [field]: adjusted } } };
+}
 
 function changeDeliveryDocument(jobId: string, key: DeliveryDocumentKey, patch: Partial<DemoDeliveryDocuments[string][DeliveryDocumentKey]>, setDemo: React.Dispatch<React.SetStateAction<DemoState>>) { const adjusted = patch.date ? { ...patch, date: nextKoreanBusinessDay(patch.date) } : patch; setDemo((current) => ({ ...current, deliveryDocuments: { ...current.deliveryDocuments, [jobId]: { ...current.deliveryDocuments[jobId], [key]: { ...current.deliveryDocuments[jobId][key], ...adjusted } } } })); }
 function changeExamSchedule(jobId: string, patch: Partial<ExamSchedule[string]>, receivedAt: string, setDemo: React.Dispatch<React.SetStateAction<DemoState>>) { setDemo((current) => { const schedule = { ...current.examSchedules[jobId], ...patch }; if ("providerType" in patch || "trainingEndDate" in patch) { if (schedule.providerType === "NON_PARTNER") { schedule.examNoticeDate = addKoreanBusinessDays(receivedAt, -10); schedule.examDate = addKoreanBusinessDays(receivedAt, -5); } else if (schedule.trainingEndDate) { schedule.examDate = schedule.trainingEndDate; schedule.examNoticeDate = addKoreanBusinessDays(schedule.trainingEndDate, -5); } else { schedule.examNoticeDate = ""; schedule.examDate = ""; } } const jobDocuments = current.deliveryDocuments[jobId]; return { ...current, examSchedules: { ...current.examSchedules, [jobId]: schedule }, deliveryDocuments: { ...current.deliveryDocuments, [jobId]: { ...jobDocuments, examNotice: { ...jobDocuments.examNotice, received: Boolean(schedule.examNoticeDate), date: schedule.examNoticeDate }, examAnswers: { ...jobDocuments.examAnswers, received: Boolean(schedule.examDate), date: schedule.examDate } } } }; }); }

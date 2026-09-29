@@ -37,6 +37,16 @@ const reviewRequirementItems = ["교육요건", "학력요건", "업무경력요
 const stageOrder: DemoStage[] = ["DOCUMENT_REVIEW", "INVOICE_PENDING", "PAYMENT_PENDING", "DECISION_PENDING", "CERTIFICATE_DRAFT_PENDING", "CERTIFICATION_INFO_PENDING", "ORIGINAL_DELIVERY_PENDING", "PACKAGE_READY", "COMPLETED"];
 const stageLabels: Record<DemoStage, string> = { DOCUMENT_REVIEW: "서류검토", INVOICE_PENDING: "인보이스", PAYMENT_PENDING: "입금 확인", DECISION_PENDING: "인증심의", CERTIFICATE_DRAFT_PENDING: "초안 발행", CERTIFICATION_INFO_PENDING: "전자본 발행", ORIGINAL_DELIVERY_PENDING: "원본 송부", PACKAGE_READY: "패키지", COMPLETED: "완료" };
 
+function officialApplicationStatus(stage: DemoStage) {
+  if (["DOCUMENT_REVIEW", "INVOICE_PENDING", "PAYMENT_PENDING", "DECISION_PENDING", "COMPLETED"].includes(stage)) return stage;
+  return "PARTIALLY_COMPLETED";
+}
+
+function officialCycleStatus(stage: DemoStage) {
+  if (stage === "ORIGINAL_DELIVERY_PENDING" || stage === "PACKAGE_READY") return "DELIVERY_PENDING";
+  return stage;
+}
+
 function makeInitial(application: CertificationApplication, jobs: Job[]): DemoState {
   const isLeeRenewal = application.id === "app-003";
   return {
@@ -124,6 +134,21 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
 
   useEffect(() => { if (usesSupabaseWorkspace) { const supabase = createClient(); void supabase.from("application_workspaces").select("state").eq("application_id", application.id).maybeSingle().then(({ data, error }) => { if (error) setNotice(`공유 업무기록을 읽지 못했습니다: ${error.message}`); else if (data?.state) setDemo((current) => ({ ...current, ...(data.state as Partial<DemoState>) })); setLastSavedAt(data?.state ? "Supabase 저장 내용을 불러왔습니다." : "새 공유 업무기록입니다."); setHydrated(true); }); return; } try { const stored = window.localStorage.getItem(storageKey); if (stored) { const initial = makeInitial(application, linkedJobs); const saved = JSON.parse(stored) as Partial<DemoState>; const certificates = Object.fromEntries(linkedJobs.map((job) => [job.id, { ...initial.certificates[job.id], ...saved.certificates?.[job.id] }])); const deliveryDocuments = Object.fromEntries(linkedJobs.map((job) => [job.id, { ...initial.deliveryDocuments[job.id], ...saved.deliveryDocuments?.[job.id], education: { ...initial.deliveryDocuments[job.id].education, ...saved.deliveryDocuments?.[job.id]?.education, applicability: "REQUIRED" as DocumentApplicability } }])) as DemoDeliveryDocuments; const dateAuditLogs = (saved.dateAuditLogs ?? initial.dateAuditLogs).map((log) => ({ ...log, category: log.category ?? "정정" as const })); setDemo({ ...initial, ...saved, storedDocuments: { ...initial.storedDocuments, ...saved.storedDocuments }, reviewRequirements: { ...initial.reviewRequirements, ...saved.reviewRequirements }, review: { ...initial.review, ...saved.review }, englishText: { ...initial.englishText, ...saved.englishText }, examSchedules: { ...initial.examSchedules, ...saved.examSchedules }, assessment: saved.assessment ?? initial.assessment, panelMembers: saved.panelMembers ?? initial.panelMembers, certificates, deliveryDocuments, dateAuditLogs }); setLastSavedAt("저장된 내용을 불러왔습니다."); } else { const profiles = readStoredProfiles(); if (profiles.length) setDemo((current) => ({ ...current, deliveryDocuments: Object.fromEntries(linkedJobs.map((job) => { const profile = profiles.find((item) => profileKey(item) === profileKey({ businessArea: job.businessArea ?? application.businessArea, standard: job.standard, grade: job.currentGrade })); return [job.id, Object.fromEntries(deliveryDocumentRows.map(({ key }) => [key, { ...current.deliveryDocuments[job.id][key], applicability: key === "education" ? "REQUIRED" : profile?.rules[key] ?? current.deliveryDocuments[job.id][key].applicability }]))]; })) as DemoDeliveryDocuments })); } } catch { setNotice("저장된 업무기록을 읽지 못했습니다. 다시 저장해 주세요."); } finally { setHydrated(true); } }, [application, linkedJobs, storageKey, usesSupabaseWorkspace]);
   useEffect(() => { if (!hydrated || (usesSupabaseWorkspace && editLock !== "OWNED")) return; if (usesSupabaseWorkspace) { const timeout = window.setTimeout(() => { const supabase = createClient(); void supabase.from("application_workspaces").upsert({ application_id: application.id, state: demo }, { onConflict: "application_id" }).then(({ error }) => { if (error) setNotice(`공유 저장에 실패했습니다: ${error.message}`); }); }, 800); return () => window.clearTimeout(timeout); } try { window.localStorage.setItem(storageKey, JSON.stringify(demo)); } catch { setNotice("브라우저 저장공간에 기록하지 못했습니다."); } }, [application.id, demo, editLock, hydrated, storageKey, usesSupabaseWorkspace]);
+  useEffect(() => {
+    if (!hydrated || !usesSupabaseWorkspace || editLock !== "OWNED") return;
+    const supabase = createClient();
+    const sync = async () => {
+      const packageStatus = demo.stage === "COMPLETED" && demo.generated ? "GENERATED" : demo.stage === "PACKAGE_READY" ? "READY" : "NOT_READY";
+      const { error: applicationError } = await supabase.from("applications").update({ status: officialApplicationStatus(demo.stage), package_status: packageStatus }).eq("id", application.id);
+      const jobIds = linkedJobs.map((job) => job.id);
+      const { error: cycleError } = jobIds.length ? await supabase.from("processing_cycles").update({ status: officialCycleStatus(demo.stage), completed_at: demo.stage === "COMPLETED" ? new Date().toISOString() : null }).in("job_id", jobIds) : { error: null };
+      const issued = linkedJobs.filter((job) => demo.certificates[job.id]?.issueDate).map((job) => job.id);
+      const { error: jobError } = issued.length && ["ORIGINAL_DELIVERY_PENDING", "PACKAGE_READY", "COMPLETED"].includes(demo.stage) ? await supabase.from("jobs").update({ certification_state: "ACTIVE" }).in("id", issued) : { error: null };
+      const error = applicationError ?? cycleError ?? jobError;
+      if (error) setNotice(`공식 업무상태 동기화에 실패했습니다: ${error.message}`);
+    };
+    void sync();
+  }, [application.id, demo.generated, demo.stage, editLock, hydrated, linkedJobs, usesSupabaseWorkspace]);
   useEffect(() => { if (new URLSearchParams(window.location.search).get("tab") === "package") setActive("Job·패키지"); }, []);
   useEffect(() => {
     setTrainingInstitutions(readTrainingInstitutions());

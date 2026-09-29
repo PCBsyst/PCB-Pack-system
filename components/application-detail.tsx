@@ -270,16 +270,39 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     if (approved.some((job) => !demo.certificates[job.id]?.draftIssuedAt)) { setNotice("승인된 모든 Job의 초안 발행일을 입력해 주세요."); return; }
     move("CERTIFICATION_INFO_PENDING", "Job·패키지", "초안 발행을 기록했습니다. 인증번호와 전자본 PDF 발행정보를 입력하세요.");
   };
-  const finishCertification = () => {
+  const finishCertification = async () => {
     const approved = linkedJobs.filter((job) => ["승인", "재승인"].includes(demo.decisions[job.id]?.result));
     if (!approved.length) { setNotice("승인된 Job이 없어 패키지 생성 단계로 진행할 수 없습니다."); return; }
     if (approved.some((job) => !demo.certificates[job.id]?.certificationNo || !demo.certificates[job.id]?.issueDate || !demo.certificates[job.id]?.expiryDate)) { setNotice("승인 Job의 인증번호·발행일·만료일을 입력해 주세요."); return; }
     if (approved.some((job) => !/^\d{8}$/.test(demo.certificates[job.id]?.certificationNo ?? ""))) { setNotice("인증번호는 숫자 8자리 형식이어야 합니다."); return; }
+    if (usesSupabaseWorkspace) {
+      if (approved.some((job) => !cycleIds[job.id])) { setNotice("Job 처리 회차를 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요."); return; }
+      const supabase = createClient();
+      const rows = approved.map((job) => { const certificate = demo.certificates[job.id]; return { job_id: job.id, cycle_id: cycleIds[job.id], certification_no: certificate.certificationNo, revision: 0, draft_issued_at: certificate.draftIssuedAt || null, issue_date: certificate.issueDate, valid_from: certificate.issueDate, valid_until: certificate.expiryDate, state: "ACTIVE", history_state: "CURRENT" }; });
+      const { error } = await supabase.from("certification_records").upsert(rows, { onConflict: "cycle_id" });
+      if (error) { setNotice(`인증정보 정식 기록 저장에 실패했습니다: ${error.message}`); return; }
+      const cycleUpdates = await Promise.all(approved.map((job) => supabase.from("processing_cycles").update({ planned_issue_date: demo.certificates[job.id].issueDate }).eq("id", cycleIds[job.id])));
+      const cycleError = cycleUpdates.find((result) => result.error)?.error;
+      if (cycleError) { setNotice(`처리 회차 인증발행일 저장에 실패했습니다: ${cycleError.message}`); return; }
+      const { error: jobError } = await supabase.from("jobs").update({ certification_state: "ACTIVE" }).in("id", approved.map((job) => job.id));
+      if (jobError) { setNotice(`Job 인증상태 저장에 실패했습니다: ${jobError.message}`); return; }
+    }
     move("ORIGINAL_DELIVERY_PENDING", "Job·패키지", "전자본 PDF 발행을 기록했습니다. 원본 송부정보를 입력하세요.");
   };
-  const finishOriginalDelivery = () => {
+  const finishOriginalDelivery = async () => {
     const approved = linkedJobs.filter((job) => ["승인", "재승인"].includes(demo.decisions[job.id]?.result));
     if (approved.some((job) => !demo.certificates[job.id]?.originalSentAt || !demo.certificates[job.id]?.trackingNumber)) { setNotice("승인된 모든 Job의 원본 송부일과 운송장 번호를 입력해 주세요."); return; }
+    if (usesSupabaseWorkspace) {
+      if (approved.some((job) => !cycleIds[job.id])) { setNotice("Job 처리 회차를 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요."); return; }
+      const supabase = createClient();
+      const { data: userData } = await supabase.auth.getUser();
+      const rows = approved.map((job) => { const certificate = demo.certificates[job.id]; const delivery = demo.deliveryDocuments[job.id]; return { cycle_id: cycleIds[job.id], document_checklist: delivery, delivery_method: "이메일·우편", electronic_issued_at: certificate.issueDate, original_sent_at: certificate.originalSentAt, tracking_number: certificate.trackingNumber, delivered_by: userData.user?.id ?? null, note: delivery?.deliveryConfirmation?.comment || null }; });
+      const { error } = await supabase.from("document_deliveries").upsert(rows, { onConflict: "cycle_id" });
+      if (error) { setNotice(`문서전달 정식 기록 저장에 실패했습니다: ${error.message}`); return; }
+      const cycleUpdates = await Promise.all(approved.map((job) => supabase.from("processing_cycles").update({ delivery_date: demo.deliveryDocuments[job.id]?.deliveryConfirmation?.date || demo.certificates[job.id].originalSentAt }).eq("id", cycleIds[job.id])));
+      const cycleError = cycleUpdates.find((result) => result.error)?.error;
+      if (cycleError) { setNotice(`처리 회차 문서전달일 저장에 실패했습니다: ${cycleError.message}`); return; }
+    }
     move("PACKAGE_READY", "Job·패키지", "원본 송부정보까지 확인했습니다. 기록 패키지를 생성하세요.");
   };
   const generate = () => {

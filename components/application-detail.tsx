@@ -99,6 +99,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   const [correctionReason, setCorrectionReason] = useState("");
   const [dateRules, setDateRules] = useState<DateRules>({ decisionDays: 5, deliveryDays: 1 });
   const [cycleIds, setCycleIds] = useState<Record<string, string>>({});
+  const [panelMemberIds, setPanelMemberIds] = useState<Record<string, string>>({});
   const storageKey = `certification-demo:v4:${application.id}`;
   const usesSupabaseWorkspace = Boolean(hasEnvVars && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(application.id));
   const [editLock, setEditLock] = useState<EditLockState>(usesSupabaseWorkspace ? "CHECKING" : "LOCAL");
@@ -163,9 +164,10 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   useEffect(() => {
     if (!hasEnvVars || !hydrated) return;
     const supabase = createClient();
-    void supabase.from("panel_members").select("name").eq("active", true).order("name").then(({ data }) => {
+    void supabase.from("panel_members").select("id, name").eq("active", true).order("name").then(({ data }) => {
       if (!data?.length) return;
       const activeNames = data.map((item) => item.name);
+      setPanelMemberIds(Object.fromEntries(data.map((item) => [item.name, item.id])));
       setDemo((current) => {
         const existing = new Map(current.panelMembers.map((member) => [member.name, member]));
         const panelMembers = [...activeNames.map((name) => existing.get(name) ?? { name, selected: false, decision: "" as const, comment: "" }), ...current.panelMembers.filter((member) => member.selected && !activeNames.includes(member.name))];
@@ -240,13 +242,27 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     move("DECISION_PENDING", "인증심의", "전액 입금 확인이 완료되었습니다. 인증심의를 진행하세요.");
   };
 
-  const finishDecision = () => {
+  const finishDecision = async () => {
     if (linkedJobs.some((job) => assessmentItems.some((item) => !demo.assessment[job.id]?.[item]))) { setNotice("모든 Job의 5개 평가항목을 직접 판정해 주세요."); return; }
     const selectedMembers = demo.panelMembers.filter((member) => member.selected);
     if (selectedMembers.length < 2) { setNotice("활성 심의위원 중 최소 2명을 선택해 주세요."); return; }
     if (selectedMembers.some((member) => !member.decision)) { setNotice("선택한 모든 심의위원의 개별 결정을 입력해 주세요."); return; }
     if (!demo.decisionDate) { setNotice("패널 심의일을 입력해 주세요."); return; }
     if (!demo.finalApprover || !demo.finalApprovalDate || linkedJobs.some((job) => !demo.decisions[job.id]?.result)) { setNotice("대표자, 최종 승인일과 모든 Job의 최종 승인 결과를 입력해 주세요."); return; }
+    if (usesSupabaseWorkspace) {
+      if (linkedJobs.some((job) => !cycleIds[job.id])) { setNotice("Job 처리 회차를 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요."); return; }
+      if (selectedMembers.some((member) => !panelMemberIds[member.name])) { setNotice("선택한 심의위원이 관리자 명단과 연결되지 않았습니다. 명단을 확인해 주세요."); return; }
+      const supabase = createClient();
+      const { data: userData } = await supabase.auth.getUser();
+      const decisionRows = linkedJobs.map((job) => ({ cycle_id: cycleIds[job.id], result: demo.decisions[job.id].result, comment: demo.decisions[job.id].comment, decision_date: demo.decisionDate, final_approver: demo.finalApprover, final_approval_date: demo.finalApprovalDate, entered_by: userData.user?.id ?? null }));
+      const { data: savedDecisions, error } = await supabase.from("certification_decisions").upsert(decisionRows, { onConflict: "cycle_id" }).select("id, cycle_id");
+      if (error || !savedDecisions) { setNotice(`인증심의 정식 기록 저장에 실패했습니다: ${error?.message ?? "심의 ID 없음"}`); return; }
+      const panelRows = savedDecisions.flatMap((decision) => selectedMembers.map((member) => ({ decision_id: decision.id, panel_member_id: panelMemberIds[member.name], result: member.decision, comment: member.comment })));
+      const { error: panelError } = await supabase.from("decision_panel_entries").upsert(panelRows, { onConflict: "decision_id,panel_member_id" });
+      if (panelError) { setNotice(`심의위원 개별결정 저장에 실패했습니다: ${panelError.message}`); return; }
+      const { error: dateError } = await supabase.from("processing_cycles").update({ decision_date: demo.decisionDate }).in("id", Object.values(cycleIds));
+      if (dateError) { setNotice(`처리 회차 심의일 저장에 실패했습니다: ${dateError.message}`); return; }
+    }
     move("CERTIFICATE_DRAFT_PENDING", "Job·패키지", "심의와 대표자 승인이 완료되었습니다. 기본 신청정보가 기재된 인증서 초안을 발행하세요.");
   };
   const finishDraft = () => {

@@ -305,7 +305,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     }
     move("PACKAGE_READY", "Job·패키지", "원본 송부정보까지 확인했습니다. 기록 패키지를 생성하세요.");
   };
-  const generate = () => {
+  const generate = async () => {
     if (!languages.KR && !languages.EN) { setNotice("생성할 언어를 하나 이상 선택해 주세요."); return; }
     const missing = linkedJobs.flatMap((job) => deliveryDocumentRows.filter(({ key }) => { const record = demo.deliveryDocuments[job.id]?.[key]; return record?.applicability === "REQUIRED" && (!record.received || !record.date); }).map((row) => `${job.jobNo} ${row.document}`));
     const conditionalWithoutDate = linkedJobs.flatMap((job) => deliveryDocumentRows.filter(({ key }) => { const record = demo.deliveryDocuments[job.id]?.[key]; return record?.applicability === "CONDITIONAL" && record.received && !record.date; }).map((row) => `${job.jobNo} ${row.document}`));
@@ -317,7 +317,24 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     if (deliveryOverrideMissing) { setNotice("자동 계산된 문서전달확인서 작성일을 변경한 사유를 입력해 주세요."); return; }
     const unrecordedOverride = linkedJobs.some((job) => { const issueDate = demo.certificates[job.id]?.issueDate; if (!issueDate) return false; const expectedDecision = addKoreanBusinessDays(issueDate, -dateRules.decisionDays); const expectedDelivery = addKoreanBusinessDays(issueDate, dateRules.deliveryDays); const decisionRecorded = demo.decisionDate === expectedDecision || demo.dateAuditLogs.some((log) => log.jobId === job.id && log.field === "심의일" && log.after === demo.decisionDate); const deliveryDate = demo.deliveryDocuments[job.id]?.deliveryConfirmation.date; const deliveryRecorded = deliveryDate === expectedDelivery || demo.dateAuditLogs.some((log) => log.jobId === job.id && log.field === "문서전달확인서 작성일" && log.after === deliveryDate); return !decisionRecorded || !deliveryRecorded; });
     if (unrecordedOverride) { setNotice("변경한 날짜의 사유를 처리이력에 기록해 주세요."); return; }
-    setDemo((current) => ({ ...current, stage: "COMPLETED", generated: true })); setNotice("Job별 국문·영문 기록 패키지가 생성되었습니다. Word·PDF·ZIP 다운로드를 시험해 보세요.");
+    if (usesSupabaseWorkspace) {
+      if (linkedJobs.some((job) => !cycleIds[job.id])) { setNotice("Job 처리 회차를 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요."); return; }
+      const supabase = createClient();
+      const { data: userData } = await supabase.auth.getUser();
+      const generatedAt = new Date().toISOString();
+      const definitions = [
+        { type: "DOCUMENT_REVIEW", version: "FGPC-008-01 Rev.14" },
+        { type: "CERTIFICATION_DECISION_REPORT", version: "FGPC-012-01 Rev.6" },
+        { type: "CERTIFICATION_INFORMATION", version: "System Rev.0" },
+        { type: "DELIVERY_CONFIRMATION", version: "FGPC-012-03 Rev.4" },
+      ];
+      const selectedLanguages = (["KR", "EN"] as DocumentLanguage[]).filter((language) => languages[language]);
+      const rows = [] as Array<{ job_id: string; cycle_id: string; document_type: string; language: DocumentLanguage; format: "WORD" | "PDF"; template_version: string; generated_at: string; generated_by: string | null }>;
+      for (const job of linkedJobs) for (const definition of definitions) for (const language of selectedLanguages) for (const format of ["WORD", "PDF"] as const) rows.push({ job_id: job.id, cycle_id: cycleIds[job.id], document_type: definition.type, language, format, template_version: definition.version, generated_at: generatedAt, generated_by: userData.user?.id ?? null });
+      const { error } = await supabase.from("package_documents").upsert(rows, { onConflict: "cycle_id,document_type,language,format" });
+      if (error) { setNotice(`패키지 생성이력 저장에 실패했습니다: ${error.message}`); return; }
+    }
+    setDemo((current) => ({ ...current, stage: "COMPLETED", generated: true, dateAuditLogs: [...current.dateAuditLogs, createAuditLog("처리", "", "기록 패키지", "생성 준비", "생성 완료", "국문·영문 기록 패키지 생성", application.primaryOwner)] })); setNotice("Job별 국문·영문 기록 패키지가 생성되었습니다. Word·PDF·ZIP 다운로드를 시험해 보세요.");
   };
   const downloadZip = () => {
     const selected = (["KR", "EN"] as DocumentLanguage[]).filter((language) => languages[language]);

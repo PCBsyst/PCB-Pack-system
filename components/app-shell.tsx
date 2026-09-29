@@ -16,21 +16,21 @@ const navigation = [
   { href: "/jobs", label: "Job 관리", icon: BriefcaseBusiness },
   { href: "/packages", label: "패키지", icon: PackageCheck },
   { href: "/training-institutions", label: "협약 연수기관", icon: Building2 },
-  { href: "/settings", label: "설정", icon: Settings },
+  { href: "/settings", label: "설정", icon: Settings, adminOnly: true },
 ];
 
 export function AppShell({ title, description, actions, children }: { title: string; description?: string; actions?: React.ReactNode; children: React.ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const [currentUser, setCurrentUser] = useState({ name: "김담당", role: "실무자" });
-  useEffect(() => { if (!hasEnvVars) return; const supabase = createClient(); void supabase.auth.getUser().then(async ({ data }) => { if (!data.user) return; const { data: profile } = await supabase.from("profiles").select("display_name, role").eq("id", data.user.id).single(); if (profile) setCurrentUser({ name: profile.display_name, role: profile.role === "ADMIN" ? "관리자" : "실무자" }); }); }, []);
+  const [currentUser, setCurrentUser] = useState<{ name: string; role: string; roleKey: "STAFF" | "ADMIN" | null }>({ name: "김담당", role: hasEnvVars ? "확인 중" : "관리자", roleKey: hasEnvVars ? null : "ADMIN" });
+  useEffect(() => { if (!hasEnvVars) return; const supabase = createClient(); void supabase.auth.getUser().then(async ({ data }) => { if (!data.user) return; const { data: profile } = await supabase.from("profiles").select("display_name, role").eq("id", data.user.id).single(); if (profile) setCurrentUser({ name: profile.display_name, role: profile.role === "ADMIN" ? "관리자" : "실무자", roleKey: profile.role }); }); }, []);
   const logout = async () => { const supabase = createClient(); await supabase.auth.signOut(); window.location.href = "/auth/login"; };
   const sidebar = <>
     <div className="flex h-16 items-center gap-3 border-b px-5">
       <span className="grid h-9 w-9 place-items-center rounded-md bg-blue-800 text-white"><ShieldCheck className="h-5 w-5" /></span>
       <div><p className="text-sm font-bold text-slate-950">자격인증 기록관리</p><p className="text-[11px] text-slate-500">INTERNAL SYSTEM</p></div>
     </div>
-    <nav className="space-y-1 p-3">{navigation.map(({ href, label, icon: Icon }) => {
+    <nav className="space-y-1 p-3">{navigation.filter((item) => !item.adminOnly || currentUser.roleKey === "ADMIN").map(({ href, label, icon: Icon }) => {
       const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
       return <Link key={href} href={href} onClick={() => setOpen(false)} className={cn("flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium", active ? "bg-blue-50 text-blue-800" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950")}><Icon className="h-4 w-4" />{label}{active && <ChevronRight className="ml-auto h-4 w-4" />}</Link>;
     })}</nav>

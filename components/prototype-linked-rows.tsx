@@ -27,7 +27,7 @@ function useLinkedRecords() {
   return records;
 }
 
-function candidateLink(record: PrototypeApplicationRecord) { return record.candidateId ? `/applications/${record.id}` : `/candidates/${prototypeCandidateId(record)}`; }
+function candidateLink(record: PrototypeApplicationRecord) { return record.candidateId ? `/candidates/${record.candidateId}` : `/candidates/${prototypeCandidateId(record)}`; }
 function jobLink(record: PrototypeApplicationRecord) { return record.jobId ? `/applications/${record.id}` : `/jobs/${prototypeJobId(record)}`; }
 
 export function PrototypeTotal({ base, unit }: { base: number; unit: string }) { const records = useLinkedRecords(); return <>{base + records.length}{unit}</>; }

@@ -56,8 +56,8 @@ export const prototypeWorkflowLabels: Record<PrototypeWorkflowStage, string> = {
   COMPLETED: "완료",
 };
 
-export function prototypeCandidateId(record: PrototypeApplicationRecord) { return `candidate-${record.id}`; }
-export function prototypeJobId(record: PrototypeApplicationRecord) { return `job-${record.id}`; }
+export function prototypeCandidateId(record: PrototypeApplicationRecord) { return record.candidateId ?? `candidate-${record.id}`; }
+export function prototypeJobId(record: PrototypeApplicationRecord) { return record.jobId ?? `job-${record.id}`; }
 
 export function readPrototypeWorkflow(record: PrototypeApplicationRecord): PrototypeWorkflowSnapshot {
   if (record.workflow) return record.workflow;

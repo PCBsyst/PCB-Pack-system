@@ -1,19 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, CheckCircle2, Clock3, X } from "lucide-react";
+import { AlertTriangle, Bell, CheckCircle2, Clock3, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
+import { missingWorkflowItems } from "@/lib/workflow-completeness";
+import type { PrototypeApplicationRecord, PrototypeWorkflowSnapshot } from "@/lib/prototype-storage";
 
 type NotificationItem = {
   id: string;
   applicationId: string;
   applicationNo: string;
   candidateName: string;
+  jobNo: string;
   stage: string;
   createdAt: string;
   completed: boolean;
+  missing: string[];
 };
 
 const stageLabels: Record<string, string> = {
@@ -37,14 +41,19 @@ export function NotificationCenter() {
     try { setDismissed(JSON.parse(window.localStorage.getItem("dismissed-notifications") ?? "[]")); } catch { setDismissed([]); }
     if (!hasEnvVars) return;
     const supabase = createClient();
-    void supabase.from("applications").select("id, application_no, created_at, status, candidates(name), application_workspaces(state)").order("created_at", { ascending: false }).limit(30).then(({ data }) => {
+    void supabase.from("applications").select("id, application_no, received_at, created_at, status, business_area, accreditation_scheme, accreditation_track, accreditation_hidden, application_type, management_no_from, partner_name_snapshot, candidates(name), jobs(id, job_no, management_no, standard, grade), application_workspaces(state)").order("created_at", { ascending: false }).limit(30).then(({ data }) => {
       if (!data) return;
-      setItems(data.map((row) => {
+      setItems(data.flatMap((row) => {
         const candidate = Array.isArray(row.candidates) ? row.candidates[0] : row.candidates;
         const workspace = Array.isArray(row.application_workspaces) ? row.application_workspaces[0] : row.application_workspaces;
-        const state = workspace?.state as { stage?: string } | null | undefined;
+        const state = (workspace?.state ?? {}) as PrototypeWorkflowSnapshot;
         const stage = state?.stage ?? (row.status === "COMPLETED" ? "COMPLETED" : "DOCUMENT_REVIEW");
-        return { id: `${row.id}:${stage}`, applicationId: row.id, applicationNo: row.application_no, candidateName: candidate?.name ?? "후보자 미입력", stage, createdAt: row.created_at, completed: stage === "COMPLETED" };
+        const jobRows = Array.isArray(row.jobs) ? row.jobs : [];
+        return jobRows.map((job) => {
+          const record: PrototypeApplicationRecord = { id: row.id, candidateId: undefined, jobId: job.id, applicationNo: row.application_no, receivedAt: row.received_at, candidateName: candidate?.name ?? "후보자 미입력", businessArea: row.business_area, scheme: row.accreditation_scheme === "PJLA" ? "PJLA" : "IAS", accreditationTrack: row.accreditation_track, accreditationHidden: row.accreditation_hidden, applicationType: row.application_type, managementNo: job.management_no, jobNo: job.job_no, standard: job.standard, grade: job.grade, partnerCompany: row.partner_name_snapshot, primaryOwner: "로그인 사용자", status: "INTAKE_REVIEW", createdAt: row.created_at, workflow: state };
+          const missing = missingWorkflowItems(record, state);
+          return { id: `${row.id}:${job.id}:${stage}`, applicationId: row.id, applicationNo: row.application_no, candidateName: candidate?.name ?? "후보자 미입력", jobNo: job.job_no, stage, createdAt: row.created_at, completed: stage === "COMPLETED" && missing.length === 0, missing };
+        });
       }));
     });
   }, []);
@@ -69,8 +78,8 @@ export function NotificationCenter() {
         <div className="max-h-[26rem] overflow-y-auto">
           {visible.map((item) => <div key={item.id} className={`relative border-b p-4 last:border-b-0 ${item.completed ? "bg-slate-50" : "bg-white"}`}>
             <Link href={`/applications/${item.applicationId}`} onClick={() => setOpen(false)} className="block pr-7">
-              <div className="flex items-center gap-2">{item.completed ? <CheckCircle2 className="h-4 w-4 text-emerald-600"/> : <Clock3 className="h-4 w-4 text-amber-600"/>}<p className="text-sm font-semibold text-slate-900">{item.candidateName} · {item.applicationNo}</p></div>
-              <p className="mt-1.5 text-sm text-slate-600">{stageLabels[item.stage] ?? "진행 상태를 확인해 주세요"}</p>
+              <div className="flex items-center gap-2">{item.completed ? <CheckCircle2 className="h-4 w-4 text-emerald-600"/> : item.missing.length ? <AlertTriangle className="h-4 w-4 text-amber-600"/> : <Clock3 className="h-4 w-4 text-blue-600"/>}<p className="text-sm font-semibold text-slate-900">{item.candidateName} · {item.jobNo}</p></div>
+              <p className="mt-1.5 text-sm text-slate-600">{item.missing.length ? `입력 확인: ${item.missing.join(" · ")}` : stageLabels[item.stage] ?? "진행 상태를 확인해 주세요"}</p>
               {!item.completed && <p className="mt-1 text-xs text-slate-400">업무가 완료되면 자동으로 종료됩니다.</p>}
             </Link>
             {item.completed && <button className="absolute right-3 top-3 rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700" aria-label="경미한 알림 닫기" onClick={() => dismiss(item.id)}><X className="h-4 w-4"/></button>}

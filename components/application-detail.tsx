@@ -98,6 +98,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   const [correctionValue, setCorrectionValue] = useState("");
   const [correctionReason, setCorrectionReason] = useState("");
   const [dateRules, setDateRules] = useState<DateRules>({ decisionDays: 5, deliveryDays: 1 });
+  const [cycleIds, setCycleIds] = useState<Record<string, string>>({});
   const storageKey = `certification-demo:v4:${application.id}`;
   const usesSupabaseWorkspace = Boolean(hasEnvVars && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(application.id));
   const [editLock, setEditLock] = useState<EditLockState>(usesSupabaseWorkspace ? "CHECKING" : "LOCAL");
@@ -182,6 +183,16 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
       setDateRules({ decisionDays: Math.max(0, Number(value.decisionDays ?? 5)), deliveryDays: Math.max(0, Number(value.deliveryDays ?? 1)) });
     });
   }, []);
+  useEffect(() => {
+    if (!usesSupabaseWorkspace || linkedJobs.length === 0) return;
+    const supabase = createClient();
+    void supabase.from("processing_cycles").select("id, job_id, sequence").in("job_id", linkedJobs.map((job) => job.id)).order("sequence", { ascending: false }).then(({ data }) => {
+      if (!data) return;
+      const latest: Record<string, string> = {};
+      for (const row of data) if (!latest[row.job_id]) latest[row.job_id] = row.id;
+      setCycleIds(latest);
+    });
+  }, [linkedJobs, usesSupabaseWorkspace]);
   useEffect(() => { setDemo((current) => { let changed = false; const examSchedules = { ...current.examSchedules }; const deliveryDocuments = { ...current.deliveryDocuments }; for (const job of linkedJobs) { const schedule = examSchedules[job.id]; if (!schedule || schedule.examNoticeDate || schedule.examDate) continue; const examNoticeDate = addKoreanBusinessDays(application.receivedAt, -10); const examDate = addKoreanBusinessDays(application.receivedAt, -5); examSchedules[job.id] = { ...schedule, examNoticeDate, examDate }; deliveryDocuments[job.id] = { ...deliveryDocuments[job.id], examNotice: { ...deliveryDocuments[job.id].examNotice, received: true, date: examNoticeDate }, examAnswers: { ...deliveryDocuments[job.id].examAnswers, received: true, date: examDate } }; changed = true; } return changed ? { ...current, examSchedules, deliveryDocuments } : current; }); }, [application.receivedAt, linkedJobs]);
   useEffect(() => { setDemo((current) => { const normalize = (value: string) => value ? nextKoreanBusinessDay(value) : value; const review = { ...current.review, reviewedAt: normalize(current.review.reviewedAt), verifiedAt: normalize(current.review.verifiedAt) }; const certificates = Object.fromEntries(Object.entries(current.certificates).map(([jobId, item]) => [jobId, { ...item, draftIssuedAt: normalize(item.draftIssuedAt), issueDate: normalize(item.issueDate), expiryDate: normalize(item.expiryDate), originalSentAt: normalize(item.originalSentAt) }])); const deliveryDocuments = Object.fromEntries(Object.entries(current.deliveryDocuments).map(([jobId, rows]) => [jobId, Object.fromEntries(Object.entries(rows).map(([key, item]) => [key, { ...item, date: key === "examNotice" || key === "examAnswers" ? item.date : normalize(item.date) }]))])); const next = { ...current, review, invoiceIssuedAt: normalize(current.invoiceIssuedAt), paymentConfirmedAt: normalize(current.paymentConfirmedAt), decisionDate: normalize(current.decisionDate), finalApprovalDate: normalize(current.finalApprovalDate), certificates, deliveryDocuments } as DemoState; return JSON.stringify(next) === JSON.stringify(current) ? current : next; }); }, [demo]);
 
@@ -191,19 +202,41 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   const move = (stage: DemoStage, tab: Tab, message: string) => { setDemo((current) => ({ ...current, stage, dateAuditLogs: [...current.dateAuditLogs, createAuditLog("처리", "", "업무 단계", stageLabels[current.stage], stageLabels[stage], message, application.primaryOwner)] })); setActive(tab); setNotice(message); };
   const reset = () => { setDemo(makeInitial(application, linkedJobs)); window.localStorage.removeItem(storageKey); setActive("서류검토"); setNotice("샘플 진행상태를 처음으로 되돌렸습니다."); };
 
-  const finishReview = () => {
+  const finishReview = async () => {
     if (!demo.review.reviewer || !demo.review.reviewedAt) { setNotice("1차 검토자와 검토일을 입력해 주세요."); return; }
     if (!demo.review.verifier || !demo.review.verifiedAt) { setNotice("2차 검증인과 검증일을 입력해 주세요."); return; }
     if (demo.review.verificationResult === "재검토요청") { setNotice("검증인이 재검토를 요청했습니다. 검토내용을 보완한 뒤 다시 검증해 주세요."); return; }
+    if (usesSupabaseWorkspace) {
+      if (linkedJobs.some((job) => !cycleIds[job.id])) { setNotice("Job 처리 회차를 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요."); return; }
+      const supabase = createClient();
+      const { data: userData } = await supabase.auth.getUser();
+      const rows = linkedJobs.map((job) => ({ cycle_id: cycleIds[job.id], round: 1, stored_documents: demo.storedDocuments, requirements: demo.reviewRequirements, overall_result: demo.review.result, comment: demo.review.comment, reviewer_id: userData.user?.id ?? null, reviewer_name_snapshot: demo.review.reviewer, reviewed_at: demo.review.reviewedAt, verification_result: demo.review.verificationResult, verification_comment: demo.review.verificationComment, verifier_id: userData.user?.id ?? null, verifier_name_snapshot: demo.review.verifier, verified_at: demo.review.verifiedAt }));
+      const { error } = await supabase.from("document_reviews").upsert(rows, { onConflict: "cycle_id,round" });
+      if (error) { setNotice(`서류검토 정식 기록 저장에 실패했습니다: ${error.message}`); return; }
+      await supabase.from("processing_cycles").update({ document_review_date: demo.review.reviewedAt }).in("id", Object.values(cycleIds));
+    }
     move("INVOICE_PENDING", "인보이스·입금", "검토자와 검증인의 확인이 완료되었습니다. 인보이스를 발행하세요.");
   };
-  const recordInvoice = () => {
+  const recordInvoice = async () => {
     if (!demo.invoiceNo || !demo.invoiceAmount || !demo.invoiceRecipientName || !demo.invoiceIssuedAt) { setNotice("인보이스 번호, 금액, 수신자와 발행일을 모두 입력해 주세요."); return; }
+    if (usesSupabaseWorkspace) {
+      const supabase = createClient();
+      const { data: invoice, error } = await supabase.from("invoices").upsert({ invoice_no: demo.invoiceNo, recipient_type: demo.invoiceRecipientType === "개인" ? "INDIVIDUAL" : "PARTNER", recipient_name: demo.invoiceRecipientName, amount: Number(demo.invoiceAmount), issued_at: demo.invoiceIssuedAt, payment_status: "UNPAID" }, { onConflict: "invoice_no" }).select("id").single();
+      if (error || !invoice) { setNotice(`인보이스 정식 기록 저장에 실패했습니다: ${error?.message ?? "인보이스 ID 없음"}`); return; }
+      const { error: linkError } = await supabase.from("invoice_jobs").upsert(linkedJobs.map((job) => ({ invoice_id: invoice.id, job_id: job.id })), { onConflict: "invoice_id,job_id" });
+      if (linkError) { setNotice(`인보이스와 Job 연결에 실패했습니다: ${linkError.message}`); return; }
+    }
     move("PAYMENT_PENDING", "인보이스·입금", "인보이스 발행을 기록했습니다. 입금내역을 확인해 주세요.");
   };
-  const confirmPayment = () => {
+  const confirmPayment = async () => {
     if (!demo.paidAmount || !demo.payerName || !demo.paymentConfirmedAt || !demo.paymentConfirmedBy) { setNotice("입금액, 입금자, 입금 확인일과 확인 담당자를 모두 입력해 주세요."); return; }
     if (Number(demo.paidAmount) < Number(demo.invoiceAmount)) { setNotice("입금액이 청구금액보다 적습니다. 전액 입금을 확인한 뒤 진행해 주세요."); return; }
+    if (usesSupabaseWorkspace) {
+      const supabase = createClient();
+      const { data: userData } = await supabase.auth.getUser();
+      const { error } = await supabase.from("invoices").update({ payment_status: "PAID", paid_amount: Number(demo.paidAmount), paid_at: demo.paymentConfirmedAt, payer_name: demo.payerName, confirmed_by: userData.user?.id ?? null }).eq("invoice_no", demo.invoiceNo);
+      if (error) { setNotice(`입금 정식 기록 저장에 실패했습니다: ${error.message}`); return; }
+    }
     move("DECISION_PENDING", "인증심의", "전액 입금 확인이 완료되었습니다. 인증심의를 진행하세요.");
   };
 

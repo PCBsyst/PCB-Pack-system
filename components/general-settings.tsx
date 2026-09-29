@@ -5,6 +5,7 @@ import { CheckCircle2, MailPlus, Save, ShieldCheck, UserCheck, UserX } from "luc
 import { Button } from "@/components/ui/button";
 import { Field, controlClass, textareaClass } from "@/components/form-fields";
 import { PanelMembersManager } from "@/components/panel-members-manager";
+import { PartnersManager } from "@/components/partners-manager";
 import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
 
@@ -50,6 +51,7 @@ export function GeneralSettings() {
   return <div className="mt-6 space-y-6">
     {notice && <div role="status" className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900"><CheckCircle2 className="h-4 w-4"/>{notice}</div>}
     <PanelMembersManager/>
+    <PartnersManager/>
     <section id="date-rules" className="scroll-mt-20 rounded-lg border bg-white shadow-sm"><Header title="업무일자 계산 규칙" description="불변인 인증서 발행일을 기준으로 심의일과 문서전달확인서 작성일만 영업일로 계산합니다."/><div className="grid gap-4 p-5 sm:grid-cols-2"><Field label="인증심의일 (발행 전 영업일)"><input type="number" min="0" className={controlClass} value={settings.decisionDays} onChange={(event) => setSettings({ ...settings, decisionDays: event.target.value })}/></Field><Field label="문서전달확인서 (발행 후 영업일)"><input type="number" min="0" className={controlClass} value={settings.deliveryDays} onChange={(event) => setSettings({ ...settings, deliveryDays: event.target.value })}/></Field></div><p className="px-5 pb-5 text-xs text-slate-500">서류접수·검토·인보이스·입금일 등 나머지 날짜는 실제 처리 시점을 직접 입력합니다.</p></section>
     <section id="reasons" className="scroll-mt-20 rounded-lg border bg-white shadow-sm"><Header title="정지·철회 표준 사유" description="한 줄에 하나씩 입력하며 향후 보고서 선택 항목으로 사용합니다."/><div className="grid gap-4 p-5 sm:grid-cols-2"><Field label="인증 정지 사유"><textarea className={textareaClass} value={settings.suspensionReasons} onChange={(event) => setSettings({ ...settings, suspensionReasons: event.target.value })}/></Field><Field label="인증 철회 사유"><textarea className={textareaClass} value={settings.withdrawalReasons} onChange={(event) => setSettings({ ...settings, withdrawalReasons: event.target.value })}/></Field></div></section>
     <section id="users" className="scroll-mt-20 rounded-lg border bg-white shadow-sm"><Header title="사용자 및 권한" description="관리자가 이메일로 직원을 초대하고 역할·활성상태를 관리합니다. 심의자는 계정 대상이 아닙니다."/><div className="p-5">

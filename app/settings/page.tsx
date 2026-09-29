@@ -8,6 +8,7 @@ import { Suspense } from "react";
 
 const sections = [
   { id: "reviewers", icon: UsersRound, title: "심의자 명단", description: "계정 없이 심의기록에서 선택할 심의자를 관리합니다.", meta: "명단 편집 가능" },
+  { id: "partners", icon: UsersRound, title: "파트너사 명단", description: "신규 신청에서 선택할 파트너사를 관리합니다.", meta: "활성상태 관리" },
   { id: "date-rules", icon: CalendarDays, title: "업무일자 계산 규칙", description: "인증발행일 기준 전·후 영업일 간격을 설정합니다.", meta: "새 회차부터 적용" },
   { id: "reasons", icon: ListChecks, title: "정지·철회 표준 사유", description: "보고서 집계에 사용할 표준 사유를 관리합니다.", meta: "사유 편집 가능" },
   { id: "users", icon: UserCog, title: "사용자 및 권한", description: "실무자와 관리자 초대 및 비활성화를 관리합니다.", meta: "테스트 명단 관리" },

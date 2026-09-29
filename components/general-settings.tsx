@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, MailPlus, Save, ShieldCheck, UserCheck, UserX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, controlClass, textareaClass } from "@/components/form-fields";
+import { PanelMembersManager } from "@/components/panel-members-manager";
 
 const STORAGE_KEY = "certification-general-settings";
 type StaffRole = "STAFF" | "ADMIN";
@@ -30,7 +31,7 @@ export function GeneralSettings() {
   const updateUser = (id: string, patch: Partial<UserAccount>) => setSettings((current) => ({ ...current, users: current.users.map((user) => user.id === id ? { ...user, ...patch } : user) }));
   return <div className="mt-6 space-y-6">
     {notice && <div role="status" className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900"><CheckCircle2 className="h-4 w-4"/>{notice}</div>}
-    <section id="reviewers" className="scroll-mt-20 rounded-lg border bg-white shadow-sm"><Header title="심의자 명단" description="별도 계정 없이 인증심의 기록에서 선택할 패널 명단입니다."/><div className="p-5"><Field label="심의자 이름 (쉼표로 구분)"><input className={controlClass} value={settings.reviewers} onChange={(event) => setSettings({ ...settings, reviewers: event.target.value })}/></Field></div></section>
+    <PanelMembersManager/>
     <section id="date-rules" className="scroll-mt-20 rounded-lg border bg-white shadow-sm"><Header title="업무일자 계산 규칙" description="인증서 발행일 기준 영업일 간격입니다. 변경값은 새 회차부터 적용합니다."/><div className="grid gap-4 p-5 sm:grid-cols-3"><Field label="서류검토일 (발행 전)"><input type="number" className={controlClass} value={settings.reviewDays} onChange={(event) => setSettings({ ...settings, reviewDays: event.target.value })}/></Field><Field label="인증심의일 (발행 전)"><input type="number" className={controlClass} value={settings.decisionDays} onChange={(event) => setSettings({ ...settings, decisionDays: event.target.value })}/></Field><Field label="문서전달일 (발행 후)"><input type="number" className={controlClass} value={settings.deliveryDays} onChange={(event) => setSettings({ ...settings, deliveryDays: event.target.value })}/></Field></div></section>
     <section id="reasons" className="scroll-mt-20 rounded-lg border bg-white shadow-sm"><Header title="정지·철회 표준 사유" description="한 줄에 하나씩 입력하며 향후 보고서 선택 항목으로 사용합니다."/><div className="grid gap-4 p-5 sm:grid-cols-2"><Field label="인증 정지 사유"><textarea className={textareaClass} value={settings.suspensionReasons} onChange={(event) => setSettings({ ...settings, suspensionReasons: event.target.value })}/></Field><Field label="인증 철회 사유"><textarea className={textareaClass} value={settings.withdrawalReasons} onChange={(event) => setSettings({ ...settings, withdrawalReasons: event.target.value })}/></Field></div></section>
     <section id="users" className="scroll-mt-20 rounded-lg border bg-white shadow-sm"><Header title="사용자 및 권한" description="관리자가 이메일로 직원을 초대하고 역할·활성상태를 관리합니다. 심의자는 계정 대상이 아닙니다."/><div className="p-5">

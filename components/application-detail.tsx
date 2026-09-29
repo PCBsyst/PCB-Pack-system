@@ -100,6 +100,20 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
       setTrainingInstitutions(data.map((item) => ({ id: item.id, name: item.name, designationNo: item.designation_no, validFrom: item.valid_from, validUntil: item.valid_until, standards: item.standards ?? [], active: item.active })));
     });
   }, []);
+  useEffect(() => {
+    if (!hasEnvVars || !hydrated) return;
+    const supabase = createClient();
+    void supabase.from("panel_members").select("name").eq("active", true).order("name").then(({ data }) => {
+      if (!data?.length) return;
+      const activeNames = data.map((item) => item.name);
+      setDemo((current) => {
+        const existing = new Map(current.panelMembers.map((member) => [member.name, member]));
+        const panelMembers = [...activeNames.map((name) => existing.get(name) ?? { name, selected: false, decision: "" as const, comment: "" }), ...current.panelMembers.filter((member) => member.selected && !activeNames.includes(member.name))];
+        const panelComments = { ...current.englishText.panelComments, ...Object.fromEntries(activeNames.map((name) => [name, current.englishText.panelComments[name] ?? ""])) };
+        return { ...current, panelMembers, englishText: { ...current.englishText, panelComments } };
+      });
+    });
+  }, [hydrated]);
   useEffect(() => { setDemo((current) => { let changed = false; const examSchedules = { ...current.examSchedules }; const deliveryDocuments = { ...current.deliveryDocuments }; for (const job of linkedJobs) { const schedule = examSchedules[job.id]; if (!schedule || schedule.examNoticeDate || schedule.examDate) continue; const examNoticeDate = addKoreanBusinessDays(application.receivedAt, -10); const examDate = addKoreanBusinessDays(application.receivedAt, -5); examSchedules[job.id] = { ...schedule, examNoticeDate, examDate }; deliveryDocuments[job.id] = { ...deliveryDocuments[job.id], examNotice: { ...deliveryDocuments[job.id].examNotice, received: true, date: examNoticeDate }, examAnswers: { ...deliveryDocuments[job.id].examAnswers, received: true, date: examDate } }; changed = true; } return changed ? { ...current, examSchedules, deliveryDocuments } : current; }); }, [application.receivedAt, linkedJobs]);
   useEffect(() => { setDemo((current) => { const normalize = (value: string) => value ? nextKoreanBusinessDay(value) : value; const review = { ...current.review, reviewedAt: normalize(current.review.reviewedAt), verifiedAt: normalize(current.review.verifiedAt) }; const certificates = Object.fromEntries(Object.entries(current.certificates).map(([jobId, item]) => [jobId, { ...item, draftIssuedAt: normalize(item.draftIssuedAt), issueDate: normalize(item.issueDate), expiryDate: normalize(item.expiryDate), originalSentAt: normalize(item.originalSentAt) }])); const deliveryDocuments = Object.fromEntries(Object.entries(current.deliveryDocuments).map(([jobId, rows]) => [jobId, Object.fromEntries(Object.entries(rows).map(([key, item]) => [key, { ...item, date: key === "examNotice" || key === "examAnswers" ? item.date : normalize(item.date) }]))])); const next = { ...current, review, invoiceIssuedAt: normalize(current.invoiceIssuedAt), paymentConfirmedAt: normalize(current.paymentConfirmedAt), decisionDate: normalize(current.decisionDate), finalApprovalDate: normalize(current.finalApprovalDate), certificates, deliveryDocuments } as DemoState; return JSON.stringify(next) === JSON.stringify(current) ? current : next; }); }, [demo]);
 
@@ -128,7 +142,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   const finishDecision = () => {
     if (linkedJobs.some((job) => assessmentItems.some((item) => !demo.assessment[job.id]?.[item]))) { setNotice("모든 Job의 5개 평가항목을 직접 판정해 주세요."); return; }
     const selectedMembers = demo.panelMembers.filter((member) => member.selected);
-    if (selectedMembers.length < 2) { setNotice("등록된 패널 3명 중 최소 2명을 선택해 주세요."); return; }
+    if (selectedMembers.length < 2) { setNotice("활성 심의위원 중 최소 2명을 선택해 주세요."); return; }
     if (selectedMembers.some((member) => !member.decision)) { setNotice("선택한 모든 심의위원의 개별 결정을 입력해 주세요."); return; }
     if (!demo.decisionDate) { setNotice("패널 심의일을 입력해 주세요."); return; }
     if (!demo.finalApprover || !demo.finalApprovalDate || linkedJobs.some((job) => !demo.decisions[job.id]?.result)) { setNotice("대표자, 최종 승인일과 모든 Job의 최종 승인 결과를 입력해 주세요."); return; }
@@ -245,7 +259,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
         </div>)}</div>
       </Section>
 
-      <Section title="2. 인증패널 구성 및 개별 결정" description="관리자가 등록한 패널 3명 중 실제 심의에 참여한 위원을 최소 2명 선택하고, 각 위원의 결정을 기록합니다.">
+      <Section title="2. 인증패널 구성 및 개별 결정" description="관리자가 등록한 활성 심의위원 중 실제 심의에 참여한 위원을 최소 2명 선택하고, 각 위원의 결정을 기록합니다.">
         <div className="mb-5 max-w-sm"><Field label="패널 심의일"><input type="date" className={controlClass} value={demo.decisionDate} onChange={(event) => setDemo((current) => ({ ...current, decisionDate: event.target.value }))}/></Field></div>
         <div className="grid gap-4 lg:grid-cols-3">{demo.panelMembers.map((member, index) => <div key={member.name} className={`rounded-lg border p-4 ${member.selected ? "border-blue-300 bg-blue-50/50" : "bg-white"}`}>
           <label className="flex cursor-pointer items-center gap-3 font-semibold"><input type="checkbox" checked={member.selected} onChange={(event) => changePanelMember(index, { selected: event.target.checked }, setDemo)}/>{member.name}</label>

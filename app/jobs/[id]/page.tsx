@@ -6,5 +6,17 @@ import { JobDetail } from "@/components/job-detail";
 import { Button } from "@/components/ui/button";
 import { getCandidate, getJob, jobs } from "@/data/mock-data";
 import { PrototypeRecordDetail } from "@/components/prototype-record-detail";
-export function generateStaticParams(){return jobs.map((job)=>({id:job.id}));}
-export default async function JobPage({params}:{params:Promise<{id:string}>}){const {id}=await params;if(id.startsWith("job-local-"))return <AppShell title="Job 상세" description="브라우저에 저장된 샘플 Job입니다."><PrototypeRecordDetail id={id} kind="job"/></AppShell>;const job=getJob(id);if(!job)notFound();const candidate=getCandidate(job.candidateId)!;return <AppShell title={job.jobNo} description={`${candidate.name} · ${job.standard} · Job 상세`} actions={!job.currentCycleId?<Button asChild className="bg-blue-800 hover:bg-blue-900"><Link href={`/cycles/new?job=${job.id}`}><Plus/>새 처리 회차</Link></Button>:undefined}><Link href="/jobs" className="mb-4 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900"><ArrowLeft className="h-4 w-4"/>Job 목록</Link><JobDetail job={job} candidate={candidate}/></AppShell>}
+import { SupabaseJobDetail } from "@/components/supabase-job-detail";
+import { hasEnvVars } from "@/lib/utils";
+
+export function generateStaticParams() { return jobs.map((job) => ({ id: job.id })); }
+
+export default async function JobPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  if (id.startsWith("job-local-")) return <AppShell title="Job 상세" description="브라우저에 저장된 샘플 Job입니다."><PrototypeRecordDetail id={id} kind="job"/></AppShell>;
+  const job = getJob(id);
+  if (!job && hasEnvVars) return <AppShell title="Job 상세" description="규격별 Job과 연결된 신청·인증정보를 확인합니다."><SupabaseJobDetail id={id}/></AppShell>;
+  if (!job) notFound();
+  const candidate = getCandidate(job.candidateId)!;
+  return <AppShell title={job.jobNo} description={`${candidate.name} · ${job.standard} · Job 상세`} actions={!job.currentCycleId ? <Button asChild className="bg-blue-800 hover:bg-blue-900"><Link href={`/cycles/new?job=${job.id}`}><Plus/>새 처리 회차</Link></Button> : undefined}><Link href="/jobs" className="mb-4 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900"><ArrowLeft className="h-4 w-4"/>Job 목록</Link><JobDetail job={job} candidate={candidate}/></AppShell>;
+}

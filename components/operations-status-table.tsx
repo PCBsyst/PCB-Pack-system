@@ -6,8 +6,11 @@ import { Search } from "lucide-react";
 import { applications, invoices } from "@/data/workflow-data";
 import { getCandidate, getCurrentCycle, jobs, statusLabels } from "@/data/mock-data";
 import { prototypeJobId, prototypeWorkflowLabels, readPrototypeApplications, readPrototypeWorkflow, type PrototypeApplicationRecord } from "@/lib/prototype-storage";
+import { createClient } from "@/lib/supabase/client";
+import { hasEnvVars } from "@/lib/utils";
 
 const inputClass = "h-9 rounded-md border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-blue-200";
+type StatusJobRow = { id: string; job_no: string; management_no: number; standard: string; grade: string };
 
 export function OperationsStatusTable() {
   const [query, setQuery] = useState("");
@@ -15,7 +18,21 @@ export function OperationsStatusTable() {
   const [progress, setProgress] = useState("전체");
   const [prototypeRecords, setPrototypeRecords] = useState<PrototypeApplicationRecord[]>([]);
 
-  useEffect(() => setPrototypeRecords(readPrototypeApplications()), []);
+  useEffect(() => {
+    setPrototypeRecords(readPrototypeApplications());
+    if (!hasEnvVars) return;
+    const supabase = createClient();
+    void supabase.from("applications").select("*, candidates(id, name), jobs(id, job_no, management_no, standard, grade), application_workspaces(state)").order("received_at", { ascending: false }).then(({ data }) => {
+      if (!data) return;
+      const mapped: PrototypeApplicationRecord[] = data.flatMap((item) => {
+        const candidate = Array.isArray(item.candidates) ? item.candidates[0] : item.candidates;
+        const workspace = Array.isArray(item.application_workspaces) ? item.application_workspaces[0] : item.application_workspaces;
+        const jobRows = (Array.isArray(item.jobs) ? item.jobs : []) as StatusJobRow[];
+        return jobRows.map((job) => ({ id: item.id, candidateId: candidate?.id, jobId: job.id, applicationNo: item.application_no, receivedAt: item.received_at, candidateName: candidate?.name ?? "이름 미입력", businessArea: item.business_area, scheme: item.accreditation_scheme === "PJLA" ? "PJLA" : "IAS", accreditationTrack: item.accreditation_track, accreditationHidden: item.accreditation_hidden, applicationType: item.application_type, managementNo: job.management_no, jobNo: job.job_no, standard: job.standard, grade: job.grade, partnerCompany: item.partner_name_snapshot, primaryOwner: "로그인 사용자", status: "INTAKE_REVIEW", createdAt: item.created_at, workflow: workspace?.state ?? undefined }));
+      });
+      setPrototypeRecords(mapped);
+    });
+  }, []);
 
   const prototypeRows = useMemo(() => prototypeRecords.map((record) => {
     const workflow = readPrototypeWorkflow(record);

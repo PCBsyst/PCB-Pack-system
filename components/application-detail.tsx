@@ -26,6 +26,7 @@ type TrainingProviderType = "PARTNER" | "NON_PARTNER";
 type ExamSchedule = Record<string, { providerType: TrainingProviderType; providerName: string; trainingEndDate: string; examNoticeDate: string; examDate: string }>;
 type RequirementResult = "충족" | "미충족" | "해당없음";
 type DateRules = { decisionDays: number; deliveryDays: number };
+type EditLockState = "LOCAL" | "CHECKING" | "OWNED" | "READ_ONLY";
 type DemoState = { stage: DemoStage; storedDocuments: Record<string, boolean>; reviewRequirements: Record<string, RequirementResult>; review: DemoReview; invoiceNo: string; invoiceAmount: string; invoiceRecipientType: "개인" | "파트너사"; invoiceRecipientName: string; invoiceIssuedAt: string; paidAmount: string; payerName: string; paymentConfirmedAt: string; paymentConfirmedBy: string; examSchedules: ExamSchedule; assessment: DemoAssessment; panelMembers: DemoPanelMember[]; decisionDate: string; dateOverrideReasons: { decision: string; delivery: Record<string, string> }; dateAuditLogs: DateAuditLog[]; finalApprover: string; finalApprovalDate: string; decisions: DemoDecision; certificates: DemoCertificate; deliveryDocuments: DemoDeliveryDocuments; englishText: DemoEnglishText; generated: boolean };
 
 const assessmentItems = ["지식 시험", "인성 시험", "교육 요구사항", "학력 요구사항", "심사이력"] as const;
@@ -89,9 +90,40 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   const [dateRules, setDateRules] = useState<DateRules>({ decisionDays: 5, deliveryDays: 1 });
   const storageKey = `certification-demo:v4:${application.id}`;
   const usesSupabaseWorkspace = Boolean(hasEnvVars && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(application.id));
+  const [editLock, setEditLock] = useState<EditLockState>(usesSupabaseWorkspace ? "CHECKING" : "LOCAL");
+  const [lockOwner, setLockOwner] = useState("");
+  const canEdit = editLock === "LOCAL" || editLock === "OWNED";
+
+  useEffect(() => {
+    if (!usesSupabaseWorkspace) { setEditLock("LOCAL"); return; }
+    const supabase = createClient();
+    let active = true;
+    const acquire = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!active) return;
+      if (!user) { setEditLock("READ_ONLY"); setLockOwner("로그인하지 않은 사용자"); return; }
+      const { data, error } = await supabase.rpc("acquire_record_lock", { target_type: "application", target_id: application.id, lock_minutes: 15 });
+      if (!active) return;
+      if (!error && data) { setEditLock("OWNED"); setLockOwner(""); return; }
+      const { data: lock } = await supabase.from("record_locks").select("locked_by").eq("resource_type", "application").eq("resource_id", application.id).maybeSingle();
+      let owner = "다른 직원";
+      if (lock?.locked_by) {
+        const { data: profile } = await supabase.from("profiles").select("display_name").eq("id", lock.locked_by).maybeSingle();
+        owner = profile?.display_name || owner;
+      }
+      if (active) { setEditLock("READ_ONLY"); setLockOwner(owner); }
+    };
+    void acquire();
+    const renewal = window.setInterval(() => void acquire(), 10 * 60 * 1000);
+    return () => {
+      active = false;
+      window.clearInterval(renewal);
+      void supabase.from("record_locks").delete().eq("resource_type", "application").eq("resource_id", application.id);
+    };
+  }, [application.id, usesSupabaseWorkspace]);
 
   useEffect(() => { if (usesSupabaseWorkspace) { const supabase = createClient(); void supabase.from("application_workspaces").select("state").eq("application_id", application.id).maybeSingle().then(({ data, error }) => { if (error) setNotice(`공유 업무기록을 읽지 못했습니다: ${error.message}`); else if (data?.state) setDemo((current) => ({ ...current, ...(data.state as Partial<DemoState>) })); setLastSavedAt(data?.state ? "Supabase 저장 내용을 불러왔습니다." : "새 공유 업무기록입니다."); setHydrated(true); }); return; } try { const stored = window.localStorage.getItem(storageKey); if (stored) { const initial = makeInitial(application, linkedJobs); const saved = JSON.parse(stored) as Partial<DemoState>; const certificates = Object.fromEntries(linkedJobs.map((job) => [job.id, { ...initial.certificates[job.id], ...saved.certificates?.[job.id] }])); const deliveryDocuments = Object.fromEntries(linkedJobs.map((job) => [job.id, { ...initial.deliveryDocuments[job.id], ...saved.deliveryDocuments?.[job.id], education: { ...initial.deliveryDocuments[job.id].education, ...saved.deliveryDocuments?.[job.id]?.education, applicability: "REQUIRED" as DocumentApplicability } }])) as DemoDeliveryDocuments; const dateAuditLogs = (saved.dateAuditLogs ?? initial.dateAuditLogs).map((log) => ({ ...log, category: log.category ?? "정정" as const })); setDemo({ ...initial, ...saved, storedDocuments: { ...initial.storedDocuments, ...saved.storedDocuments }, reviewRequirements: { ...initial.reviewRequirements, ...saved.reviewRequirements }, review: { ...initial.review, ...saved.review }, englishText: { ...initial.englishText, ...saved.englishText }, examSchedules: { ...initial.examSchedules, ...saved.examSchedules }, assessment: saved.assessment ?? initial.assessment, panelMembers: saved.panelMembers ?? initial.panelMembers, certificates, deliveryDocuments, dateAuditLogs }); setLastSavedAt("저장된 내용을 불러왔습니다."); } else { const profiles = readStoredProfiles(); if (profiles.length) setDemo((current) => ({ ...current, deliveryDocuments: Object.fromEntries(linkedJobs.map((job) => { const profile = profiles.find((item) => profileKey(item) === profileKey({ businessArea: job.businessArea ?? application.businessArea, standard: job.standard, grade: job.currentGrade })); return [job.id, Object.fromEntries(deliveryDocumentRows.map(({ key }) => [key, { ...current.deliveryDocuments[job.id][key], applicability: key === "education" ? "REQUIRED" : profile?.rules[key] ?? current.deliveryDocuments[job.id][key].applicability }]))]; })) as DemoDeliveryDocuments })); } } catch { setNotice("저장된 업무기록을 읽지 못했습니다. 다시 저장해 주세요."); } finally { setHydrated(true); } }, [application, linkedJobs, storageKey, usesSupabaseWorkspace]);
-  useEffect(() => { if (!hydrated) return; if (usesSupabaseWorkspace) { const timeout = window.setTimeout(() => { const supabase = createClient(); void supabase.from("application_workspaces").upsert({ application_id: application.id, state: demo }, { onConflict: "application_id" }).then(({ error }) => { if (error) setNotice(`공유 저장에 실패했습니다: ${error.message}`); }); }, 800); return () => window.clearTimeout(timeout); } try { window.localStorage.setItem(storageKey, JSON.stringify(demo)); } catch { setNotice("브라우저 저장공간에 기록하지 못했습니다."); } }, [application.id, demo, hydrated, storageKey, usesSupabaseWorkspace]);
+  useEffect(() => { if (!hydrated || (usesSupabaseWorkspace && editLock !== "OWNED")) return; if (usesSupabaseWorkspace) { const timeout = window.setTimeout(() => { const supabase = createClient(); void supabase.from("application_workspaces").upsert({ application_id: application.id, state: demo }, { onConflict: "application_id" }).then(({ error }) => { if (error) setNotice(`공유 저장에 실패했습니다: ${error.message}`); }); }, 800); return () => window.clearTimeout(timeout); } try { window.localStorage.setItem(storageKey, JSON.stringify(demo)); } catch { setNotice("브라우저 저장공간에 기록하지 못했습니다."); } }, [application.id, demo, editLock, hydrated, storageKey, usesSupabaseWorkspace]);
   useEffect(() => { if (new URLSearchParams(window.location.search).get("tab") === "package") setActive("Job·패키지"); }, []);
   useEffect(() => {
     setTrainingInstitutions(readTrainingInstitutions());
@@ -130,7 +162,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
 
   const packageContext = useMemo(() => ({ application, candidate, jobs: linkedJobs, reviewRequirements: demo.reviewRequirements, review: demo.review, invoiceNo: demo.invoiceNo, invoiceAmount: demo.invoiceAmount, invoiceIssuedAt: demo.invoiceIssuedAt, paidAmount: demo.paidAmount, paymentConfirmedAt: demo.paymentConfirmedAt, assessment: demo.assessment, panelMembers: demo.panelMembers, decisions: demo.decisions, certificates: demo.certificates, deliveryDocuments: demo.deliveryDocuments, decisionDate: demo.decisionDate, finalApprover: demo.finalApprover, finalApprovalDate: demo.finalApprovalDate, englishText: demo.englishText }), [application, candidate, linkedJobs, demo]);
   const currentIndex = stageOrder.indexOf(demo.stage);
-  const saveDraft = async () => { try { if (usesSupabaseWorkspace) { const supabase = createClient(); const { error } = await supabase.from("application_workspaces").upsert({ application_id: application.id, state: demo }, { onConflict: "application_id" }); if (error) throw error; } else window.localStorage.setItem(storageKey, JSON.stringify(demo)); const savedAt = new Date().toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" }); setLastSavedAt(`${savedAt} 저장 완료`); setNotice(usesSupabaseWorkspace ? "공유 업무 입력값을 Supabase에 저장했습니다." : "현재 화면의 업무 입력값을 저장했습니다."); } catch (error) { setNotice(`업무기록을 저장하지 못했습니다: ${error instanceof Error ? error.message : "알 수 없는 오류"}`); } };
+  const saveDraft = async () => { if (!canEdit) { setNotice("다른 직원이 편집 중이므로 현재 화면은 조회 전용입니다."); return; } try { if (usesSupabaseWorkspace) { const supabase = createClient(); const { error } = await supabase.from("application_workspaces").upsert({ application_id: application.id, state: demo }, { onConflict: "application_id" }); if (error) throw error; } else window.localStorage.setItem(storageKey, JSON.stringify(demo)); const savedAt = new Date().toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" }); setLastSavedAt(`${savedAt} 저장 완료`); setNotice(usesSupabaseWorkspace ? "공유 업무 입력값을 Supabase에 저장했습니다." : "현재 화면의 업무 입력값을 저장했습니다."); } catch (error) { setNotice(`업무기록을 저장하지 못했습니다: ${error instanceof Error ? error.message : "알 수 없는 오류"}`); } };
   const move = (stage: DemoStage, tab: Tab, message: string) => { setDemo((current) => ({ ...current, stage, dateAuditLogs: [...current.dateAuditLogs, createAuditLog("처리", "", "업무 단계", stageLabels[current.stage], stageLabels[stage], message, application.primaryOwner)] })); setActive(tab); setNotice(message); };
   const reset = () => { setDemo(makeInitial(application, linkedJobs)); window.localStorage.removeItem(storageKey); setActive("서류검토"); setNotice("샘플 진행상태를 처음으로 되돌렸습니다."); };
 
@@ -230,13 +262,18 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   };
 
   return <div className="space-y-5">
+    {usesSupabaseWorkspace && editLock === "CHECKING" && <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">편집 가능 여부를 확인하고 있습니다.</div>}
+    {usesSupabaseWorkspace && editLock === "OWNED" && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"><strong>편집 가능</strong> · 현재 신청 건의 편집 권한을 확보했습니다. 작업 중에는 자동으로 연장됩니다.</div>}
+    {usesSupabaseWorkspace && editLock === "READ_ONLY" && <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"><strong>조회 전용</strong> · {lockOwner}이(가) 현재 편집 중입니다. 해당 직원이 화면을 닫거나 15분 동안 갱신하지 않으면 편집할 수 있습니다.</div>}
     <section className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center"><div className="flex-1"><p className="text-sm font-semibold text-blue-950">샘플 업무 진행</p><p className="mt-1 text-sm text-blue-800">{notice}</p>{lastSavedAt && <p className="mt-1 text-xs font-medium text-emerald-700">{lastSavedAt}</p>}</div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={saveDraft}><Save/>현재 입력 저장</Button><Button size="sm" variant="outline" onClick={reset}><RotateCcw/>처음부터 다시</Button></div></div>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center"><div className="flex-1"><p className="text-sm font-semibold text-blue-950">샘플 업무 진행</p><p className="mt-1 text-sm text-blue-800">{notice}</p>{lastSavedAt && <p className="mt-1 text-xs font-medium text-emerald-700">{lastSavedAt}</p>}</div><div className="flex gap-2"><Button size="sm" variant="outline" disabled={!canEdit} onClick={saveDraft}><Save/>현재 입력 저장</Button><Button size="sm" variant="outline" disabled={!canEdit} onClick={reset}><RotateCcw/>처음부터 다시</Button></div></div>
       <div className="mt-4 grid gap-2 sm:grid-cols-4 xl:grid-cols-7">{stageOrder.map((stage, index) => <div key={stage} className={`rounded-md border px-2 py-2 text-center text-xs font-semibold ${index < currentIndex || demo.stage === "COMPLETED" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : index === currentIndex ? "border-blue-700 bg-blue-800 text-white" : "border-slate-200 bg-white text-slate-400"}`}>{index < currentIndex || demo.stage === "COMPLETED" ? "✓ " : ""}{stageLabels[stage]}</div>)}</div>
     </section>
 
     <section className="rounded-lg border bg-white p-5 shadow-sm"><div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-6"><Summary label="후보자" value={candidate.name}/><Summary label="분야" value={businessAreaLabels[application.businessArea]}/><Summary label="인정 구분" value={accreditationLabels[application.accreditationTrack]}/><Summary label="공식 접수일" value={application.receivedAt}/><Summary label="관리 No." value={`${application.managementNoFrom}${application.managementNoFrom === application.managementNoTo ? "" : `~${application.managementNoTo}`}`}/><div><p className="text-xs font-medium text-slate-500">기준상태</p><div className="mt-1.5"><ApplicationStatusBadge status={application.status}/></div></div></div></section>
     <div className="overflow-x-auto rounded-lg border bg-white px-2"><div className="flex min-w-max">{tabs.map((tab) => <button key={tab} onClick={() => setActive(tab)} className={`border-b-2 px-4 py-3 text-sm font-medium ${active === tab ? "border-blue-800 text-blue-800" : "border-transparent text-slate-500 hover:text-slate-800"}`}>{tab}</button>)}</div></div>
+
+    <fieldset disabled={!canEdit} className="space-y-5 border-0 p-0 disabled:opacity-80">
 
     {active === "신청 개요" && <div className="grid gap-5 xl:grid-cols-2">
       <Section title="접수정보"><dl className="grid gap-5 sm:grid-cols-2"><Info label="신청번호" value={application.applicationNo}/><Info label="신청구분" value={application.applicationType}/><Info label="파트너사" value={application.partnerCompany}/><Info label="주 담당자" value={application.primaryOwner}/><Info label="공식 접수일" value={application.receivedAt}/><Info label="시스템 등록일시" value={application.registeredAt}/></dl></Section>
@@ -305,7 +342,8 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
         {demo.dateAuditLogs.length === 0 ? <div className="py-10 text-center text-sm text-slate-500">아직 기록된 처리이력이 없습니다.</div> : <div className="relative ml-2 border-l border-slate-200 pl-6">{demo.dateAuditLogs.slice().reverse().map((log) => <div key={log.id} className="relative pb-6 last:pb-0"><span className={`absolute -left-[31px] top-1 h-3 w-3 rounded-full ring-4 ring-white ${log.category === "정정" ? "bg-amber-500" : "bg-blue-700"}`}/><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${log.category === "정정" ? "bg-amber-100 text-amber-900" : "bg-blue-50 text-blue-800"}`}>{log.category}</span><p className="font-semibold">{log.field}</p>{log.jobId && <span className="text-xs text-slate-500">{linkedJobs.find((job) => job.id === log.jobId)?.jobNo}</span>}</div><p className="mt-2 text-sm"><span className="text-slate-500">변경 전 </span>{log.before || "미입력"}<span className="mx-2 text-slate-300">→</span><span className="text-slate-500">변경 후 </span>{log.after || "미입력"}</p><p className="mt-1 text-sm text-slate-700">{log.reason}</p><p className="mt-1 text-xs text-slate-500">{log.actor} · {log.occurredAt}</p></div>)}</div>}
       </Section>
     </div>}
-    <div className="flex flex-col gap-3 rounded-lg border bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold text-slate-800">현재 업무 입력 저장</p><p className="mt-1 text-xs text-slate-500">화면 하단에서도 현재 입력값을 즉시 저장할 수 있습니다.{usesSupabaseWorkspace ? " 저장값은 다른 기기에도 공유됩니다." : ""}</p>{lastSavedAt && <p className="mt-1 text-xs font-medium text-emerald-700">{lastSavedAt}</p>}</div><Button onClick={saveDraft} className="bg-blue-800 hover:bg-blue-900"><Save/>현재 입력 저장</Button></div>
+    </fieldset>
+    <div className="flex flex-col gap-3 rounded-lg border bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold text-slate-800">현재 업무 입력 저장</p><p className="mt-1 text-xs text-slate-500">화면 하단에서도 현재 입력값을 즉시 저장할 수 있습니다.{usesSupabaseWorkspace ? " 저장값은 다른 기기에도 공유됩니다." : ""}</p>{lastSavedAt && <p className="mt-1 text-xs font-medium text-emerald-700">{lastSavedAt}</p>}</div><Button disabled={!canEdit} onClick={saveDraft} className="bg-blue-800 hover:bg-blue-900"><Save/>현재 입력 저장</Button></div>
   </div>;
 }
 

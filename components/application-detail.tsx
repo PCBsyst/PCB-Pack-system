@@ -17,6 +17,7 @@ import { jobs as allJobs } from "@/data/mock-data";
 import { readTrainingInstitutions, type TrainingInstitution } from "@/lib/training-institutions";
 import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
+import { SupabaseAuditTrail } from "@/components/supabase-audit-trail";
 
 const tabs = ["신청 개요", "자료보관", "서류검토", "인보이스·입금", "인증심의", "Job·패키지", "처리이력"] as const;
 type Tab = (typeof tabs)[number];
@@ -455,6 +456,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
       <Section title="처리·정정 이력" description="업무 단계 진행과 핵심정보 정정 내역을 시간순으로 추적합니다.">
         {demo.dateAuditLogs.length === 0 ? <div className="py-10 text-center text-sm text-slate-500">아직 기록된 처리이력이 없습니다.</div> : <div className="relative ml-2 border-l border-slate-200 pl-6">{demo.dateAuditLogs.slice().reverse().map((log) => <div key={log.id} className="relative pb-6 last:pb-0"><span className={`absolute -left-[31px] top-1 h-3 w-3 rounded-full ring-4 ring-white ${log.category === "정정" ? "bg-amber-500" : "bg-blue-700"}`}/><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${log.category === "정정" ? "bg-amber-100 text-amber-900" : "bg-blue-50 text-blue-800"}`}>{log.category}</span><p className="font-semibold">{log.field}</p>{log.jobId && <span className="text-xs text-slate-500">{linkedJobs.find((job) => job.id === log.jobId)?.jobNo}</span>}</div><p className="mt-2 text-sm"><span className="text-slate-500">변경 전 </span>{log.before || "미입력"}<span className="mx-2 text-slate-300">→</span><span className="text-slate-500">변경 후 </span>{log.after || "미입력"}</p><p className="mt-1 text-sm text-slate-700">{log.reason}</p><p className="mt-1 text-xs text-slate-500">{log.actor} · {log.occurredAt}</p></div>)}</div>}
       </Section>
+      {usesSupabaseWorkspace && <Section title="시스템 감사이력" description="Supabase 정식 업무 테이블의 등록·변경·삭제 기록과 실제 시스템 시각입니다."><SupabaseAuditTrail applicationId={application.id} candidateId={candidate.id} jobIds={linkedJobs.map((job) => job.id)} cycleIds={Object.values(cycleIds)}/></Section>}
     </div>}
     </fieldset>
     <div className="flex flex-col gap-3 rounded-lg border bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold text-slate-800">현재 업무 입력 저장</p><p className="mt-1 text-xs text-slate-500">화면 하단에서도 현재 입력값을 즉시 저장할 수 있습니다.{usesSupabaseWorkspace ? " 저장값은 다른 기기에도 공유됩니다." : ""}</p>{lastSavedAt && <p className="mt-1 text-xs font-medium text-emerald-700">{lastSavedAt}</p>}</div><Button disabled={!canEdit} onClick={saveDraft} className="bg-blue-800 hover:bg-blue-900"><Save/>현재 입력 저장</Button></div>

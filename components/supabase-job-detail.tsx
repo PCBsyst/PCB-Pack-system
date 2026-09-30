@@ -51,7 +51,7 @@ export function SupabaseJobDetail({ id }: { id: string }) {
   const [reasonOptions, setReasonOptions] = useState({ SUSPENDED: ["자격유지 요구사항 미충족", "인증서 오용", "시정조치 미이행", "기타"], WITHDRAWN: ["중대한 인증서 오용", "정지 후 시정조치 미이행", "본인 요청", "기타"] });
   useEffect(() => {
     const supabase = createClient();
-    void supabase.from("jobs").select("*, candidates(id, name, name_en), certification_records(id, certification_no, issue_date, valid_until, history_state), certification_actions(id, action_type, standard_reason, detail_reason, effective_date, recorded_by_name, created_at), applications(id, application_no, application_type, received_at, partner_name_snapshot, application_workspaces(state))").eq("id", id).single().then(({ data, error: loadError }) => {
+    void supabase.from("jobs").select("*, candidates(id, name, name_en), certification_records(id, certification_no, issue_date, valid_until, history_state), applications(id, application_no, application_type, received_at, partner_name_snapshot, application_workspaces(state))").eq("id", id).single().then(async ({ data, error: loadError }) => {
       if (loadError || !data) { setError(loadError?.message ?? "Job을 찾지 못했습니다."); setView(null); return; }
       const candidate = Array.isArray(data.candidates) ? data.candidates[0] : data.candidates;
       const application = Array.isArray(data.applications) ? data.applications[0] : data.applications;
@@ -59,7 +59,8 @@ export function SupabaseJobDetail({ id }: { id: string }) {
       const workflow = (workspace?.state ?? {}) as PrototypeWorkflowSnapshot & { aftercareRecords?: Record<string, AftercareRecord[]> };
       const certificationRows = (Array.isArray(data.certification_records) ? data.certification_records : []) as CertificationRecordRow[];
       const currentCertification = certificationRows.find((record) => record.history_state === "CURRENT") ?? certificationRows[0];
-      const actionRows = (Array.isArray(data.certification_actions) ? data.certification_actions : []) as CertificationActionRow[];
+      const { data: actionData } = await supabase.from("certification_actions").select("id, action_type, standard_reason, detail_reason, effective_date, recorded_by_name, created_at").eq("job_id", id).order("created_at", { ascending: true });
+      const actionRows = (actionData ?? []) as CertificationActionRow[];
       const aftercareRecords: AftercareRecord[] = actionRows.map((record) => ({ id: record.id, type: record.action_type, reason: record.standard_reason, detail: record.detail_reason, effectiveDate: record.effective_date, actor: record.recorded_by_name, recordedAt: record.created_at }));
       setView({ id: data.id, jobNo: data.job_no, managementNo: data.management_no, businessArea: data.business_area, accreditationTrack: data.accreditation_track, standard: data.standard, grade: data.grade, certificationState: data.certification_state, applicationId: application?.id ?? data.application_id, applicationNo: application?.application_no ?? "-", applicationType: application?.application_type ?? "-", receivedAt: application?.received_at ?? "-", partner: application?.partner_name_snapshot ?? "-", candidateId: candidate?.id ?? data.candidate_id, candidateName: candidate?.name ?? "이름 미입력", candidateNameEn: candidate?.name_en ?? "미입력", previousJobId: data.previous_job_id ?? undefined, workflow, certificationRecordId: currentCertification?.id, certificationNo: currentCertification?.certification_no, certificationIssueDate: currentCertification?.issue_date, certificationExpiryDate: currentCertification?.valid_until, aftercareRecords });
     });

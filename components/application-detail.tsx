@@ -38,6 +38,8 @@ const reviewRequirementItems = ["교육요건", "학력요건", "업무경력요
 const stageOrder: DemoStage[] = ["DOCUMENT_REVIEW", "INVOICE_PENDING", "PAYMENT_PENDING", "DECISION_PENDING", "CERTIFICATE_DRAFT_PENDING", "CERTIFICATION_INFO_PENDING", "ORIGINAL_DELIVERY_PENDING", "PACKAGE_READY", "COMPLETED"];
 const stageLabels: Record<DemoStage, string> = { DOCUMENT_REVIEW: "서류검토", INVOICE_PENDING: "인보이스", PAYMENT_PENDING: "입금 확인", DECISION_PENDING: "인증심의", CERTIFICATE_DRAFT_PENDING: "초안 발행", CERTIFICATION_INFO_PENDING: "전자본 발행", ORIGINAL_DELIVERY_PENDING: "원본 송부", PACKAGE_READY: "패키지", COMPLETED: "완료" };
 
+function escapeRegExp(value: string) { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+
 function officialApplicationStatus(stage: DemoStage) {
   if (["DOCUMENT_REVIEW", "INVOICE_PENDING", "PAYMENT_PENDING", "DECISION_PENDING", "COMPLETED"].includes(stage)) return stage;
   return "PARTIALLY_COMPLETED";
@@ -290,13 +292,22 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     const approved = linkedJobs.filter((job) => ["승인", "재승인"].includes(demo.decisions[job.id]?.result));
     if (!approved.length) { setNotice("승인된 Job이 없어 패키지 생성 단계로 진행할 수 없습니다."); return; }
     if (approved.some((job) => !demo.certificates[job.id]?.certificationNo || !demo.certificates[job.id]?.issueDate || !demo.certificates[job.id]?.expiryDate)) { setNotice("승인 Job의 인증번호·발행일·만료일을 입력해 주세요."); return; }
-    if (approved.some((job) => !/^\d{8}$/.test(demo.certificates[job.id]?.certificationNo ?? ""))) { setNotice("인증번호는 숫자 8자리 형식이어야 합니다."); return; }
+    if (approved.some((job) => { const certificate = demo.certificates[job.id]; const prefix = getCertificationNumberPrefix(job.businessArea ?? application.businessArea, application.scheme ?? "IAS", job.accreditationTrack ?? application.accreditationTrack, job.standard, job.currentGrade, certificate?.issueDate ?? ""); return !prefix || !new RegExp(`^${escapeRegExp(prefix)}\\d{4}$`).test(certificate?.certificationNo ?? ""); })) { setNotice("인증번호가 해당 분야·등급·발행연도의 규칙과 일치하지 않습니다."); return; }
     if (usesSupabaseWorkspace) {
       if (approved.some((job) => !cycleIds[job.id])) { setNotice("Job 처리 회차를 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요."); return; }
       const supabase = createClient();
-      const rows = approved.map((job) => { const certificate = demo.certificates[job.id]; return { job_id: job.id, cycle_id: cycleIds[job.id], certification_no: certificate.certificationNo, revision: 0, draft_issued_at: certificate.draftIssuedAt || null, issue_date: certificate.issueDate, valid_from: certificate.issueDate, valid_until: certificate.expiryDate, state: "ACTIVE", history_state: "CURRENT" }; });
+      const previousJobIds = approved.map((job) => job.previousJobId).filter((id): id is string => Boolean(id));
+      const { data: previousRecords, error: previousError } = previousJobIds.length ? await supabase.from("certification_records").select("id, job_id").in("job_id", previousJobIds).eq("history_state", "CURRENT") : { data: [], error: null };
+      if (previousError) { setNotice(`기존 인증이력을 불러오지 못했습니다: ${previousError.message}`); return; }
+      const previousRecordByJob = new Map((previousRecords ?? []).map((record) => [record.job_id, record.id]));
+      const rows = approved.map((job) => { const certificate = demo.certificates[job.id]; return { job_id: job.id, cycle_id: cycleIds[job.id], certification_no: certificate.certificationNo, revision: 0, draft_issued_at: certificate.draftIssuedAt || null, issue_date: certificate.issueDate, valid_from: certificate.issueDate, valid_until: certificate.expiryDate, state: "ACTIVE", history_state: "CURRENT", replaced_record_id: job.previousJobId ? previousRecordByJob.get(job.previousJobId) ?? null : null }; });
       const { error } = await supabase.from("certification_records").upsert(rows, { onConflict: "cycle_id" });
       if (error) { setNotice(`인증정보 정식 기록 저장에 실패했습니다: ${error.message}`); return; }
+      if (previousRecords?.length) {
+        const historyState = application.applicationType === "갱신" ? "REPLACED_BY_RENEWAL" : "REPLACED_BY_GRADE_CHANGE";
+        const { error: historyError } = await supabase.from("certification_records").update({ history_state: historyState }).in("id", previousRecords.map((record) => record.id));
+        if (historyError) { setNotice(`기존 인증이력 상태를 변경하지 못했습니다: ${historyError.message}`); return; }
+      }
       const cycleUpdates = await Promise.all(approved.map((job) => supabase.from("processing_cycles").update({ planned_issue_date: demo.certificates[job.id].issueDate }).eq("id", cycleIds[job.id])));
       const cycleError = cycleUpdates.find((result) => result.error)?.error;
       if (cycleError) { setNotice(`처리 회차 인증발행일 저장에 실패했습니다: ${cycleError.message}`); return; }

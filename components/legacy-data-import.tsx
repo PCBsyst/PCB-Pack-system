@@ -116,14 +116,23 @@ export function LegacyDataImport() {
     if (!hasEnvVars || !selected.size || importing) return;
     setImporting(true); setImportResult(null);
     const supabase = createClient(); let success = 0; const failed: { row: number; message: string }[] = []; const succeededRows: number[] = [];
+    const { data: batchData, error: batchError } = await supabase.rpc("start_legacy_import_batch", { p_file_name: fileName, p_total_rows: selected.size });
+    if (batchError || !batchData) {
+      setImportResult({ success: 0, failed: [{ row: 0, message: batchError?.message ?? "가져오기 배치를 생성하지 못했습니다." }] });
+      setImporting(false);
+      return;
+    }
+    const batchId = batchData as string;
     for (const row of rows.filter((item) => selected.has(item.sourceRow) && !item.errors.length)) {
       const payload = Object.fromEntries(canonicalKeys.map((key) => [key, row[key]]));
-      const { error } = await supabase.rpc("import_legacy_certification_row_v2", { p_row: payload });
-      if (error) failed.push({ row: row.sourceRow, message: error.message }); else { success += 1; succeededRows.push(row.sourceRow); }
+      const { error } = await supabase.rpc("import_legacy_certification_row_v3", { p_batch_id: batchId, p_source_row: row.sourceRow, p_row: payload });
+      if (error) { failed.push({ row: row.sourceRow, message: error.message }); await supabase.rpc("record_legacy_import_failure", { p_batch_id: batchId, p_source_row: row.sourceRow, p_row: payload, p_error_message: error.message }); } else { success += 1; succeededRows.push(row.sourceRow); }
     }
+    await supabase.rpc("complete_legacy_import_batch", { p_batch_id: batchId });
     setImportResult({ success, failed }); setImporting(false);
     setImported((current) => new Set([...current, ...succeededRows]));
     setSelected(new Set(failed.map((item) => item.row)));
+    window.dispatchEvent(new Event("legacy-import-updated"));
   };
 
   return <div className="space-y-4">

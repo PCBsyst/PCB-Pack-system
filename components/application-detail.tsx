@@ -21,6 +21,8 @@ import { SupabaseAuditTrail } from "@/components/supabase-audit-trail";
 
 const tabs = ["신청 개요", "자료보관", "서류검토", "인보이스·입금", "인증심의", "Job·패키지", "처리이력"] as const;
 type Tab = (typeof tabs)[number];
+const tabSlugs: Record<Tab, string> = { "신청 개요": "overview", "자료보관": "storage", "서류검토": "review", "인보이스·입금": "invoice", "인증심의": "decision", "Job·패키지": "package", "처리이력": "history" };
+const tabsBySlug = Object.fromEntries(Object.entries(tabSlugs).map(([tab, slug]) => [slug, tab])) as Record<string, Tab>;
 type DemoStage = "DOCUMENT_REVIEW" | "INVOICE_PENDING" | "PAYMENT_PENDING" | "DECISION_PENDING" | "CERTIFICATE_DRAFT_PENDING" | "CERTIFICATION_INFO_PENDING" | "ORIGINAL_DELIVERY_PENDING" | "PACKAGE_READY" | "COMPLETED";
 type DateAuditLog = { id: string; category: "처리" | "정정"; jobId: string; field: string; before: string; after: string; reason: string; actor: string; occurredAt: string };
 type TrainingProviderType = "PARTNER" | "NON_PARTNER";
@@ -154,7 +156,10 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     };
     void sync();
   }, [application.id, demo.certificates, demo.generated, demo.stage, editLock, hydrated, linkedJobs, usesSupabaseWorkspace]);
-  useEffect(() => { if (new URLSearchParams(window.location.search).get("tab") === "package") setActive("Job·패키지"); }, []);
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("tab");
+    if (requested && tabsBySlug[requested]) setActive(tabsBySlug[requested]);
+  }, []);
   useEffect(() => {
     setTrainingInstitutions(readTrainingInstitutions());
     if (!hasEnvVars) return;
@@ -412,7 +417,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     </section>
 
     <section className="rounded-lg border bg-white p-5 shadow-sm"><div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-6"><Summary label="후보자" value={candidate.name}/><Summary label="분야" value={businessAreaLabels[application.businessArea]}/><Summary label="인정 구분" value={accreditationLabels[application.accreditationTrack]}/><Summary label="공식 접수일" value={application.receivedAt}/><Summary label="관리 No." value={`${application.managementNoFrom}${application.managementNoFrom === application.managementNoTo ? "" : `~${application.managementNoTo}`}`}/><div><p className="text-xs font-medium text-slate-500">기준상태</p><div className="mt-1.5"><ApplicationStatusBadge status={application.status}/></div></div></div></section>
-    <div className="overflow-x-auto rounded-lg border bg-white px-2"><div className="flex min-w-max">{tabs.map((tab) => <button key={tab} onClick={() => setActive(tab)} className={`border-b-2 px-4 py-3 text-sm font-medium ${active === tab ? "border-blue-800 text-blue-800" : "border-transparent text-slate-500 hover:text-slate-800"}`}>{tab}</button>)}</div></div>
+    <div className="overflow-x-auto rounded-lg border bg-white px-2"><div className="flex min-w-max">{tabs.map((tab) => <Link key={tab} href={`?tab=${tabSlugs[tab]}`} onClick={() => setActive(tab)} aria-current={active === tab ? "page" : undefined} className={`border-b-2 px-4 py-3 text-sm font-medium ${active === tab ? "border-blue-800 text-blue-800" : "border-transparent text-slate-500 hover:text-slate-800"}`}>{tab}</Link>)}</div></div>
 
     <fieldset disabled={!canEdit} className="space-y-5 border-0 p-0 disabled:opacity-80">
 

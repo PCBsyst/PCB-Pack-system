@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BriefcaseBusiness, Building2, ChevronRight, ClipboardList, LayoutDashboard, LogOut, Menu, PackageCheck, Settings, ShieldCheck, TableProperties, Users, X } from "lucide-react";
+import { BriefcaseBusiness, Building2, ChevronRight, ClipboardList, FileWarning, LayoutDashboard, LogOut, Menu, PackageCheck, Settings, ShieldCheck, TableProperties, Users, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn, hasEnvVars } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -15,6 +15,7 @@ const navigation = [
   { href: "/candidates", label: "후보자", icon: Users },
   { href: "/jobs", label: "Job 관리", icon: BriefcaseBusiness },
   { href: "/packages", label: "패키지", icon: PackageCheck },
+  { href: "/certification-actions", label: "정지·철회 현황", icon: FileWarning },
   { href: "/training-institutions", label: "협약 연수기관", icon: Building2 },
   { href: "/settings", label: "설정", icon: Settings, adminOnly: true },
 ];

@@ -6,12 +6,16 @@ import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
 
-type CanonicalKey = "candidateName" | "candidateNameEn" | "businessArea" | "accreditationTrack" | "managementNo" | "jobNo" | "certificationNo" | "standard" | "grade" | "applicationType" | "receivedAt" | "issueDate" | "expiryDate" | "partnerName" | "certificationState";
+type CanonicalKey = "candidateName" | "candidateNameEn" | "candidateBirthDate" | "candidateNationality" | "candidateEmail" | "candidatePhone" | "businessArea" | "accreditationTrack" | "managementNo" | "jobNo" | "certificationNo" | "standard" | "grade" | "applicationType" | "receivedAt" | "issueDate" | "expiryDate" | "partnerName" | "certificationState";
 type ImportRow = Record<CanonicalKey, string> & { sourceRow: number; errors: string[]; warnings: string[] };
 
 const fieldAliases: Record<CanonicalKey, string[]> = {
   candidateName: ["후보자명", "후보자", "성명", "이름", "name", "candidate name"],
   candidateNameEn: ["영문명", "영문성명", "name en", "english name"],
+  candidateBirthDate: ["생년월일", "birth date", "date of birth", "dob"],
+  candidateNationality: ["국적", "nationality"],
+  candidateEmail: ["이메일", "email", "e mail"],
+  candidatePhone: ["전화번호", "연락처", "phone", "mobile"],
   businessArea: ["발행분야", "분야", "business area", "category"],
   accreditationTrack: ["인정구분", "인정여부", "accreditation track", "accreditation"],
   managementNo: ["no", "관리 no", "관리번호", "management no"],
@@ -28,7 +32,7 @@ const fieldAliases: Record<CanonicalKey, string[]> = {
 };
 
 const displayLabels: Record<CanonicalKey, string> = {
-  candidateName: "후보자명", candidateNameEn: "영문명", businessArea: "발행분야", accreditationTrack: "인정구분", managementNo: "관리 No.", jobNo: "Job No.", certificationNo: "인증번호", standard: "표준", grade: "등급", applicationType: "신청구분", receivedAt: "접수일", issueDate: "인증발행일", expiryDate: "만료일", partnerName: "파트너사", certificationState: "인증상태",
+  candidateName: "후보자명", candidateNameEn: "영문명", candidateBirthDate: "생년월일", candidateNationality: "국적", candidateEmail: "이메일", candidatePhone: "전화번호", businessArea: "발행분야", accreditationTrack: "인정구분", managementNo: "관리 No.", jobNo: "Job No.", certificationNo: "인증번호", standard: "표준", grade: "등급", applicationType: "신청구분", receivedAt: "접수일", issueDate: "인증발행일", expiryDate: "만료일", partnerName: "파트너사", certificationState: "인증상태",
 };
 
 const canonicalKeys = Object.keys(fieldAliases) as CanonicalKey[];
@@ -96,7 +100,7 @@ export function LegacyDataImport() {
   };
 
   const downloadTemplate = () => {
-    const sample = [canonicalKeys.map((key) => displayLabels[key]), ["홍길동", "GIL DONG HONG", "ISO", "인정", "1", "QMS260001", "26130001", "ISO 9001", "심사원", "최초", "2026-09-01", "2026-09-15", "2029-09-14", "개인", "인증 완료"]];
+    const sample = [canonicalKeys.map((key) => displayLabels[key]), ["홍길동", "GIL DONG HONG", "1990-01-01", "대한민국", "hong@example.com", "010-0000-0000", "ISO", "인정", "1", "QMS260001", "26130001", "ISO 9001", "심사원", "최초", "2026-09-01", "2026-09-15", "2029-09-14", "개인", "인증 완료"]];
     downloadCsv(sample, "과거자료_가져오기_양식.csv");
   };
 
@@ -114,7 +118,7 @@ export function LegacyDataImport() {
     const supabase = createClient(); let success = 0; const failed: { row: number; message: string }[] = []; const succeededRows: number[] = [];
     for (const row of rows.filter((item) => selected.has(item.sourceRow) && !item.errors.length)) {
       const payload = Object.fromEntries(canonicalKeys.map((key) => [key, row[key]]));
-      const { error } = await supabase.rpc("import_legacy_certification_row", { p_row: payload });
+      const { error } = await supabase.rpc("import_legacy_certification_row_v2", { p_row: payload });
       if (error) failed.push({ row: row.sourceRow, message: error.message }); else { success += 1; succeededRows.push(row.sourceRow); }
     }
     setImportResult({ success, failed }); setImporting(false);
@@ -144,9 +148,9 @@ export function LegacyDataImport() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><div><h2 className="font-semibold text-slate-900">2. 검증 및 등록 대상 선택</h2><p className="mt-1 text-xs text-slate-500">인식한 원본 열 {headers.length}개 · 현재 표시 {visibleRows.length}건 · 선택 {selected.size}건 · 등록 완료 {imported.size}건</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={downloadIssues} disabled={!counts.error && !counts.warning}><Download />오류 목록</Button><Button size="sm" onClick={importSelected} disabled={!hasEnvVars || !selected.size || importing}>{importing ? <Loader2 className="animate-spin" /> : <Database />}{importing ? "등록 중" : `${selected.size}건 DB 등록`}</Button></div></div>
         {!hasEnvVars && <div className="border-b bg-amber-50 px-4 py-3 text-sm text-amber-900">Supabase가 연결된 배포 환경에서만 DB 등록을 실행할 수 있습니다.</div>}
         {importResult && <div className={`border-b px-4 py-3 text-sm ${importResult.failed.length ? "bg-amber-50 text-amber-900" : "bg-emerald-50 text-emerald-900"}`}><p className="font-semibold">등록 성공 {importResult.success}건 · 실패 {importResult.failed.length}건</p>{importResult.failed.length > 0 && <p className="mt-1 text-xs">{importResult.failed.map((item) => `${item.row}행: ${item.message}`).join(" / ")}</p>}</div>}
-        <div className="max-w-full overflow-x-auto"><table className="w-full min-w-[1650px] text-left text-xs"><thead className="bg-slate-100 text-slate-600"><tr><th className="border-b px-3 py-3"><input type="checkbox" aria-label="정상 행 전체 선택" checked={selectableRows.length > 0 && selected.size === selectableRows.length} onChange={toggleAll} /></th>{["원본 행", "검증", "후보자명", "분야", "인정구분", "관리 No.", "Job No.", "인증번호", "표준", "등급", "신청구분", "접수일", "발행일", "만료일", "파트너사", "오류·확인사항"].map((heading) => <th key={heading} className="whitespace-nowrap border-b px-3 py-3 font-semibold">{heading}</th>)}</tr></thead>
+        <div className="max-w-full overflow-x-auto"><table className="w-full min-w-[1900px] text-left text-xs"><thead className="bg-slate-100 text-slate-600"><tr><th className="border-b px-3 py-3"><input type="checkbox" aria-label="정상 행 전체 선택" checked={selectableRows.length > 0 && selected.size === selectableRows.length} onChange={toggleAll} /></th>{["원본 행", "검증", "후보자명", "생년월일", "이메일", "분야", "인정구분", "관리 No.", "Job No.", "인증번호", "표준", "등급", "신청구분", "접수일", "발행일", "만료일", "파트너사", "오류·확인사항"].map((heading) => <th key={heading} className="whitespace-nowrap border-b px-3 py-3 font-semibold">{heading}</th>)}</tr></thead>
           <tbody className="divide-y">{visibleRows.map((row) => <tr key={row.sourceRow} className={row.errors.length ? "bg-red-50/40" : row.warnings.length ? "bg-amber-50/40" : "hover:bg-blue-50/40"}>
-            <td className="px-3 py-3"><input type="checkbox" aria-label={`${row.sourceRow}행 선택`} disabled={row.errors.length > 0 || importing || imported.has(row.sourceRow)} checked={selected.has(row.sourceRow)} onChange={() => toggleRow(row.sourceRow)} /></td><td className="px-3 py-3 text-slate-500">{row.sourceRow}</td><td className="whitespace-nowrap px-3 py-3"><ValidationBadge row={row} imported={imported.has(row.sourceRow)} /></td><td className="whitespace-nowrap px-3 py-3 font-semibold">{row.candidateName || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.businessArea || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.accreditationTrack || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.managementNo || "자동"}</td><td className="whitespace-nowrap px-3 py-3">{row.jobNo || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.certificationNo || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.standard || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.grade || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.applicationType || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.receivedAt || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.issueDate || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.expiryDate || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.partnerName || "-"}</td><td className="min-w-80 px-3 py-3"><p className="text-red-700">{row.errors.join(" · ")}</p><p className="text-amber-800">{row.warnings.join(" · ")}</p></td>
+            <td className="px-3 py-3"><input type="checkbox" aria-label={`${row.sourceRow}행 선택`} disabled={row.errors.length > 0 || importing || imported.has(row.sourceRow)} checked={selected.has(row.sourceRow)} onChange={() => toggleRow(row.sourceRow)} /></td><td className="px-3 py-3 text-slate-500">{row.sourceRow}</td><td className="whitespace-nowrap px-3 py-3"><ValidationBadge row={row} imported={imported.has(row.sourceRow)} /></td><td className="whitespace-nowrap px-3 py-3 font-semibold">{row.candidateName || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.candidateBirthDate || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.candidateEmail || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.businessArea || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.accreditationTrack || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.managementNo || "자동"}</td><td className="whitespace-nowrap px-3 py-3">{row.jobNo || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.certificationNo || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.standard || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.grade || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.applicationType || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.receivedAt || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.issueDate || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.expiryDate || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.partnerName || "-"}</td><td className="min-w-80 px-3 py-3"><p className="text-red-700">{row.errors.join(" · ")}</p><p className="text-amber-800">{row.warnings.join(" · ")}</p></td>
           </tr>)}</tbody></table></div>
         <div className="border-t bg-slate-50 px-4 py-3 text-xs text-slate-500">오류가 없는 행만 선택할 수 있습니다. 각 행은 하나의 트랜잭션으로 처리되어 일부 정보만 저장되는 것을 방지합니다.</div>
       </section>
@@ -168,7 +172,7 @@ function normalizeRow(line: string[], sourceRow: number, mapping: Partial<Record
   const errors: string[] = [];
   const warnings: string[] = [];
   requiredFields.forEach((key) => { if (!row[key]) errors.push(`${displayLabels[key]} 누락`); });
-  (["receivedAt", "issueDate", "expiryDate"] as CanonicalKey[]).forEach((key) => { if (row[key] && !isValidDate(row[key])) errors.push(`${displayLabels[key]} 날짜 형식 오류`); });
+  (["candidateBirthDate", "receivedAt", "issueDate", "expiryDate"] as CanonicalKey[]).forEach((key) => { if (row[key] && !isValidDate(row[key])) errors.push(`${displayLabels[key]} 날짜 형식 오류`); });
   if (row.issueDate && row.expiryDate && normalizeDate(row.expiryDate) < normalizeDate(row.issueDate)) errors.push("만료일이 발행일보다 빠름");
   if (!row.receivedAt) errors.push("접수일 누락");
   if (!row.jobNo) errors.push("Job No. 누락");
@@ -177,7 +181,9 @@ function normalizeRow(line: string[], sourceRow: number, mapping: Partial<Record
   if (row.certificationNo && !row.expiryDate) errors.push("인증번호가 있으나 만료일 누락");
   if (!row.certificationNo && row.issueDate) warnings.push("발행일은 있으나 인증번호 없음");
   if (!row.businessArea) warnings.push("발행분야 확인 필요");
-  (["receivedAt", "issueDate", "expiryDate"] as CanonicalKey[]).forEach((key) => { if (row[key] && isValidDate(row[key])) row[key] = normalizeDate(row[key]); });
+  if (!row.candidateBirthDate && !row.candidateEmail) warnings.push("후보자 식별정보 부족: 동일인의 다른 Job과 자동 연결되지 않음");
+  if (row.candidateEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.candidateEmail)) errors.push("이메일 형식 오류");
+  (["candidateBirthDate", "receivedAt", "issueDate", "expiryDate"] as CanonicalKey[]).forEach((key) => { if (row[key] && isValidDate(row[key])) row[key] = normalizeDate(row[key]); });
   return { ...row, sourceRow, errors, warnings };
 }
 function applyDuplicateChecks(rows: ImportRow[]) {

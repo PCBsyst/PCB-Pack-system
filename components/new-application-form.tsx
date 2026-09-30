@@ -115,6 +115,14 @@ export function NewApplicationForm() {
         const supabase = createClient();
         const { data: userData } = await supabase.auth.getUser();
         const ownerId = primaryOwnerId || userData.user?.id;
+        for (let index = 0; index < records.length; index += 1) {
+          const rule = getNumberingRule(businessArea, scheme, accreditationTrack, records[index].standard);
+          if (!rule?.verified || !rule.jobPrefix) throw new Error(`${records[index].standard}의 Job No. 규칙이 확정되지 않았습니다.`);
+          const { data: allocatedJobNo, error: allocationError } = await supabase.rpc("allocate_job_number", { p_job_prefix: rule.jobPrefix, p_received_at: receivedAt });
+          if (allocationError) throw allocationError;
+          if (!allocatedJobNo) throw new Error(`${records[index].standard} Job No.를 확보하지 못했습니다.`);
+          records[index] = { ...records[index], jobNo: String(allocatedJobNo) };
+        }
         const first = records[0];
         const { data, error } = await supabase.rpc("create_application_bundle_v2", { existing_candidate_id: candidateMode === "EXISTING" ? existingCandidateId : null, candidate_name: first.candidateName, candidate_name_en: first.candidateNameEn || "", candidate_birth_date: first.candidateBirthDate || null, candidate_nationality: first.candidateNationality || "", candidate_email: first.candidateEmail || "", candidate_phone: first.candidatePhone || "", application_no: first.applicationNo, received_at: first.receivedAt, business_area: first.businessArea, accreditation_scheme: first.scheme ?? "IAS", accreditation_track: first.accreditationTrack, accreditation_hidden: first.accreditationHidden, application_type: first.applicationType, partner_name: first.partnerCompany, management_no: first.managementNo, job_no: first.jobNo, standard: first.standard, grade: first.grade });
         if (error) throw error;
@@ -138,7 +146,7 @@ export function NewApplicationForm() {
         }
         setStoredApplications((current) => [...records, ...current]);
         setStoredCount((count) => count + 1);
-        setNotice(`${applicationNo} 신청과 Job ${records.length}건이 Supabase DB에 등록되었습니다.`);
+        setNotice(`${applicationNo} 신청과 Job ${records.length}건이 등록되었습니다. 최종 Job No.: ${records.map((record) => record.jobNo).join(", ")}`);
         return;
       } catch (error) {
         setNotice(`DB 등록에 실패했습니다: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);

@@ -45,6 +45,7 @@ export function PrototypeApplicationWorkspace({ id }: { id: string }) {
     applicationNo: record.applicationNo,
     candidateId,
     businessArea: record.businessArea,
+    scheme: record.scheme,
     accreditationTrack: record.accreditationTrack,
     accreditationHidden: record.accreditationHidden,
     applicationType: record.applicationType,

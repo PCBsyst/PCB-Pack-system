@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
 type LinkedJobRow = { id: string; job_no: string; management_no: number; standard: string; grade: string; primary_owner_id: string | null };
 
-function useLinkedRecords() {
+export function useLinkedRecords() {
   const [records, setRecords] = useState<PrototypeApplicationRecord[]>([]);
   useEffect(() => {
     setRecords(readPrototypeApplications());

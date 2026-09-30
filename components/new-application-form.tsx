@@ -115,6 +115,13 @@ export function NewApplicationForm() {
         const supabase = createClient();
         const { data: userData } = await supabase.auth.getUser();
         const ownerId = primaryOwnerId || userData.user?.id;
+        const [{ data: allocatedApplicationNo, error: applicationNoError }, { data: allocatedManagementStart, error: managementNoError }] = await Promise.all([
+          supabase.rpc("allocate_application_number", { p_business_area: businessArea, p_received_at: receivedAt }),
+          supabase.rpc("allocate_management_numbers", { p_count: records.length }),
+        ]);
+        if (applicationNoError || !allocatedApplicationNo) throw applicationNoError ?? new Error("신청번호를 확보하지 못했습니다.");
+        if (managementNoError || !allocatedManagementStart) throw managementNoError ?? new Error("관리번호를 확보하지 못했습니다.");
+        for (let index = 0; index < records.length; index += 1) records[index] = { ...records[index], applicationNo: String(allocatedApplicationNo), managementNo: Number(allocatedManagementStart) + index };
         for (let index = 0; index < records.length; index += 1) {
           const rule = getNumberingRule(businessArea, scheme, accreditationTrack, records[index].standard);
           if (!rule?.verified || !rule.jobPrefix) throw new Error(`${records[index].standard}의 Job No. 규칙이 확정되지 않았습니다.`);
@@ -146,7 +153,7 @@ export function NewApplicationForm() {
         }
         setStoredApplications((current) => [...records, ...current]);
         setStoredCount((count) => count + 1);
-        setNotice(`${applicationNo} 신청과 Job ${records.length}건이 등록되었습니다. 최종 Job No.: ${records.map((record) => record.jobNo).join(", ")}`);
+        setNotice(`${records[0].applicationNo} 신청과 Job ${records.length}건이 등록되었습니다. 관리 No. ${records[0].managementNo}${records.length > 1 ? `~${records.at(-1)?.managementNo}` : ""} · 최종 Job No.: ${records.map((record) => record.jobNo).join(", ")}`);
         return;
       } catch (error) {
         setNotice(`DB 등록에 실패했습니다: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);

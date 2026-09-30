@@ -11,7 +11,7 @@ import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
 import { missingWorkflowItems } from "@/lib/workflow-completeness";
 
-type DashboardJobRow = { id: string; job_no: string; management_no: number; standard: string; grade: string };
+type DashboardJobRow = { id: string; job_no: string; management_no: number; standard: string; grade: string; primary_owner_id: string | null };
 
 export default function DashboardPage() {
   const [records, setRecords] = useState<PrototypeApplicationRecord[]>([]);
@@ -19,13 +19,16 @@ export default function DashboardPage() {
     setRecords(readPrototypeApplications());
     if (!hasEnvVars) return;
     const supabase = createClient();
-    void supabase.from("applications").select("*, candidates(id, name), jobs(id, job_no, management_no, standard, grade), application_workspaces(state)").order("received_at", { ascending: false }).then(({ data }) => {
+    void supabase.from("applications").select("*, candidates(id, name), jobs(id, job_no, management_no, standard, grade, primary_owner_id), application_workspaces(state)").order("received_at", { ascending: false }).then(async ({ data }) => {
       if (!data) return;
+      const ownerIds = [...new Set(data.flatMap((item) => ((Array.isArray(item.jobs) ? item.jobs : []) as DashboardJobRow[]).map((job) => job.primary_owner_id).filter((ownerId): ownerId is string => Boolean(ownerId))))];
+      const { data: profiles } = ownerIds.length ? await supabase.from("profiles").select("id, display_name").in("id", ownerIds) : { data: [] };
+      const ownerNames = new Map((profiles ?? []).map((profile) => [profile.id, profile.display_name]));
       const mapped: PrototypeApplicationRecord[] = data.flatMap((item) => {
         const candidate = Array.isArray(item.candidates) ? item.candidates[0] : item.candidates;
         const workspace = Array.isArray(item.application_workspaces) ? item.application_workspaces[0] : item.application_workspaces;
         const jobRows = (Array.isArray(item.jobs) ? item.jobs : []) as DashboardJobRow[];
-        return jobRows.map((job) => ({ id: item.id, candidateId: candidate?.id, jobId: job.id, applicationNo: item.application_no, receivedAt: item.received_at, candidateName: candidate?.name ?? "이름 미입력", businessArea: item.business_area, scheme: item.accreditation_scheme === "PJLA" ? "PJLA" : "IAS", accreditationTrack: item.accreditation_track, accreditationHidden: item.accreditation_hidden, applicationType: item.application_type, managementNo: job.management_no, jobNo: job.job_no, standard: job.standard, grade: job.grade, partnerCompany: item.partner_name_snapshot, primaryOwner: "로그인 사용자", status: "INTAKE_REVIEW", createdAt: item.created_at, workflow: workspace?.state ?? undefined }));
+        return jobRows.map((job) => ({ id: item.id, candidateId: candidate?.id, jobId: job.id, applicationNo: item.application_no, receivedAt: item.received_at, candidateName: candidate?.name ?? "이름 미입력", businessArea: item.business_area, scheme: item.accreditation_scheme === "PJLA" ? "PJLA" : "IAS", accreditationTrack: item.accreditation_track, accreditationHidden: item.accreditation_hidden, applicationType: item.application_type, managementNo: job.management_no, jobNo: job.job_no, standard: job.standard, grade: job.grade, partnerCompany: item.partner_name_snapshot, primaryOwner: job.primary_owner_id ? ownerNames.get(job.primary_owner_id) ?? "담당자 미확인" : "담당자 미지정", status: "INTAKE_REVIEW", createdAt: item.created_at, workflow: workspace?.state ?? undefined }));
       });
       setRecords(mapped);
     });

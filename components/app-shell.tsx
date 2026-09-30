@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BriefcaseBusiness, Building2, ChevronRight, ClipboardList, DatabaseBackup, FileWarning, LayoutDashboard, LogOut, Menu, PackageCheck, Settings, ShieldCheck, TableProperties, Users, X } from "lucide-react";
+import { BarChart3, BriefcaseBusiness, Building2, ChevronRight, ClipboardList, DatabaseBackup, FileWarning, LayoutDashboard, LogOut, Menu, PackageCheck, Settings, ShieldCheck, TableProperties, Users, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn, hasEnvVars } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -16,6 +16,7 @@ const navigation = [
   { href: "/jobs", label: "Job 관리", icon: BriefcaseBusiness },
   { href: "/packages", label: "패키지", icon: PackageCheck },
   { href: "/certification-actions", label: "정지·철회 현황", icon: FileWarning },
+  { href: "/reports/monthly", label: "월간 업무보고", icon: BarChart3 },
   { href: "/training-institutions", label: "협약 연수기관", icon: Building2 },
   { href: "/data-import", label: "과거자료 가져오기", icon: DatabaseBackup, adminOnly: true },
   { href: "/settings", label: "설정", icon: Settings, adminOnly: true },

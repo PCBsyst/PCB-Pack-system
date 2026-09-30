@@ -42,6 +42,8 @@ export function LegacyDataImport() {
   const [parseError, setParseError] = useState("");
   const [filter, setFilter] = useState<"ALL" | "VALID" | "ERROR" | "WARNING">("ALL");
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [imported, setImported] = useState<Set<number>>(new Set());
+  const [verifyingDatabase, setVerifyingDatabase] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ success: number; failed: { row: number; message: string }[] } | null>(null);
 
@@ -67,10 +69,15 @@ export function LegacyDataImport() {
       if (missing.length) throw new Error(`필수 열을 찾지 못했습니다: ${missing.map((key) => displayLabels[key]).join(", ")}`);
       const normalized = parsed.slice(1).map((line, index) => normalizeRow(line, index + 2, mapping));
       applyDuplicateChecks(normalized);
+      if (hasEnvVars) {
+        setVerifyingDatabase(true);
+        await applyDatabaseDuplicateChecks(normalized);
+      }
       setFileName(file.name);
       setHeaders(sourceHeaders);
       setRows(normalized);
       setSelected(new Set(normalized.filter((row) => !row.errors.length).map((row) => row.sourceRow)));
+      setImported(new Set());
       setImportResult(null);
       setFilter("ALL");
     } catch (error) {
@@ -78,11 +85,13 @@ export function LegacyDataImport() {
       setHeaders([]);
       setFileName(file.name);
       setParseError(error instanceof Error ? error.message : "파일을 읽지 못했습니다.");
+    } finally {
+      setVerifyingDatabase(false);
     }
   };
 
   const reset = () => {
-    setRows([]); setHeaders([]); setFileName(""); setParseError(""); setFilter("ALL"); setSelected(new Set()); setImportResult(null);
+    setRows([]); setHeaders([]); setFileName(""); setParseError(""); setFilter("ALL"); setSelected(new Set()); setImported(new Set()); setImportResult(null);
     if (inputRef.current) inputRef.current.value = "";
   };
 
@@ -97,26 +106,27 @@ export function LegacyDataImport() {
   };
 
   const toggleRow = (sourceRow: number) => setSelected((current) => { const next = new Set(current); if (next.has(sourceRow)) next.delete(sourceRow); else next.add(sourceRow); return next; });
-  const selectableRows = rows.filter((row) => !row.errors.length);
+  const selectableRows = rows.filter((row) => !row.errors.length && !imported.has(row.sourceRow));
   const toggleAll = () => setSelected((current) => current.size === selectableRows.length ? new Set() : new Set(selectableRows.map((row) => row.sourceRow)));
   const importSelected = async () => {
     if (!hasEnvVars || !selected.size || importing) return;
     setImporting(true); setImportResult(null);
-    const supabase = createClient(); let success = 0; const failed: { row: number; message: string }[] = [];
+    const supabase = createClient(); let success = 0; const failed: { row: number; message: string }[] = []; const succeededRows: number[] = [];
     for (const row of rows.filter((item) => selected.has(item.sourceRow) && !item.errors.length)) {
       const payload = Object.fromEntries(canonicalKeys.map((key) => [key, row[key]]));
       const { error } = await supabase.rpc("import_legacy_certification_row", { p_row: payload });
-      if (error) failed.push({ row: row.sourceRow, message: error.message }); else success += 1;
+      if (error) failed.push({ row: row.sourceRow, message: error.message }); else { success += 1; succeededRows.push(row.sourceRow); }
     }
     setImportResult({ success, failed }); setImporting(false);
-    if (!failed.length) setSelected(new Set());
+    setImported((current) => new Set([...current, ...succeededRows]));
+    setSelected(new Set(failed.map((item) => item.row)));
   };
 
   return <div className="space-y-4">
     <section className="rounded-lg border bg-white p-5 shadow-sm">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div><h2 className="font-semibold text-slate-900">1. CSV 파일 준비</h2><p className="mt-1 text-sm text-slate-500">구글 시트에서 파일 → 다운로드 → 쉼표로 구분된 값(.csv)을 선택하세요. 원본 시트는 변경되지 않습니다.</p></div>
-        <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={downloadTemplate}><Download />입력 양식</Button><Button onClick={() => inputRef.current?.click()}><Upload />CSV 선택</Button><input ref={inputRef} type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values" className="hidden" onChange={loadFile} /></div>
+        <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={downloadTemplate}><Download />입력 양식</Button><Button onClick={() => inputRef.current?.click()} disabled={verifyingDatabase}>{verifyingDatabase ? <Loader2 className="animate-spin" /> : <Upload />}{verifyingDatabase ? "DB 중복 확인 중" : "CSV 선택"}</Button><input ref={inputRef} type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values" className="hidden" onChange={loadFile} /></div>
       </div>
       {fileName && <div className="mt-4 flex items-center justify-between rounded-md border bg-slate-50 px-4 py-3 text-sm"><span className="flex items-center gap-2 font-medium"><FileSpreadsheet className="h-4 w-4 text-emerald-700" />{fileName}</span><Button size="sm" variant="ghost" onClick={reset}><RotateCcw />다시 선택</Button></div>}
       {parseError && <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800"><p className="font-semibold">파일을 검증할 수 없습니다.</p><p className="mt-1">{parseError}</p></div>}
@@ -131,12 +141,12 @@ export function LegacyDataImport() {
       </div>
 
       <section className="overflow-hidden rounded-lg border bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><div><h2 className="font-semibold text-slate-900">2. 검증 및 등록 대상 선택</h2><p className="mt-1 text-xs text-slate-500">인식한 원본 열 {headers.length}개 · 현재 표시 {visibleRows.length}건 · 선택 {selected.size}건</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={downloadIssues} disabled={!counts.error && !counts.warning}><Download />오류 목록</Button><Button size="sm" onClick={importSelected} disabled={!hasEnvVars || !selected.size || importing}>{importing ? <Loader2 className="animate-spin" /> : <Database />}{importing ? "등록 중" : `${selected.size}건 DB 등록`}</Button></div></div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><div><h2 className="font-semibold text-slate-900">2. 검증 및 등록 대상 선택</h2><p className="mt-1 text-xs text-slate-500">인식한 원본 열 {headers.length}개 · 현재 표시 {visibleRows.length}건 · 선택 {selected.size}건 · 등록 완료 {imported.size}건</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={downloadIssues} disabled={!counts.error && !counts.warning}><Download />오류 목록</Button><Button size="sm" onClick={importSelected} disabled={!hasEnvVars || !selected.size || importing}>{importing ? <Loader2 className="animate-spin" /> : <Database />}{importing ? "등록 중" : `${selected.size}건 DB 등록`}</Button></div></div>
         {!hasEnvVars && <div className="border-b bg-amber-50 px-4 py-3 text-sm text-amber-900">Supabase가 연결된 배포 환경에서만 DB 등록을 실행할 수 있습니다.</div>}
         {importResult && <div className={`border-b px-4 py-3 text-sm ${importResult.failed.length ? "bg-amber-50 text-amber-900" : "bg-emerald-50 text-emerald-900"}`}><p className="font-semibold">등록 성공 {importResult.success}건 · 실패 {importResult.failed.length}건</p>{importResult.failed.length > 0 && <p className="mt-1 text-xs">{importResult.failed.map((item) => `${item.row}행: ${item.message}`).join(" / ")}</p>}</div>}
         <div className="max-w-full overflow-x-auto"><table className="w-full min-w-[1650px] text-left text-xs"><thead className="bg-slate-100 text-slate-600"><tr><th className="border-b px-3 py-3"><input type="checkbox" aria-label="정상 행 전체 선택" checked={selectableRows.length > 0 && selected.size === selectableRows.length} onChange={toggleAll} /></th>{["원본 행", "검증", "후보자명", "분야", "인정구분", "관리 No.", "Job No.", "인증번호", "표준", "등급", "신청구분", "접수일", "발행일", "만료일", "파트너사", "오류·확인사항"].map((heading) => <th key={heading} className="whitespace-nowrap border-b px-3 py-3 font-semibold">{heading}</th>)}</tr></thead>
           <tbody className="divide-y">{visibleRows.map((row) => <tr key={row.sourceRow} className={row.errors.length ? "bg-red-50/40" : row.warnings.length ? "bg-amber-50/40" : "hover:bg-blue-50/40"}>
-            <td className="px-3 py-3"><input type="checkbox" aria-label={`${row.sourceRow}행 선택`} disabled={row.errors.length > 0 || importing} checked={selected.has(row.sourceRow)} onChange={() => toggleRow(row.sourceRow)} /></td><td className="px-3 py-3 text-slate-500">{row.sourceRow}</td><td className="whitespace-nowrap px-3 py-3"><ValidationBadge row={row} /></td><td className="whitespace-nowrap px-3 py-3 font-semibold">{row.candidateName || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.businessArea || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.accreditationTrack || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.managementNo || "자동"}</td><td className="whitespace-nowrap px-3 py-3">{row.jobNo || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.certificationNo || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.standard || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.grade || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.applicationType || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.receivedAt || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.issueDate || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.expiryDate || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.partnerName || "-"}</td><td className="min-w-80 px-3 py-3"><p className="text-red-700">{row.errors.join(" · ")}</p><p className="text-amber-800">{row.warnings.join(" · ")}</p></td>
+            <td className="px-3 py-3"><input type="checkbox" aria-label={`${row.sourceRow}행 선택`} disabled={row.errors.length > 0 || importing || imported.has(row.sourceRow)} checked={selected.has(row.sourceRow)} onChange={() => toggleRow(row.sourceRow)} /></td><td className="px-3 py-3 text-slate-500">{row.sourceRow}</td><td className="whitespace-nowrap px-3 py-3"><ValidationBadge row={row} imported={imported.has(row.sourceRow)} /></td><td className="whitespace-nowrap px-3 py-3 font-semibold">{row.candidateName || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.businessArea || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.accreditationTrack || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.managementNo || "자동"}</td><td className="whitespace-nowrap px-3 py-3">{row.jobNo || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.certificationNo || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.standard || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.grade || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.applicationType || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.receivedAt || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.issueDate || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.expiryDate || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.partnerName || "-"}</td><td className="min-w-80 px-3 py-3"><p className="text-red-700">{row.errors.join(" · ")}</p><p className="text-amber-800">{row.warnings.join(" · ")}</p></td>
           </tr>)}</tbody></table></div>
         <div className="border-t bg-slate-50 px-4 py-3 text-xs text-slate-500">오류가 없는 행만 선택할 수 있습니다. 각 행은 하나의 트랜잭션으로 처리되어 일부 정보만 저장되는 것을 방지합니다.</div>
       </section>
@@ -178,6 +188,27 @@ function applyDuplicateChecks(rows: ImportRow[]) {
   };
   check("jobNo", "Job No."); check("certificationNo", "인증번호");
 }
+async function applyDatabaseDuplicateChecks(rows: ImportRow[]) {
+  const supabase = createClient();
+  const jobNumbers = [...new Set(rows.map((row) => row.jobNo).filter(Boolean))];
+  const certificationNumbers = [...new Set(rows.map((row) => row.certificationNo).filter(Boolean))];
+  const managementNumbers = [...new Set(rows.map((row) => row.managementNo).filter(Boolean).map(Number))];
+  const [jobsByNumber, jobsByManagement, certifications] = await Promise.all([
+    jobNumbers.length ? supabase.from("jobs").select("job_no").in("job_no", jobNumbers) : Promise.resolve({ data: [], error: null }),
+    managementNumbers.length ? supabase.from("jobs").select("management_no").in("management_no", managementNumbers) : Promise.resolve({ data: [], error: null }),
+    certificationNumbers.length ? supabase.from("certification_records").select("certification_no").in("certification_no", certificationNumbers) : Promise.resolve({ data: [], error: null }),
+  ]);
+  const queryError = jobsByNumber.error ?? jobsByManagement.error ?? certifications.error;
+  if (queryError) throw new Error(`DB 중복 확인 실패: ${queryError.message}`);
+  const existingJobs = new Set((jobsByNumber.data ?? []).map((item) => item.job_no));
+  const existingManagement = new Set((jobsByManagement.data ?? []).map((item) => String(item.management_no)));
+  const existingCertifications = new Set((certifications.data ?? []).map((item) => item.certification_no));
+  rows.forEach((row) => {
+    if (row.jobNo && existingJobs.has(row.jobNo)) row.errors.push("Job No. DB 기존자료와 중복");
+    if (row.managementNo && existingManagement.has(row.managementNo)) row.errors.push("관리 No. DB 기존자료와 중복");
+    if (row.certificationNo && existingCertifications.has(row.certificationNo)) row.errors.push("인증번호 DB 기존자료와 중복");
+  });
+}
 function isValidDate(value: string) { const normalized = normalizeDate(value); return /^\d{4}-\d{2}-\d{2}$/.test(normalized) && !Number.isNaN(new Date(`${normalized}T00:00:00`).getTime()); }
 function normalizeDate(value: string) {
   const compact = value.trim().replace(/[./]/g, "-");
@@ -192,5 +223,5 @@ function parseDelimited(text: string, delimiter: string) {
   return rows;
 }
 function downloadCsv(rows: unknown[][], fileName: string) { const quote = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`; const csv = rows.map((row) => row.map(quote).join(",")).join("\r\n"); const url = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = fileName; anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
-function ValidationBadge({ row }: { row: ImportRow }) { return row.errors.length ? <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-1 font-semibold text-red-800"><AlertTriangle className="h-3 w-3" />오류</span> : row.warnings.length ? <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-900"><AlertTriangle className="h-3 w-3" />확인</span> : <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 font-semibold text-emerald-800"><CheckCircle2 className="h-3 w-3" />정상</span>; }
+function ValidationBadge({ row, imported }: { row: ImportRow; imported: boolean }) { return imported ? <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-1 font-semibold text-blue-800"><Database className="h-3 w-3" />등록 완료</span> : row.errors.length ? <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-1 font-semibold text-red-800"><AlertTriangle className="h-3 w-3" />오류</span> : row.warnings.length ? <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-900"><AlertTriangle className="h-3 w-3" />확인</span> : <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 font-semibold text-emerald-800"><CheckCircle2 className="h-3 w-3" />정상</span>; }
 function Summary({ label, value, tone, active, onClick }: { label: string; value: number; tone: "slate" | "green" | "red" | "amber"; active: boolean; onClick: () => void }) { const tones = { slate: "border-slate-200 bg-white", green: "border-emerald-200 bg-emerald-50", red: "border-red-200 bg-red-50", amber: "border-amber-200 bg-amber-50" }; return <button type="button" onClick={onClick} className={`rounded-lg border p-4 text-left shadow-sm transition ${tones[tone]} ${active ? "ring-2 ring-blue-500" : "hover:border-blue-300"}`}><p className="text-xs font-medium text-slate-600">{label}</p><p className="mt-1 text-2xl font-bold text-slate-950">{value}<span className="ml-1 text-sm font-medium">건</span></p></button>; }

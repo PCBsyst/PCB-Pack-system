@@ -66,7 +66,7 @@ export function SupabaseJobDetail({ id }: { id: string }) {
     void supabase.from("system_settings").select("value").eq("key", "workflow_rules").maybeSingle().then(({ data }) => {
       const value = data?.value as { suspensionReasons?: string; withdrawalReasons?: string } | undefined;
       if (!value) return;
-      setReasonOptions({ SUSPENDED: value.suspensionReasons?.split("\n").filter(Boolean) ?? reasonOptions.SUSPENDED, WITHDRAWN: value.withdrawalReasons?.split("\n").filter(Boolean) ?? reasonOptions.WITHDRAWN });
+      setReasonOptions((current) => ({ SUSPENDED: value.suspensionReasons?.split("\n").filter(Boolean) ?? current.SUSPENDED, WITHDRAWN: value.withdrawalReasons?.split("\n").filter(Boolean) ?? current.WITHDRAWN }));
     });
   }, [id]);
 

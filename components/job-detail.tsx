@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
-import { AlertTriangle, CalendarDays, Check, Circle, ExternalLink, FileText, LockKeyhole, Save, UserRound } from "lucide-react";
+import { AlertTriangle, CalendarDays, Check, Circle, ExternalLink, FileText, LockKeyhole, Save } from "lucide-react";
 import type { Candidate, Job } from "@/types/certification";
 import { auditLogs, certificationStateLabels, getCurrentCycle, processingCycles } from "@/data/mock-data";
 import { StatusBadge } from "@/components/status-badge";

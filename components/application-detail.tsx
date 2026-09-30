@@ -153,7 +153,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
       if (error) setNotice(`공식 업무상태 동기화에 실패했습니다: ${error.message}`);
     };
     void sync();
-  }, [application.id, demo.generated, demo.stage, editLock, hydrated, linkedJobs, usesSupabaseWorkspace]);
+  }, [application.id, demo.certificates, demo.generated, demo.stage, editLock, hydrated, linkedJobs, usesSupabaseWorkspace]);
   useEffect(() => { if (new URLSearchParams(window.location.search).get("tab") === "package") setActive("Job·패키지"); }, []);
   useEffect(() => {
     setTrainingInstitutions(readTrainingInstitutions());

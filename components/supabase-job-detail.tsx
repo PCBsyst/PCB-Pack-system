@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { AlertTriangle, ArrowLeft, CheckCircle2, ExternalLink, Save, UserRound } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, Download, ExternalLink, Save, UserRound } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { prototypeWorkflowLabels, type PrototypeWorkflowSnapshot } from "@/lib/prototype-storage";
 import { Button } from "@/components/ui/button";
 import { Field, controlClass, textareaClass } from "@/components/form-fields";
+import { downloadBlob } from "@/lib/prototype-package";
 
 type AftercareRecord = { id: string; type: "SUSPENDED" | "WITHDRAWN"; reason: string; detail: string; effectiveDate: string; actor: string; recordedAt: string };
 type CertificationRecordRow = { id: string; certification_no: string; issue_date: string; valid_until: string; history_state: string };
@@ -101,10 +102,19 @@ export function SupabaseJobDetail({ id }: { id: string }) {
       {notice && <div role="status" className="mb-5 flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">{notice.includes("저장했습니다") ? <CheckCircle2 className="h-4 w-4"/> : <AlertTriangle className="h-4 w-4"/>}{notice}</div>}
       <div className="grid gap-4 sm:grid-cols-2"><Field label="처리구분"><select className={controlClass} value={actionType} onChange={(event) => { const value = event.target.value as AftercareRecord["type"]; setActionType(value); setReason(reasonOptions[value][0] ?? "기타"); }}><option value="SUSPENDED">인증 정지</option><option value="WITHDRAWN">인증 철회</option></select></Field><Field label="대상 인증번호"><input className={`${controlClass} bg-slate-50`} value={certificate?.certificationNo || "미발행"} readOnly/></Field><Field label="표준 사유"><select className={controlClass} value={reason} onChange={(event) => setReason(event.target.value)}>{reasonOptions[actionType].map((item) => <option key={item}>{item}</option>)}</select></Field><Field label="효력 발생일"><input type="date" className={controlClass} value={effectiveDate} onChange={(event) => setEffectiveDate(event.target.value)}/></Field><Field label="상세 사유" className="sm:col-span-2"><textarea className={textareaClass} value={detail} onChange={(event) => setDetail(event.target.value)} placeholder="정지·철회 보고서에 반영할 구체적인 사유를 입력합니다."/></Field></div>
       <div className="mt-5 flex justify-end"><Button disabled={saving || !certificate?.issueDate} onClick={() => void saveAftercare()}><Save/>{saving ? "저장 중..." : "사후관리 기록 저장"}</Button></div>
-      <div className="mt-6 border-t pt-5"><h3 className="text-sm font-semibold">정지·철회 이력</h3>{view.aftercareRecords.length === 0 ? <p className="mt-3 text-sm text-slate-500">기록된 사후관리 이력이 없습니다.</p> : <div className="mt-3 space-y-3">{view.aftercareRecords.slice().reverse().map((record) => <div key={record.id} className="rounded-md border p-4"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${record.type === "SUSPENDED" ? "bg-amber-50 text-amber-800" : "bg-red-50 text-red-800"}`}>{record.type === "SUSPENDED" ? "인증 정지" : "인증 철회"}</span><strong className="text-sm">{record.reason}</strong><span className="ml-auto text-xs text-slate-500">효력일 {record.effectiveDate}</span></div><p className="mt-2 text-sm text-slate-700">{record.detail}</p><p className="mt-2 text-xs text-slate-400">{record.actor} · {new Date(record.recordedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}</p></div>)}</div>}</div>
+      <div className="mt-6 border-t pt-5"><h3 className="text-sm font-semibold">정지·철회 이력</h3>{view.aftercareRecords.length === 0 ? <p className="mt-3 text-sm text-slate-500">기록된 사후관리 이력이 없습니다.</p> : <div className="mt-3 space-y-3">{view.aftercareRecords.slice().reverse().map((record) => <div key={record.id} className="rounded-md border p-4"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${record.type === "SUSPENDED" ? "bg-amber-50 text-amber-800" : "bg-red-50 text-red-800"}`}>{record.type === "SUSPENDED" ? "인증 정지" : "인증 철회"}</span><strong className="text-sm">{record.reason}</strong><span className="ml-auto text-xs text-slate-500">효력일 {record.effectiveDate}</span></div><p className="mt-2 text-sm text-slate-700">{record.detail}</p><div className="mt-3 flex flex-wrap items-center gap-2"><p className="mr-auto text-xs text-slate-400">{record.actor} · {new Date(record.recordedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}</p><Button size="sm" variant="outline" onClick={() => void downloadActionDocument(view, record, "REPORT", setNotice)}><Download/>보고서 Word</Button><Button size="sm" variant="outline" onClick={() => void downloadActionDocument(view, record, "LETTER", setNotice)}><Download/>통보문 Word</Button></div></div>)}</div>}</div>
     </div></section>
   </div>;
 }
 
 function Summary({ label, value }: { label: string; value: string }) { return <div><p className="text-xs font-medium text-slate-500">{label}</p><p className="mt-1.5 font-semibold text-slate-900">{value}</p></div>; }
 function Info({ label, value }: { label: string; value: string }) { return <div><dt className="text-xs font-medium text-slate-500">{label}</dt><dd className="mt-1.5 text-sm font-medium text-slate-900">{value}</dd></div>; }
+
+async function downloadActionDocument(view: JobView, record: AftercareRecord, kind: "REPORT" | "LETTER", setNotice: (message: string) => void) {
+  const response = await fetch("/api/documents/certification-action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, jobNo: view.jobNo, managementNo: view.managementNo, candidateName: view.candidateName, candidateContact: "후보자 상세정보 참조", certificationNo: view.certificationNo, certificationIssueDate: view.certificationIssueDate, actionType: record.type, standardReason: record.reason, detailReason: record.detail, effectiveDate: record.effectiveDate, actor: record.actor, recordedAt: record.recordedAt }) });
+  if (!response.ok) { setNotice("문서를 생성하지 못했습니다."); return; }
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const fileName = disposition.match(/filename="([^"]+)"/)?.[1] ?? `${view.jobNo}_${kind}.docx`;
+  downloadBlob(fileName, await response.blob());
+  setNotice(kind === "REPORT" ? "정지·철회 보고서를 생성했습니다." : "정지·철회 통보문을 생성했습니다.");
+}

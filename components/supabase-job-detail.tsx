@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Field, controlClass, textareaClass } from "@/components/form-fields";
 
 type AftercareRecord = { id: string; type: "SUSPENDED" | "WITHDRAWN"; reason: string; detail: string; effectiveDate: string; actor: string; recordedAt: string };
+type CertificationRecordRow = { id: string; certification_no: string; issue_date: string; valid_until: string; history_state: string };
+type CertificationActionRow = { id: string; action_type: "SUSPENDED" | "WITHDRAWN"; standard_reason: string; detail_reason: string; effective_date: string; recorded_by_name: string; created_at: string };
 
 type JobView = {
   id: string;
@@ -29,6 +31,10 @@ type JobView = {
   candidateNameEn: string;
   previousJobId?: string;
   workflow: PrototypeWorkflowSnapshot;
+  certificationRecordId?: string;
+  certificationNo?: string;
+  certificationIssueDate?: string;
+  certificationExpiryDate?: string;
   aftercareRecords: AftercareRecord[];
 };
 
@@ -44,13 +50,17 @@ export function SupabaseJobDetail({ id }: { id: string }) {
   const [reasonOptions, setReasonOptions] = useState({ SUSPENDED: ["자격유지 요구사항 미충족", "인증서 오용", "시정조치 미이행", "기타"], WITHDRAWN: ["중대한 인증서 오용", "정지 후 시정조치 미이행", "본인 요청", "기타"] });
   useEffect(() => {
     const supabase = createClient();
-    void supabase.from("jobs").select("*, candidates(id, name, name_en), applications(id, application_no, application_type, received_at, partner_name_snapshot, application_workspaces(state))").eq("id", id).single().then(({ data, error: loadError }) => {
+    void supabase.from("jobs").select("*, candidates(id, name, name_en), certification_records(id, certification_no, issue_date, valid_until, history_state), certification_actions(id, action_type, standard_reason, detail_reason, effective_date, recorded_by_name, created_at), applications(id, application_no, application_type, received_at, partner_name_snapshot, application_workspaces(state))").eq("id", id).single().then(({ data, error: loadError }) => {
       if (loadError || !data) { setError(loadError?.message ?? "Job을 찾지 못했습니다."); setView(null); return; }
       const candidate = Array.isArray(data.candidates) ? data.candidates[0] : data.candidates;
       const application = Array.isArray(data.applications) ? data.applications[0] : data.applications;
       const workspace = Array.isArray(application?.application_workspaces) ? application.application_workspaces[0] : application?.application_workspaces;
       const workflow = (workspace?.state ?? {}) as PrototypeWorkflowSnapshot & { aftercareRecords?: Record<string, AftercareRecord[]> };
-      setView({ id: data.id, jobNo: data.job_no, managementNo: data.management_no, businessArea: data.business_area, accreditationTrack: data.accreditation_track, standard: data.standard, grade: data.grade, certificationState: data.certification_state, applicationId: application?.id ?? data.application_id, applicationNo: application?.application_no ?? "-", applicationType: application?.application_type ?? "-", receivedAt: application?.received_at ?? "-", partner: application?.partner_name_snapshot ?? "-", candidateId: candidate?.id ?? data.candidate_id, candidateName: candidate?.name ?? "이름 미입력", candidateNameEn: candidate?.name_en ?? "미입력", previousJobId: data.previous_job_id ?? undefined, workflow, aftercareRecords: workflow.aftercareRecords?.[data.id] ?? [] });
+      const certificationRows = (Array.isArray(data.certification_records) ? data.certification_records : []) as CertificationRecordRow[];
+      const currentCertification = certificationRows.find((record) => record.history_state === "CURRENT") ?? certificationRows[0];
+      const actionRows = (Array.isArray(data.certification_actions) ? data.certification_actions : []) as CertificationActionRow[];
+      const aftercareRecords: AftercareRecord[] = actionRows.map((record) => ({ id: record.id, type: record.action_type, reason: record.standard_reason, detail: record.detail_reason, effectiveDate: record.effective_date, actor: record.recorded_by_name, recordedAt: record.created_at }));
+      setView({ id: data.id, jobNo: data.job_no, managementNo: data.management_no, businessArea: data.business_area, accreditationTrack: data.accreditation_track, standard: data.standard, grade: data.grade, certificationState: data.certification_state, applicationId: application?.id ?? data.application_id, applicationNo: application?.application_no ?? "-", applicationType: application?.application_type ?? "-", receivedAt: application?.received_at ?? "-", partner: application?.partner_name_snapshot ?? "-", candidateId: candidate?.id ?? data.candidate_id, candidateName: candidate?.name ?? "이름 미입력", candidateNameEn: candidate?.name_en ?? "미입력", previousJobId: data.previous_job_id ?? undefined, workflow, certificationRecordId: currentCertification?.id, certificationNo: currentCertification?.certification_no, certificationIssueDate: currentCertification?.issue_date, certificationExpiryDate: currentCertification?.valid_until, aftercareRecords });
     });
     void supabase.from("system_settings").select("value").eq("key", "workflow_rules").maybeSingle().then(({ data }) => {
       const value = data?.value as { suspensionReasons?: string; withdrawalReasons?: string } | undefined;
@@ -61,7 +71,8 @@ export function SupabaseJobDetail({ id }: { id: string }) {
 
   if (view === undefined) return <p className="text-sm text-slate-500">Job 정보를 불러오는 중입니다.</p>;
   if (!view) return <div className="rounded-lg border border-red-200 bg-red-50 p-5 text-sm text-red-800">{error || "Job 정보를 불러오지 못했습니다."}</div>;
-  const certificate = view.workflow.certificates?.[view.id];
+  const workspaceCertificate = view.workflow.certificates?.[view.id];
+  const certificate = { certificationNo: view.certificationNo ?? workspaceCertificate?.certificationNo, issueDate: view.certificationIssueDate ?? workspaceCertificate?.issueDate, expiryDate: view.certificationExpiryDate ?? workspaceCertificate?.expiryDate, draftIssuedAt: workspaceCertificate?.draftIssuedAt, originalSentAt: workspaceCertificate?.originalSentAt, trackingNumber: workspaceCertificate?.trackingNumber };
   const stage = view.workflow.stage ? prototypeWorkflowLabels[view.workflow.stage] : "기본정보 확인 중";
   const stateLabel = view.certificationState === "SUSPENDED" ? "인증 정지" : view.certificationState === "WITHDRAWN" ? "인증 철회" : certificate?.issueDate ? "인증 완료" : "미인증";
   const saveAftercare = async () => {
@@ -69,16 +80,12 @@ export function SupabaseJobDetail({ id }: { id: string }) {
     if (!reason || !detail.trim() || !effectiveDate) { setNotice("표준 사유, 상세 사유, 효력 발생일을 모두 입력해 주세요."); return; }
     setSaving(true);
     const supabase = createClient();
-    const { data: userData } = await supabase.auth.getUser();
-    const { data: profile } = userData.user ? await supabase.from("profiles").select("display_name").eq("id", userData.user.id).maybeSingle() : { data: null };
-    const record: AftercareRecord = { id: crypto.randomUUID(), type: actionType, reason, detail: detail.trim(), effectiveDate, actor: profile?.display_name ?? "담당자", recordedAt: new Date().toISOString() };
-    const existing = view.workflow as PrototypeWorkflowSnapshot & { aftercareRecords?: Record<string, AftercareRecord[]> };
-    const state = { ...existing, aftercareRecords: { ...existing.aftercareRecords, [view.id]: [...view.aftercareRecords, record] } };
-    const { error: workspaceError } = await supabase.from("application_workspaces").upsert({ application_id: view.applicationId, state }, { onConflict: "application_id" });
-    const { error: jobError } = workspaceError ? { error: null } : await supabase.from("jobs").update({ certification_state: actionType }).eq("id", view.id);
+    const { data: actionId, error: actionError } = await supabase.rpc("record_certification_action", { p_job_id: view.id, p_action_type: actionType, p_standard_reason: reason, p_detail_reason: detail.trim(), p_effective_date: effectiveDate });
     setSaving(false);
-    if (workspaceError || jobError) { setNotice(`사후관리 기록을 저장하지 못했습니다: ${(workspaceError ?? jobError)?.message}`); return; }
-    setView({ ...view, certificationState: actionType, workflow: state, aftercareRecords: [...view.aftercareRecords, record] });
+    if (actionError || !actionId) { setNotice(`사후관리 기록을 저장하지 못했습니다: ${actionError?.message ?? "기록 ID 없음"}`); return; }
+    const { data: savedAction } = await supabase.from("certification_actions").select("id, action_type, standard_reason, detail_reason, effective_date, recorded_by_name, created_at").eq("id", actionId).single();
+    const record: AftercareRecord = savedAction ? { id: savedAction.id, type: savedAction.action_type, reason: savedAction.standard_reason, detail: savedAction.detail_reason, effectiveDate: savedAction.effective_date, actor: savedAction.recorded_by_name, recordedAt: savedAction.created_at } : { id: String(actionId), type: actionType, reason, detail: detail.trim(), effectiveDate, actor: "담당자", recordedAt: new Date().toISOString() };
+    setView({ ...view, certificationState: actionType, aftercareRecords: [...view.aftercareRecords, record] });
     setDetail("");
     setNotice(`${actionType === "SUSPENDED" ? "인증 정지" : "인증 철회"} 기록과 상태 변경을 저장했습니다.`);
   };

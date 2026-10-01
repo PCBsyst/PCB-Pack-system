@@ -1,6 +1,7 @@
 import PizZip from "pizzip";
 import type { PackageContext, DocumentLanguage } from "@/lib/prototype-package";
 import type { Job } from "@/types/certification";
+import { availableCorporateTemplates, type CorporateDocumentType } from "@/lib/document-template-registry";
 import { POST as createApplicationReview } from "@/app/api/documents/application-review/route";
 import { POST as createDecisionReport } from "@/app/api/documents/decision-report/route";
 import { POST as createDeliveryConfirmation } from "@/app/api/documents/delivery-confirmation/route";
@@ -11,17 +12,11 @@ type RequestBody = {
   languages: DocumentLanguage[];
 };
 
-type CorporateDocument = {
-  language: DocumentLanguage;
-  fileName: string;
-  create: (request: Request) => Promise<Response>;
+const generators: Record<CorporateDocumentType, (request: Request) => Promise<Response>> = {
+  APPLICATION_REVIEW: createApplicationReview,
+  CERTIFICATION_DECISION_REPORT: createDecisionReport,
+  DELIVERY_CONFIRMATION: createDeliveryConfirmation,
 };
-
-const corporateDocuments: CorporateDocument[] = [
-  { language: "KR", fileName: "Application_Review_KR.docx", create: createApplicationReview },
-  { language: "KR", fileName: "Certification_Decision_Report_KR.docx", create: createDecisionReport },
-  { language: "EN", fileName: "Document_Delivery_Confirmation_EN.docx", create: createDeliveryConfirmation },
-];
 
 function safePath(value: string) {
   return value.replace(/[^A-Za-z0-9_-]/g, "_");
@@ -45,19 +40,19 @@ export async function POST(request: Request) {
 
   for (const job of jobs) {
     const safeJobNo = safePath(job.jobNo);
-    for (const document of corporateDocuments) {
-      if (!selectedLanguages.has(document.language)) continue;
+    for (const template of availableCorporateTemplates) {
+      if (!selectedLanguages.has(template.language)) continue;
       const documentRequest = new Request(request.url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ context, job }),
       });
-      const response = await document.create(documentRequest);
+      const response = await generators[template.documentType](documentRequest);
       if (!response.ok) {
-        return Response.json({ error: `${job.jobNo} ${document.fileName} 생성에 실패했습니다.` }, { status: 500 });
+        return Response.json({ error: `${job.jobNo} ${template.outputName} 생성에 실패했습니다.` }, { status: 500 });
       }
       const bytes = new Uint8Array(await response.arrayBuffer());
-      const entryName = `${safeJobNo}/${document.language}/${safeJobNo}_${document.fileName}`;
+      const entryName = `${safeJobNo}/${template.language}/${safeJobNo}_${template.outputName}`;
       zip.file(entryName, bytes);
       manifestLines.push(`- ${entryName}`);
     }

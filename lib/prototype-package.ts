@@ -115,6 +115,13 @@ export async function downloadApplicationReviewDocx(context: PackageContext, job
   const fileName = disposition.match(/filename="([^"]+)"/)?.[1] ?? `${job.jobNo}_Application_Review_KR.docx`;
   downloadBlob(fileName, await response.blob());
 }
+export async function downloadCorporatePackageZip(context: PackageContext, jobs: Job[], languages: DocumentLanguage[]) {
+  const response = await fetch("/api/documents/package", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context, jobs, languages }) });
+  if (!response.ok) throw new Error("기업 양식 ZIP 생성에 실패했습니다.");
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const fileName = disposition.match(/filename="([^"]+)"/)?.[1] ?? `${context.application.applicationNo}_Corporate_Documents.zip`;
+  downloadBlob(fileName, await response.blob());
+}
 export function printAsPdf(title: string, html: string) {
   const popup = window.open("", "_blank");
   if (!popup) throw new Error("팝업이 차단되었습니다.");

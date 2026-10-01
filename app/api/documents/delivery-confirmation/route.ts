@@ -1,17 +1,16 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import PizZip from "pizzip";
-import { deliveryDocumentRows, type PackageContext } from "@/lib/prototype-package";
+import { loadDocumentTemplate } from "@/lib/server/document-template-loader";
+import { deliveryDocumentRows, type DocumentLanguage, type PackageContext } from "@/lib/prototype-package";
 import type { Job } from "@/types/certification";
 
-type RequestBody = { context: PackageContext; job: Job };
+type RequestBody = { context: PackageContext; job: Job; language?: DocumentLanguage };
 
 function xml(value: unknown) {
   return String(value ?? "-").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
 }
 
 export async function POST(request: Request) {
-  const { context, job } = await request.json() as RequestBody;
+  const { context, job, language = "EN" } = await request.json() as RequestBody;
   const certificate = context.certificates[job.id];
   const records = context.deliveryDocuments[job.id];
   const note = [
@@ -34,8 +33,8 @@ export async function POST(request: Request) {
     values[`${row.key}Comment`] = record?.comment || "";
   }
 
-  const template = await readFile(path.join(process.cwd(), "templates", "FGPC-012-03-delivery-confirmation-en.docx"));
-  const zip = new PizZip(template);
+  const template = await loadDocumentTemplate("DELIVERY_CONFIRMATION", language, language === "EN" ? "FGPC-012-03-delivery-confirmation-en.docx" : undefined);
+  const zip = new PizZip(template.bytes);
   for (const fileName of Object.keys(zip.files).filter((name) => name.endsWith(".xml"))) {
     let content = zip.file(fileName)?.asText();
     if (!content) continue;
@@ -45,5 +44,5 @@ export async function POST(request: Request) {
   const output = zip.generate({ type: "uint8array", compression: "DEFLATE" });
   const body = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength) as ArrayBuffer;
   const safeJobNo = job.jobNo.replace(/[^A-Za-z0-9_-]/g, "_");
-  return new Response(body, { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Content-Disposition": `attachment; filename="${safeJobNo}_Document_Delivery_Confirmation_EN.docx"` } });
+  return new Response(body, { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Content-Disposition": `attachment; filename="${safeJobNo}_Document_Delivery_Confirmation_${language}.docx"` } });
 }

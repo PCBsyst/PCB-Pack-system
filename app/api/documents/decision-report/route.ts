@@ -1,10 +1,9 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import PizZip from "pizzip";
-import type { PackageContext } from "@/lib/prototype-package";
+import { loadDocumentTemplate } from "@/lib/server/document-template-loader";
+import type { DocumentLanguage, PackageContext } from "@/lib/prototype-package";
 import type { Job } from "@/types/certification";
 
-type RequestBody = { context: PackageContext; job: Job };
+type RequestBody = { context: PackageContext; job: Job; language?: DocumentLanguage };
 
 function xml(value: unknown) {
   return String(value ?? "-").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
@@ -24,7 +23,7 @@ function removeGradePlaceholder(content: string) {
 }
 
 export async function POST(request: Request) {
-  const { context, job } = await request.json() as RequestBody;
+  const { context, job, language = "KR" } = await request.json() as RequestBody;
   const decision = context.decisions[job.id];
   const certificate = context.certificates[job.id];
   const assessment = context.assessment[job.id] ?? {};
@@ -52,9 +51,8 @@ export async function POST(request: Request) {
     finalApprovalDate: context.finalApprovalDate,
   };
 
-  const templatePath = path.join(process.cwd(), "templates", "FGPC-012-01-decision-report-kr.docx");
-  const template = await readFile(templatePath);
-  const zip = new PizZip(template);
+  const template = await loadDocumentTemplate("CERTIFICATION_DECISION_REPORT", language, language === "KR" ? "FGPC-012-01-decision-report-kr.docx" : undefined);
+  const zip = new PizZip(template.bytes);
   for (const fileName of Object.keys(zip.files).filter((name) => name.endsWith(".xml"))) {
     let content = zip.file(fileName)?.asText();
     if (!content) continue;
@@ -65,5 +63,5 @@ export async function POST(request: Request) {
   const output = zip.generate({ type: "uint8array", compression: "DEFLATE" });
   const body = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength) as ArrayBuffer;
   const safeJobNo = job.jobNo.replace(/[^A-Za-z0-9_-]/g, "_");
-  return new Response(body, { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Content-Disposition": `attachment; filename="${safeJobNo}_Certification_Decision_Report_KR.docx"` } });
+  return new Response(body, { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Content-Disposition": `attachment; filename="${safeJobNo}_Certification_Decision_Report_${language}.docx"` } });
 }

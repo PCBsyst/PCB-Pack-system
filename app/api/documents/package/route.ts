@@ -1,7 +1,8 @@
 import PizZip from "pizzip";
 import type { PackageContext, DocumentLanguage } from "@/lib/prototype-package";
 import type { Job } from "@/types/certification";
-import { availableCorporateTemplates, type CorporateDocumentType } from "@/lib/document-template-registry";
+import { corporateTemplateRegistry, type CorporateDocumentType } from "@/lib/document-template-registry";
+import { getActiveDocumentTemplateKeys } from "@/lib/server/document-template-loader";
 import { POST as createApplicationReview } from "@/app/api/documents/application-review/route";
 import { POST as createDecisionReport } from "@/app/api/documents/decision-report/route";
 import { POST as createDeliveryConfirmation } from "@/app/api/documents/delivery-confirmation/route";
@@ -29,6 +30,8 @@ export async function POST(request: Request) {
   }
 
   const selectedLanguages = new Set(languages);
+  const activeTemplateKeys = await getActiveDocumentTemplateKeys();
+  const templates = corporateTemplateRegistry.filter((template) => template.available || activeTemplateKeys.has(`${template.documentType}:${template.language}`));
   const zip = new PizZip();
   const manifestLines = [
     `신청번호: ${context.application.applicationNo}`,
@@ -40,12 +43,12 @@ export async function POST(request: Request) {
 
   for (const job of jobs) {
     const safeJobNo = safePath(job.jobNo);
-    for (const template of availableCorporateTemplates) {
+    for (const template of templates) {
       if (!selectedLanguages.has(template.language)) continue;
       const documentRequest = new Request(request.url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ context, job }),
+        body: JSON.stringify({ context, job, language: template.language }),
       });
       const response = await generators[template.documentType](documentRequest);
       if (!response.ok) {

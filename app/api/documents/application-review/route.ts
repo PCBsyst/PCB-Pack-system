@@ -1,14 +1,13 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import PizZip from "pizzip";
-import type { PackageContext } from "@/lib/prototype-package";
+import { loadDocumentTemplate } from "@/lib/server/document-template-loader";
+import type { DocumentLanguage, PackageContext } from "@/lib/prototype-package";
 import type { Job } from "@/types/certification";
 
-type RequestBody = { context: PackageContext; job: Job };
+type RequestBody = { context: PackageContext; job: Job; language?: DocumentLanguage };
 function xml(value: unknown) { return String(value ?? "-").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;"); }
 
 export async function POST(request: Request) {
-  const { context, job } = await request.json() as RequestBody;
+  const { context, job, language = "KR" } = await request.json() as RequestBody;
   const records = context.deliveryDocuments[job.id];
   const mark = (key: keyof typeof records) => records?.[key]?.applicability === "NOT_APPLICABLE" ? "해당 없음" : records?.[key]?.received ? "■" : "□";
   const requirementSummary = Object.entries(context.reviewRequirements ?? {}).map(([item, result]) => `${item}: ${result}`).join(" / ");
@@ -24,10 +23,10 @@ export async function POST(request: Request) {
     reviewResult: context.review.result, reviewComment, reviewer: context.review.reviewer, reviewedAt: context.review.reviewedAt,
     verifier: context.review.verifier, verifiedAt: context.review.verifiedAt, verificationResult: context.review.verificationResult,
   };
-  const template = await readFile(path.join(process.cwd(), "templates", "FGPC-008-01-application-review-kr.docx"));
-  const zip = new PizZip(template);
+  const template = await loadDocumentTemplate("APPLICATION_REVIEW", language, language === "KR" ? "FGPC-008-01-application-review-kr.docx" : undefined);
+  const zip = new PizZip(template.bytes);
   for (const fileName of Object.keys(zip.files).filter((name) => name.endsWith(".xml"))) { let content = zip.file(fileName)?.asText(); if (!content) continue; for (const [key, value] of Object.entries(values)) content = content.replaceAll(`{{${key}}}`, xml(value)); zip.file(fileName, content); }
   const output = zip.generate({ type: "uint8array", compression: "DEFLATE" }); const body = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength) as ArrayBuffer;
   const safeJobNo = job.jobNo.replace(/[^A-Za-z0-9_-]/g, "_");
-  return new Response(body, { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Content-Disposition": `attachment; filename="${safeJobNo}_Application_Review_KR.docx"` } });
+  return new Response(body, { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Content-Disposition": `attachment; filename="${safeJobNo}_Application_Review_${language}.docx"` } });
 }

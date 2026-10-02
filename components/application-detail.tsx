@@ -361,8 +361,13 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
         { type: "DELIVERY_CONFIRMATION", version: "FGPC-012-03 Rev.4" },
       ];
       const selectedLanguages = (["KR", "EN"] as DocumentLanguage[]).filter((language) => languages[language]);
+      const { data: activeTemplates } = await supabase.from("document_templates").select("document_type, language, version").eq("active", true);
+      const templateVersion = (documentType: string, language: DocumentLanguage, fallback: string) => {
+        const lookupType = documentType === "DOCUMENT_REVIEW" ? "APPLICATION_REVIEW" : documentType;
+        return (activeTemplates ?? []).find((template) => template.document_type === lookupType && template.language === language)?.version ?? fallback;
+      };
       const rows = [] as Array<{ job_id: string; cycle_id: string; document_type: string; language: DocumentLanguage; format: "WORD" | "PDF"; template_version: string; generated_at: string; generated_by: string | null }>;
-      for (const job of linkedJobs) for (const definition of definitions) for (const language of selectedLanguages) for (const format of ["WORD", "PDF"] as const) rows.push({ job_id: job.id, cycle_id: cycleIds[job.id], document_type: definition.type, language, format, template_version: definition.version, generated_at: generatedAt, generated_by: userData.user?.id ?? null });
+      for (const job of linkedJobs) for (const definition of definitions) for (const language of selectedLanguages) for (const format of ["WORD", "PDF"] as const) rows.push({ job_id: job.id, cycle_id: cycleIds[job.id], document_type: definition.type, language, format, template_version: templateVersion(definition.type, language, definition.version), generated_at: generatedAt, generated_by: userData.user?.id ?? null });
       const { error } = await supabase.from("package_documents").upsert(rows, { onConflict: "cycle_id,document_type,language,format" });
       if (error) { setNotice(`패키지 생성이력 저장에 실패했습니다: ${error.message}`); return; }
     }

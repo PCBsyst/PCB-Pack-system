@@ -3,6 +3,7 @@ import type { PackageContext, DocumentLanguage } from "@/lib/prototype-package";
 import type { Job } from "@/types/certification";
 import { corporateTemplateRegistry, type CorporateDocumentType } from "@/lib/document-template-registry";
 import { getActiveDocumentTemplateKeys } from "@/lib/server/document-template-loader";
+import { requireApiStaff } from "@/lib/server/api-auth";
 import { POST as createApplicationReview } from "@/app/api/documents/application-review/route";
 import { POST as createDecisionReport } from "@/app/api/documents/decision-report/route";
 import { POST as createDeliveryConfirmation } from "@/app/api/documents/delivery-confirmation/route";
@@ -24,6 +25,8 @@ function safePath(value: string) {
 }
 
 export async function POST(request: Request) {
+  const authError = await requireApiStaff();
+  if (authError) return authError;
   const { context, jobs, languages } = await request.json() as RequestBody;
   if (!jobs?.length || !languages?.length) {
     return Response.json({ error: "Job과 언어를 하나 이상 선택해 주세요." }, { status: 400 });

@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { requireApiStaff } from "@/lib/server/api-auth";
 import path from "node:path";
 import PizZip from "pizzip";
 
@@ -51,6 +52,8 @@ function replaceParagraphXml(zip: PizZip, values: Array<[string, string]>) {
 }
 
 export async function POST(request: Request) {
+  const authError = await requireApiStaff();
+  if (authError) return authError;
   const body = await request.json() as ActionDocumentRequest;
   if (!body.certificationNo || !body.candidateName || !body.effectiveDate) return Response.json({ error: "필수 문서정보가 없습니다." }, { status: 400 });
   const actionLabel = body.actionType === "SUSPENDED" ? "정지" : "철회";

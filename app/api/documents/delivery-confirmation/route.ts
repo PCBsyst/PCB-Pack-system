@@ -1,5 +1,6 @@
 import PizZip from "pizzip";
 import { loadDocumentTemplate } from "@/lib/server/document-template-loader";
+import { requireApiStaff } from "@/lib/server/api-auth";
 import { deliveryDocumentRows, type DocumentLanguage, type PackageContext } from "@/lib/prototype-package";
 import type { Job } from "@/types/certification";
 
@@ -10,6 +11,8 @@ function xml(value: unknown) {
 }
 
 export async function POST(request: Request) {
+  const authError = await requireApiStaff();
+  if (authError) return authError;
   const { context, job, language = "EN" } = await request.json() as RequestBody;
   const certificate = context.certificates[job.id];
   const records = context.deliveryDocuments[job.id];

@@ -1,5 +1,6 @@
 import PizZip from "pizzip";
 import { loadDocumentTemplate } from "@/lib/server/document-template-loader";
+import { requireApiStaff } from "@/lib/server/api-auth";
 import type { DocumentLanguage, PackageContext } from "@/lib/prototype-package";
 import type { Job } from "@/types/certification";
 
@@ -23,6 +24,8 @@ function removeGradePlaceholder(content: string) {
 }
 
 export async function POST(request: Request) {
+  const authError = await requireApiStaff();
+  if (authError) return authError;
   const { context, job, language = "KR" } = await request.json() as RequestBody;
   const decision = context.decisions[job.id];
   const certificate = context.certificates[job.id];

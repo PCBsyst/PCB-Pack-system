@@ -12,7 +12,7 @@ function xml(value: unknown) {
 }
 
 export async function POST(request: Request) {
-  const authError = await requireApiStaff();
+  const authError = await requireApiStaff(["DOCUMENT_GENERATION"]);
   if (authError) return authError;
   const { context, job, language = "EN" } = await request.json() as RequestBody;
   const certificate = context.certificates[job.id];

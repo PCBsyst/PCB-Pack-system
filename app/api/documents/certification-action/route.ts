@@ -53,7 +53,7 @@ function replaceParagraphXml(zip: PizZip, values: Array<[string, string]>) {
 }
 
 export async function POST(request: Request) {
-  const authError = await requireApiStaff();
+  const authError = await requireApiStaff(["DOCUMENT_GENERATION"]);
   if (authError) return authError;
   const body = await request.json() as ActionDocumentRequest;
   if (!body.certificationNo || !body.candidateName || !body.effectiveDate) return Response.json({ error: "필수 문서정보가 없습니다." }, { status: 400 });

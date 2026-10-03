@@ -1,0 +1,15 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import ts from "typescript";
+const source = fs.readFileSync(new URL("../lib/operations-readiness.ts", import.meta.url), "utf8");
+const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+const { classifyReadinessError: classify, readinessSummary, databaseReadinessChecks, manualReadinessChecks } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
+assert.equal(classify(null), "READABLE");
+for (const code of ["42P01", "42703", "PGRST205", "PGRST204"]) assert.equal(classify({ code }), "PENDING");
+assert.equal(classify({ code: "42501" }), "ERROR");
+assert.equal(classify({ message: "network failed" }), "ERROR");
+assert.deepEqual(readinessSummary([{ id: "a", status: "READABLE" }, { id: "b", status: "PENDING" }, { id: "c", status: "ERROR" }, { id: "d", status: "UNTESTED" }]), { readable: 1, pending: 1, error: 1 });
+assert.equal(new Set(databaseReadinessChecks.map((item) => item.id)).size, databaseReadinessChecks.length);
+assert.ok(manualReadinessChecks.some((item) => item.label.includes("백업")));
+assert.ok(manualReadinessChecks.some((item) => item.label.includes("MFA")));
+console.log("Operations readiness: 11 assertions passed. Schema probes do not certify operational security.");

@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+@media print {
+  .workspace-scaled { zoom: 1 !important; }
+}
+
 @layer base {
   :root {
     --background: 210 40% 98%;
@@ -31,14 +35,14 @@
     --radius: 0.5rem;
   }
   .dark {
-    --background: 0 0% 3.9%;
+    --background: 222 35% 10%;
     --foreground: 0 0% 98%;
-    --card: 0 0% 3.9%;
+    --card: 222 28% 14%;
     --card-foreground: 0 0% 98%;
     --popover: 0 0% 3.9%;
     --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 9%;
+    --primary: 217 80% 60%;
+    --primary-foreground: 0 0% 100%;
     --secondary: 0 0% 14.9%;
     --secondary-foreground: 0 0% 98%;
     --muted: 0 0% 14.9%;
@@ -84,3 +88,26 @@
 .settings-general[data-category="workflow"] > #reasons { display: block; margin-top: 0; }
 .settings-general[data-category="directory"] > #partners,
 .settings-general[data-category="workflow"] > #reasons { margin-top: 1.5rem; }
+
+/* Shared dark palette for existing administrative screens. Generated document
+   windows have their own light styles and do not inherit this stylesheet. */
+@layer utilities {
+  .dark .bg-white, .dark .bg-white\/95 { background-color: #182234; }
+  .dark .bg-\[\#f5f7fb\] { background-color: #101827; }
+  .dark .bg-slate-50, .dark .bg-slate-100, .dark .bg-slate-200 { background-color: #202d42; }
+  .dark .text-slate-950, .dark .text-slate-900, .dark .text-slate-800 { color: #edf2fa; }
+  .dark .text-slate-700, .dark .text-slate-600 { color: #c4cfdf; }
+  .dark .text-slate-500, .dark .text-slate-400 { color: #9baac0; }
+  .dark [class*="border-slate-"], .dark .border, .dark .border-b, .dark .border-t, .dark .border-r { border-color: #344258; }
+  .dark .divide-y > :not([hidden]) ~ :not([hidden]) { border-color: #344258; }
+  .dark .bg-blue-50, .dark .bg-blue-100 { background-color: #1c3454; }
+  .dark .bg-amber-50 { background-color: #3a301b; }
+  .dark .bg-red-50 { background-color: #3b202b; }
+  .dark .bg-emerald-50, .dark .bg-green-50 { background-color: #16372f; }
+  .dark .text-blue-900, .dark .text-blue-800, .dark .text-blue-700 { color: #99c4ff; }
+  .dark .text-amber-900, .dark .text-amber-800, .dark .text-amber-700 { color: #f6cd7a; }
+  .dark .text-red-800, .dark .text-red-700 { color: #ffacb3; }
+  .dark .text-emerald-700, .dark .text-green-700 { color: #79ddba; }
+  .dark input, .dark select, .dark textarea { color-scheme: dark; }
+  .dark .hover\:bg-slate-100:hover, .dark .hover\:bg-slate-50:hover { background-color: #29394f; }
+}

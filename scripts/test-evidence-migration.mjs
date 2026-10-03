@@ -1,0 +1,16 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+const sql = fs.readFileSync(new URL("../supabase/migrations/202610030023_customer_reason_and_evidence_protection.sql", import.meta.url), "utf8");
+assert.ok(sql.trim().startsWith("begin;"));
+assert.ok(sql.trim().endsWith("commit;"));
+assert.match(sql, /candidate_correction_reason before update on public\.candidates/);
+assert.match(sql, /nullif\(trim\(current_setting\('app\.correction_reason'/);
+assert.match(sql, /revoke insert, update, delete, truncate/);
+assert.match(sql, /before update or delete or truncate/);
+assert.match(sql, /'audit_logs','privacy_access_logs','package_generation_receipts'/);
+assert.doesNotMatch(sql, /delete from public\.candidates/i);
+assert.match(sql, /v_match_count > 1/);
+assert.match(sql, /Archived candidate requires explicit restoration/);
+assert.match(sql, /Candidate birth date mismatch/);
+assert.match(sql, /'candidate_reused', v_reused/);
+console.log("Evidence migration: 12 static contract checks passed. SQL execution and RLS behavior NOT tested.");

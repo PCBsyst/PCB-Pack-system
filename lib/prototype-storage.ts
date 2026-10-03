@@ -1,5 +1,6 @@
 import type { AccreditationTrack, ApplicationStatus, ApplicationType, BusinessArea } from "@/types/certification";
 import type { NumberingScheme } from "@/lib/numbering-rules";
+import type { PackageGenerationReceipt } from "@/lib/package-generation";
 
 export const PROTOTYPE_APPLICATIONS_KEY = "certification-prototype-applications";
 
@@ -41,6 +42,7 @@ export interface PrototypeWorkflowSnapshot {
   paidAmount?: string;
   paymentConfirmedAt?: string;
   generated?: boolean;
+  packageGeneration?: PackageGenerationReceipt;
   certificates?: Record<string, { certificationNo?: string; draftIssuedAt?: string; issueDate?: string; expiryDate?: string; originalSentAt?: string; trackingNumber?: string }>;
 }
 

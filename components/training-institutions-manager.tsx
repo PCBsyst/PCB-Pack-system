@@ -56,14 +56,14 @@ export function TrainingInstitutionsManager() {
       const saved: TrainingInstitution = { id: result.data.id, name: result.data.name, designationNo: result.data.designation_no, validFrom: result.data.valid_from, validUntil: result.data.valid_until, standards: result.data.standards ?? [], active: result.data.active };
       setInstitutions((items) => draft.id ? items.map((item) => item.id === draft.id ? saved : item) : [...items, saved].sort((a, b) => a.name.localeCompare(b.name, "ko")));
       setDraft(emptyDraft);
-      setNotice(draft.id ? "협약 연수기관 정보를 공유 DB에 수정했습니다." : "협약 연수기관을 공유 DB에 등록했습니다.");
+      setNotice(draft.id ? "지정 연수기관 정보를 공유 DB에 수정했습니다." : "지정 연수기관을 공유 DB에 등록했습니다.");
       return;
     }
     const next = draft.id ? institutions.map((item) => item.id === draft.id ? { ...record, active: item.active } : item) : [...institutions, record];
     setInstitutions(next);
     saveTrainingInstitutions(next);
     setDraft(emptyDraft);
-    setNotice(draft.id ? "협약 연수기관 정보를 수정했습니다." : "협약 연수기관을 등록했습니다.");
+    setNotice(draft.id ? "지정 연수기관 정보를 수정했습니다." : "지정 연수기관을 등록했습니다.");
   };
 
   const edit = (item: TrainingInstitution) => setDraft({
@@ -110,7 +110,7 @@ export function TrainingInstitutionsManager() {
     <section className="overflow-hidden rounded-lg border bg-white shadow-sm">
       <div className="border-b px-5 py-4"><h2 className="font-semibold">등록 연수기관</h2><p className="mt-1 text-sm text-slate-500">비활성 기관은 기존 이력에는 유지되며 새 신청의 선택 목록에서 제외됩니다.</p></div>
       <div className="grid gap-3 border-b bg-slate-50/70 p-4 sm:grid-cols-[minmax(220px,1fr)_180px_180px_auto]"><label className="relative"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400"/><input className={`${controlClass} w-full pl-9`} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="기관명, 지정번호, 표준 검색"/></label><select className={controlClass} value={standard} onChange={(event) => setStandard(event.target.value)}><option value="ALL">전체 신청표준</option>{standards.map((value) => <option key={value}>{value}</option>)}</select><select className={controlClass} value={status} onChange={(event) => setStatus(event.target.value)}><option value="ALL">전체 상태</option><option value="ACTIVE">유효</option><option value="EXPIRING">60일 이내 만료</option><option value="EXPIRED">만료</option><option value="INACTIVE">비활성</option></select><Button variant="outline" onClick={() => { setQuery(""); setStandard("ALL"); setStatus("ALL"); }}><RotateCcw/>초기화</Button></div>
-      <div className="overflow-x-auto"><table className="w-full min-w-[820px] text-sm"><thead className="bg-slate-50 text-xs text-slate-500"><tr><th className="px-4 py-3 text-left">연수기관명</th><th className="px-4 py-3 text-left">지정번호</th><th className="px-4 py-3 text-left">유효기간</th><th className="px-4 py-3 text-left">신청표준</th><th className="px-4 py-3 text-center">상태</th>{isAdmin && <th className="px-4 py-3 text-right">관리</th>}</tr></thead><tbody className="divide-y">{visible.map((item) => <TrainingRow key={item.id} item={item} isAdmin={isAdmin} saving={saving} edit={edit} toggle={toggle}/>)}{visible.length === 0 && <tr><td colSpan={isAdmin ? 6 : 5} className="px-4 py-10 text-center text-slate-500">조건에 맞는 협약 연수기관이 없습니다.</td></tr>}</tbody></table></div><div className="border-t px-5 py-3 text-xs text-slate-500">조회 결과 {visible.length}개 기관</div>
+      <div className="overflow-x-auto"><table className="w-full min-w-[820px] text-sm"><thead className="bg-slate-50 text-xs text-slate-500"><tr><th className="px-4 py-3 text-left">연수기관명</th><th className="px-4 py-3 text-left">지정번호</th><th className="px-4 py-3 text-left">유효기간</th><th className="px-4 py-3 text-left">신청표준</th><th className="px-4 py-3 text-center">상태</th>{isAdmin && <th className="px-4 py-3 text-right">관리</th>}</tr></thead><tbody className="divide-y">{visible.map((item) => <TrainingRow key={item.id} item={item} isAdmin={isAdmin} saving={saving} edit={edit} toggle={toggle}/>)}{visible.length === 0 && <tr><td colSpan={isAdmin ? 6 : 5} className="px-4 py-10 text-center text-slate-500">조건에 맞는 지정 연수기관이 없습니다.</td></tr>}</tbody></table></div><div className="border-t px-5 py-3 text-xs text-slate-500">조회 결과 {visible.length}개 기관</div>
     </section>
   </div>;
 }

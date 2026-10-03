@@ -9,7 +9,7 @@ type RequestBody = { context: PackageContext; job: Job; language?: DocumentLangu
 function xml(value: unknown) { return String(value ?? "-").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;"); }
 
 export async function POST(request: Request) {
-  const authError = await requireApiStaff();
+  const authError = await requireApiStaff(["DOCUMENT_GENERATION"]);
   if (authError) return authError;
   const { context, job, language = "KR" } = await request.json() as RequestBody;
   const records = context.deliveryDocuments[job.id];

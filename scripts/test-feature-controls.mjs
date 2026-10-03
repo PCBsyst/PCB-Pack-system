@@ -1,0 +1,22 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import ts from "typescript";
+
+const source = fs.readFileSync(new URL("../lib/feature-controls.ts", import.meta.url), "utf8");
+const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+const { evaluateFeatureControls: evaluate } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
+const row = (id, enabled) => ({ id, enabled, updated_at: "2026-10-03T00:00:00Z" });
+const docs = "DOCUMENT_GENERATION", zip = "PACKAGE_DOWNLOAD";
+assert.equal(evaluate([docs], [row(docs, true)], null), "allowed");
+assert.equal(evaluate([docs], [row(docs, false)], null), "disabled");
+assert.equal(evaluate([docs, zip], [row(docs, true), row(zip, false)], null), "disabled");
+assert.equal(evaluate([docs, zip], [row(docs, false), row(zip, true)], null), "disabled");
+assert.equal(evaluate([docs, zip], [row(docs, true), row(zip, true)], null), "allowed");
+assert.equal(evaluate([docs], [], null), "unavailable");
+assert.equal(evaluate([docs], null, null), "unavailable");
+assert.equal(evaluate([docs], null, { code: "42501", message: "permission denied feature_controls" }), "unavailable");
+assert.equal(evaluate([docs], null, { code: "PGRST205", message: "missing other_table" }), "unavailable");
+assert.equal(evaluate([docs], null, { code: "42P01", message: "relation feature_controls does not exist" }), "legacy");
+assert.equal(evaluate([docs], null, { code: "PGRST205", message: "Could not find public.feature_controls" }), "legacy");
+assert.equal(evaluate([docs], null, { message: "network error" }), "unavailable");
+console.log("Feature control policy: 12 assertions passed (not a live DB authorization test).");

@@ -5,6 +5,7 @@ import { corporateTemplateRegistry, type CorporateDocumentType } from "@/lib/doc
 import { getActiveDocumentTemplateKeys } from "@/lib/server/document-template-loader";
 import { requireApiStaff } from "@/lib/server/api-auth";
 import { recordDocumentResponse } from "@/lib/server/privacy-access";
+import { recordPackageGeneration, type GeneratedPackageDocument } from "@/lib/server/package-receipts";
 import { POST as createApplicationReview } from "@/app/api/documents/application-review/route";
 import { POST as createDecisionReport } from "@/app/api/documents/decision-report/route";
 import { POST as createDeliveryConfirmation } from "@/app/api/documents/delivery-confirmation/route";
@@ -26,10 +27,10 @@ function safePath(value: string) {
 }
 
 export async function POST(request: Request) {
-  const authError = await requireApiStaff();
+  const authError = await requireApiStaff(["DOCUMENT_GENERATION", "PACKAGE_DOWNLOAD"]);
   if (authError) return authError;
   const { context, jobs, languages } = await request.json() as RequestBody;
-  if (!jobs?.length || !languages?.length) {
+  if (!Array.isArray(jobs) || !jobs.length || jobs.some((job) => !job?.id) || new Set(jobs.map((job) => job.id)).size !== jobs.length || !Array.isArray(languages) || !languages.length || languages.some((language) => language !== "KR" && language !== "EN")) {
     return Response.json({ error: "Job과 언어를 하나 이상 선택해 주세요." }, { status: 400 });
   }
 
@@ -37,6 +38,9 @@ export async function POST(request: Request) {
   const activeTemplateKeys = await getActiveDocumentTemplateKeys();
   const templates = corporateTemplateRegistry.filter((template) => template.available || activeTemplateKeys.has(`${template.documentType}:${template.language}`));
   const zip = new PizZip();
+  let fileCount = 0;
+  const generatedDocuments: GeneratedPackageDocument[] = [];
+  const generatedAt = new Date().toISOString();
   const manifestLines = [
     `신청번호: ${context.application.applicationNo}`,
     `후보자: ${context.candidate.name}`,
@@ -61,10 +65,15 @@ export async function POST(request: Request) {
       const bytes = new Uint8Array(await response.arrayBuffer());
       const entryName = `${safeJobNo}/${template.language}/${safeJobNo}_${template.outputName}`;
       zip.file(entryName, bytes);
+      fileCount += 1;
+      generatedDocuments.push({ jobId: job.id, documentType: template.documentType, language: template.language, entryName });
       manifestLines.push(`- ${entryName}`);
     }
   }
 
+  if (!fileCount) return Response.json({ error: "선택한 언어에 생성 가능한 양식이 없습니다." }, { status: 422 });
+  const complete = fileCount === jobs.length * selectedLanguages.size * 3;
+  manifestLines.push(`실제 생성 문서: ${fileCount}개 DOCX`, complete ? "선택한 언어의 3종 양식 포함" : "일부 양식 미등록: 전체 패키지 완료가 아닙니다.");
   manifestLines.push(
     "",
     "안내",
@@ -79,9 +88,17 @@ export async function POST(request: Request) {
   const safeApplicationNo = safePath(context.application.applicationNo);
   const accessError = await recordDocumentResponse("application", context.application.id, "CORPORATE_PACKAGE:ZIP");
   if (accessError) return accessError;
+  const receipt = await recordPackageGeneration(context.application.id, generatedDocuments, complete, output);
+  if (receipt.error) return receipt.error;
   return new Response(body, {
     headers: {
       "Content-Type": "application/zip",
+      "X-Package-File-Count": String(fileCount),
+      "X-Package-Generated-At": generatedAt,
+      "X-Package-Complete": String(complete),
+      "X-Package-Receipt-Status": receipt.status,
+      "X-Package-Receipt-Id": receipt.id ?? "",
+      "X-Package-SHA256": receipt.sha256,
       "Content-Disposition": `attachment; filename="${safeApplicationNo}_Corporate_Documents.zip"`,
     },
   });

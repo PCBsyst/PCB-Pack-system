@@ -25,7 +25,7 @@ function removeGradePlaceholder(content: string) {
 }
 
 export async function POST(request: Request) {
-  const authError = await requireApiStaff();
+  const authError = await requireApiStaff(["DOCUMENT_GENERATION"]);
   if (authError) return authError;
   const { context, job, language = "KR" } = await request.json() as RequestBody;
   const decision = context.decisions[job.id];

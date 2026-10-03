@@ -50,6 +50,19 @@ export async function updateSession(request: NextRequest) {
   const { data } = await supabase.auth.getClaims();
   const user = data?.claims;
 
+  if (user && !request.nextUrl.pathname.startsWith("/auth")) {
+    const { data: profile } = await supabase.from("profiles").select("active").eq("id", user.sub).maybeSingle();
+    if (!profile?.active) {
+      if (request.nextUrl.pathname.startsWith("/api/")) {
+        return NextResponse.json({ error: "최고관리자의 계정 활성화 승인이 필요합니다." }, { status: 403 });
+      }
+      const url = request.nextUrl.clone();
+      url.pathname = "/auth/error";
+      url.search = "?error=approval-required";
+      return NextResponse.redirect(url);
+    }
+  }
+
   if (!user && !request.nextUrl.pathname.startsWith("/auth")) {
     // no user, potentially respond by redirecting the user to the login page
     const url = request.nextUrl.clone();

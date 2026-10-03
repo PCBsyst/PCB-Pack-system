@@ -12,7 +12,9 @@ async function ErrorContent({
     <>
       {params?.error ? (
         <p className="text-sm text-muted-foreground">
-          Code error: {params.error}
+          {params.error === "approval-required" || params.error === "inactive"
+            ? "이 계정은 승인 대기 또는 비활성 상태입니다. 최고관리자에게 계정 활성화를 요청해 주세요."
+            : `인증 처리 오류: ${params.error}`}
         </p>
       ) : (
         <p className="text-sm text-muted-foreground">
@@ -35,7 +37,7 @@ export default function Page({
           <Card>
             <CardHeader>
               <CardTitle className="text-2xl">
-                Sorry, something went wrong.
+                계정 접근 안내
               </CardTitle>
             </CardHeader>
             <CardContent>

@@ -20,5 +20,10 @@ export async function getCurrentStaff(): Promise<StaffContext> {
 export async function requireAdmin() {
   const staff = await getCurrentStaff();
   if (staff.role !== "ADMIN") redirect("/?access=admin-required");
+  if (!staff.prototype) {
+    const supabase = await createClient();
+    const { data: owner } = await supabase.rpc("is_admin");
+    if (!owner) redirect("/?access=owner-required");
+  }
   return staff;
 }

@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import ts from 'typescript';
+const source = fs.readFileSync(new URL('../lib/dashboard-metrics.ts', import.meta.url), 'utf8');
+const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+const { dashboardMetrics } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const base = { applicationId: 'a', jobId: 'j1', businessArea: 'ISO', workflow: { stage: 'PAYMENT_PENDING' } };
+const result = dashboardMetrics([base, { ...base, jobId: 'j2' }, base]);
+assert.equal(result.active, 1); assert.equal(result.applications, 1); assert.equal(result.jobs, 2); assert.equal(result.payment, 1);
+assert.equal(dashboardMetrics([{ ...base, workflow: { stage: 'COMPLETED' } }]).active, 0);
+assert.equal(dashboardMetrics([{ ...base, workflow: { stage: 'DOCUMENT_REVIEW', review: { result: '보완필요' } } }]).supplement, 1);
+assert.equal(dashboardMetrics([{ ...base, workflow: { stage: 'DOCUMENT_REVIEW', comment: '보완 완료', review: { result: '적합' } } }]).supplement, 0);
+assert.equal(dashboardMetrics([{ ...base, workflow: { stage: 'PACKAGE_READY' } }, { ...base, jobId: 'j2', workflow: { stage: 'PACKAGE_READY' } }]).packageReady, 1);
+assert.equal(dashboardMetrics([{ ...base, businessArea: 'UNKNOWN' }]).beauty, 0);
+assert.equal(dashboardMetrics([]).jobs, 0);
+console.log('Dashboard metrics: 10 cases passed');

@@ -11,6 +11,7 @@ import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
 import { missingWorkflowItems } from "@/lib/workflow-completeness";
 import { DashboardPaymentQueue } from "@/components/dashboard-payment-queue";
+import { dashboardMetrics } from "@/lib/dashboard-metrics";
 
 type DashboardJobRow = { id: string; job_no: string; management_no: number; standard: string; grade: string; primary_owner_id: string | null };
 
@@ -54,24 +55,14 @@ export default function DashboardPage() {
     return () => { active = false; };
   }, [refresh]);
 
-  const metrics = useMemo(() => records.reduce((result, record) => {
-    const workflow = readPrototypeWorkflow(record);
-    const stage = workflow.stage;
-    result.jobs += 1;
-    if (stage !== "COMPLETED") result.active += 1;
-    if (stage === "PAYMENT_PENDING") result.payment += 1;
-    if (stage === "PACKAGE_READY") result.packageReady += 1;
-    if (stage === "DOCUMENT_REVIEW" && Object.values(workflow).some((value) => String(value).includes("보완"))) result.supplement += 1;
-    if (record.businessArea === "ISO") result.iso += 1; else result.beauty += 1;
-    return result;
-  }, { active: 0, jobs: 0, supplement: 0, payment: 0, packageReady: 0, iso: 0, beauty: 0 }), [records]);
+  const metrics = useMemo(() => dashboardMetrics(records.map((record) => ({ applicationId: record.id, jobId: record.jobId ?? record.jobNo, businessArea: record.businessArea, workflow: readPrototypeWorkflow(record) }))), [records]);
 
   const cards = [
     { label: "진행 중 신청", value: metrics.active, icon: ClipboardList, href: "/applications" },
     { label: "전체 Job", value: metrics.jobs, icon: BriefcaseBusiness, href: "/jobs" },
-    { label: "보완 대기", value: metrics.supplement, icon: ShieldAlert, href: "/status" },
-    { label: "입금 확인 대기", value: metrics.payment, icon: CreditCard, href: "/status" },
-    { label: "패키지 생성 준비", value: metrics.packageReady, icon: PackageCheck, href: "/packages" },
+    { label: "보완 대기 신청", value: metrics.supplement, icon: ShieldAlert, href: "/status" },
+    { label: "입금 대기 신청", value: metrics.payment, icon: CreditCard, href: "/status" },
+    { label: "패키지 준비 신청", value: metrics.packageReady, icon: PackageCheck, href: "/packages" },
   ];
   const attentionItems = useMemo(() => records.map((record) => {
     const workflow = readPrototypeWorkflow(record);
@@ -82,6 +73,7 @@ export default function DashboardPage() {
     <DashboardPaymentQueue/>
     <div className="my-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white p-4 text-sm"><p role="status">{loadState === "loading" ? "업무 현황을 조회하고 있습니다." : loadState === "error" ? "업무 현황 조회에 실패했습니다. 로컬 데이터를 대신 표시하지 않습니다." : hasEnvVars ? `공유 DB 조회 완료 · ${checkedAt}` : "로컬 가상데이터 현황"}</p><button disabled={loadState === "loading"} className="rounded border px-3 py-2 disabled:opacity-50" onClick={() => setRefresh((value) => value + 1)}>업무 현황 새로고침</button></div>
     {loadState === "ready" && <>
+    <p className="mb-3 text-xs text-slate-500">신청 지표는 신청 ID로 중복 제거합니다. 전체 Job과 분야별 Job은 Job 기준이며, 위 인보이스 대기 건수와는 집계 단위가 다릅니다.</p>
     <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">{cards.map(({ label, value, icon: Icon, href }) => <Link href={href} key={label} className="group rounded-lg border bg-white p-5 shadow-sm transition hover:border-blue-200 hover:shadow-md"><div className="flex items-center justify-between"><span className="text-sm font-medium text-slate-600">{label}</span><span className="rounded-md bg-slate-100 p-2 text-slate-600 group-hover:bg-blue-50 group-hover:text-blue-800"><Icon className="h-4 w-4"/></span></div><p className="mt-4 text-3xl font-semibold text-slate-950">{value}<span className="ml-1 text-sm font-normal text-slate-500">건</span></p></Link>)}</section>
     <section className="mt-6 grid gap-4 md:grid-cols-2"><Link href="/applications?area=ISO" className="rounded-lg border border-blue-100 bg-blue-50 p-5"><div className="flex items-center justify-between"><div><p className="text-xs font-semibold text-blue-700">ISO</p><p className="mt-2 text-lg font-semibold">ISO 경영시스템 심사원</p><p className="mt-1 text-sm text-slate-600">현재 Job {metrics.iso}건</p></div><ArrowRight className="h-5 w-5 text-blue-800"/></div></Link><Link href="/applications?area=K_BEAUTY" className="rounded-lg border border-rose-100 bg-rose-50 p-5"><div className="flex items-center justify-between"><div><p className="text-xs font-semibold text-rose-700">K-BEAUTY</p><p className="mt-2 text-lg font-semibold">K-Beauty 전문가 자격</p><p className="mt-1 text-sm text-slate-600">현재 Job {metrics.beauty}건</p></div><ArrowRight className="h-5 w-5 text-rose-800"/></div></Link></section>
     <section className="mt-6 overflow-hidden rounded-lg border bg-white shadow-sm"><div className="flex items-center justify-between border-b px-5 py-4"><div className="flex items-start gap-3"><span className="rounded-md bg-amber-50 p-2 text-amber-700"><BellRing className="h-4 w-4"/></span><div><h2 className="font-semibold">우선 확인 업무</h2><p className="mt-1 text-sm text-slate-500">모든 실무자가 함께 확인할 진행 업무와 입력 누락 항목입니다.</p></div></div><Link href="/status" className="inline-flex items-center gap-1 text-sm font-medium text-blue-700">통합현황 <ArrowRight className="h-4 w-4"/></Link></div><div className="grid divide-y md:grid-cols-2 md:divide-x md:divide-y-0">{attentionItems.map(({ record, workflow, missing }) => <Link key={`${record.id}-${record.jobNo}`} href={`/applications/${record.id}`} className="flex items-center justify-between gap-4 border-b p-4 hover:bg-slate-50 md:[&:nth-last-child(-n+2)]:border-b-0"><div className="min-w-0"><div className="flex items-center gap-2"><p className="truncate text-sm font-semibold">{record.candidateName} · {record.jobNo}</p>{missing.length > 0 && <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600"/>}</div><p className="mt-1 truncate text-xs text-slate-500">{missing.length ? `입력 확인: ${missing.join(" · ")}` : `${workflow.stage ? prototypeWorkflowLabels[workflow.stage] : "신규 접수"} 처리가 필요합니다.`}</p></div><ArrowRight className="h-4 w-4 shrink-0 text-slate-400"/></Link>)}{attentionItems.length === 0 && <p className="col-span-2 p-8 text-center text-sm text-slate-500">현재 확인할 진행 업무가 없습니다.</p>}</div></section>

@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import ts from 'typescript';
+const source = fs.readFileSync(new URL('../lib/payment-queue.ts', import.meta.url), 'utf8');
+const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+const { paymentQueueItem } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const base = { id: 'i1', invoice_no: '1', recipient_name: 'sample', amount: 1000, paid_amount: null, issued_at: '2026-10-01', paid_at: null, payment_status: 'UNPAID', invoice_jobs: [] };
+assert.equal(paymentQueueItem(base).outstanding, 1000);
+assert.equal(paymentQueueItem(base).pending, true);
+assert.equal(paymentQueueItem(base).needsConfirmation, false);
+assert.equal(paymentQueueItem({ ...base, paid_amount: 300 }).needsConfirmation, true);
+assert.equal(paymentQueueItem({ ...base, paid_amount: 1000, payment_status: 'PAID', paid_at: '2026-10-02' }).pending, false);
+assert.equal(paymentQueueItem({ ...base, paid_amount: 1000, payment_status: 'PAID' }).needsConfirmation, true);
+assert.equal(paymentQueueItem({ ...base, paid_amount: 300, payment_status: 'PAID', paid_at: '2026-10-02' }).pending, true);
+assert.equal(paymentQueueItem({ ...base, payment_status: 'CHECK_REQUIRED' }).needsConfirmation, true);
+assert.equal(paymentQueueItem({ ...base, paid_amount: 1200 }).outstanding, 0);
+console.log('Payment queue: 9 cases passed');

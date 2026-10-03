@@ -4,6 +4,7 @@ import type { Job } from "@/types/certification";
 import { corporateTemplateRegistry, type CorporateDocumentType } from "@/lib/document-template-registry";
 import { getActiveDocumentTemplateKeys } from "@/lib/server/document-template-loader";
 import { requireApiStaff } from "@/lib/server/api-auth";
+import { recordDocumentResponse } from "@/lib/server/privacy-access";
 import { POST as createApplicationReview } from "@/app/api/documents/application-review/route";
 import { POST as createDecisionReport } from "@/app/api/documents/decision-report/route";
 import { POST as createDeliveryConfirmation } from "@/app/api/documents/delivery-confirmation/route";
@@ -76,6 +77,8 @@ export async function POST(request: Request) {
   const output = zip.generate({ type: "uint8array", compression: "DEFLATE" });
   const body = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength) as ArrayBuffer;
   const safeApplicationNo = safePath(context.application.applicationNo);
+  const accessError = await recordDocumentResponse("application", context.application.id, "CORPORATE_PACKAGE:ZIP");
+  if (accessError) return accessError;
   return new Response(body, {
     headers: {
       "Content-Type": "application/zip",

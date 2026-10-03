@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { requireApiStaff } from "@/lib/server/api-auth";
+import { recordDocumentResponse } from "@/lib/server/privacy-access";
 import path from "node:path";
 import PizZip from "pizzip";
 
@@ -92,5 +93,7 @@ export async function POST(request: Request) {
   const result = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength) as ArrayBuffer;
   const safeJobNo = body.jobNo.replace(/[^A-Za-z0-9_-]/g, "_");
   const suffix = body.kind === "REPORT" ? "Certification_Action_Report" : "Certification_Action_Letter";
+  const accessError = await recordDocumentResponse("certification_action", body.jobNo, `${suffix}:KR`);
+  if (accessError) return accessError;
   return new Response(result, { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Content-Disposition": `attachment; filename="${safeJobNo}_${suffix}_KR.docx"` } });
 }

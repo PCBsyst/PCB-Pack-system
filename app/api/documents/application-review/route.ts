@@ -1,6 +1,7 @@
 import PizZip from "pizzip";
 import { loadDocumentTemplate } from "@/lib/server/document-template-loader";
 import { requireApiStaff } from "@/lib/server/api-auth";
+import { recordDocumentResponse } from "@/lib/server/privacy-access";
 import type { DocumentLanguage, PackageContext } from "@/lib/prototype-package";
 import type { Job } from "@/types/certification";
 
@@ -31,5 +32,7 @@ export async function POST(request: Request) {
   for (const fileName of Object.keys(zip.files).filter((name) => name.endsWith(".xml"))) { let content = zip.file(fileName)?.asText(); if (!content) continue; for (const [key, value] of Object.entries(values)) content = content.replaceAll(`{{${key}}}`, xml(value)); zip.file(fileName, content); }
   const output = zip.generate({ type: "uint8array", compression: "DEFLATE" }); const body = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength) as ArrayBuffer;
   const safeJobNo = job.jobNo.replace(/[^A-Za-z0-9_-]/g, "_");
+  const accessError = await recordDocumentResponse("job", job.id, `APPLICATION_REVIEW:${language}`);
+  if (accessError) return accessError;
   return new Response(body, { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Content-Disposition": `attachment; filename="${safeJobNo}_Application_Review_${language}.docx"` } });
 }

@@ -24,7 +24,7 @@ export function SupabaseCandidateDetail({ id }: { id: string }) {
   useEffect(() => {
     const supabase = createClient();
     void Promise.all([
-      supabase.from("candidates").select("*").eq("id", id).single(),
+      supabase.rpc("read_candidate_with_access_log", { target_id: id }),
       supabase.from("jobs").select("id, application_id, job_no, standard, grade, certification_state").eq("candidate_id", id).order("created_at", { ascending: false }),
       supabase.from("audit_logs").select("id, occurred_at, before_data, after_data, correction_reason").eq("table_name", "candidates").eq("record_id", id).eq("action", "UPDATE").order("occurred_at", { ascending: false }),
     ]).then(([candidateResult, jobsResult, auditResult]) => {

@@ -101,13 +101,19 @@
   .dark [class*="border-slate-"], .dark .border, .dark .border-b, .dark .border-t, .dark .border-r { border-color: #344258; }
   .dark .divide-y > :not([hidden]) ~ :not([hidden]) { border-color: #344258; }
   .dark .bg-blue-50, .dark .bg-blue-100 { background-color: #1c3454; }
+  .dark .bg-rose-50, .dark .bg-rose-100 { background-color: #402538; }
+  .dark .bg-orange-50, .dark .bg-orange-100 { background-color: #3a2b1e; }
+  .dark .bg-purple-50, .dark .bg-purple-100 { background-color: #302643; }
+  .dark .bg-yellow-50, .dark .bg-yellow-100 { background-color: #35321b; }
   .dark .bg-amber-50 { background-color: #3a301b; }
   .dark .bg-red-50 { background-color: #3b202b; }
   .dark .bg-emerald-50, .dark .bg-green-50 { background-color: #16372f; }
   .dark .text-blue-900, .dark .text-blue-800, .dark .text-blue-700 { color: #99c4ff; }
   .dark .text-amber-900, .dark .text-amber-800, .dark .text-amber-700 { color: #f6cd7a; }
-  .dark .text-red-800, .dark .text-red-700 { color: #ffacb3; }
-  .dark .text-emerald-700, .dark .text-green-700 { color: #79ddba; }
+  .dark .text-red-900, .dark .text-red-800, .dark .text-red-700, .dark .text-rose-900, .dark .text-rose-800, .dark .text-rose-700 { color: #ffacb3; }
+  .dark .text-emerald-900, .dark .text-emerald-800, .dark .text-emerald-700, .dark .text-green-900, .dark .text-green-800, .dark .text-green-700 { color: #79ddba; }
+  .dark .text-orange-900, .dark .text-orange-800, .dark .text-orange-700, .dark .text-yellow-900, .dark .text-yellow-800, .dark .text-yellow-700 { color: #f6cd7a; }
+  .dark .text-purple-900, .dark .text-purple-800, .dark .text-purple-700 { color: #d6b7ff; }
   .dark input, .dark select, .dark textarea { color-scheme: dark; }
   .dark .hover\:bg-slate-100:hover, .dark .hover\:bg-slate-50:hover { background-color: #29394f; }
 }

@@ -32,13 +32,13 @@ export function WorkspaceScale({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(timer);
   }, [scale]);
   return <div ref={region}>
-    <div className="mx-auto flex w-full max-w-[1320px] items-center justify-end gap-2 px-4 pt-3 text-xs text-slate-500 sm:px-6 lg:px-8 print:hidden" role="group" aria-label="업무 화면 배율">
+    <div className="mx-auto flex w-full items-center justify-end gap-2 px-4 pt-3 text-xs text-slate-500 sm:px-6 lg:w-[96%] lg:px-8 print:hidden" role="group" aria-label="업무 화면 배율">
       <span className="hidden sm:inline">Ctrl + 휠</span>
       <button type="button" className="rounded border bg-white px-2 py-1" onClick={() => change(scale - 5)} disabled={scale <= 70} aria-label="업무 화면 축소">−</button>
       <output aria-live="polite" className="min-w-10 text-center">{scale}%</output>
       <button type="button" className="rounded border bg-white px-2 py-1" onClick={() => change(scale + 5)} disabled={scale >= 120} aria-label="업무 화면 확대">+</button>
       <button type="button" className="rounded border bg-white px-2 py-1" onClick={() => change(DEFAULT_SCALE)}>기본 90%</button>
     </div>
-    <div className="workspace-scaled mx-auto w-full max-w-[1320px] min-w-0" style={{ zoom: scale / 100 }}>{children}</div>
+    <div className="workspace-scaled mx-auto w-full min-w-0 lg:w-[96%]" style={{ zoom: scale / 100 }}>{children}</div>
   </div>;
 }

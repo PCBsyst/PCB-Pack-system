@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
+import { ReportCertificationEvents } from "@/components/report-certification-events";
 import { customerCounts, revenueForJobs, type AnalyticsJob, type RevenueInvoice } from "@/lib/report-analytics";
 
 const money = (value: number) => Math.round(value).toLocaleString("ko-KR");
@@ -58,5 +59,6 @@ export function ReportBusinessAnalytics({ jobs, period }: { jobs: AnalyticsJob[]
     <div className="flex flex-wrap items-center gap-3"><h3 className="font-semibold">월·연간 고객 추이</h3><select className="rounded border bg-white p-2 text-sm" value={trendUnit} onChange={(e) => setTrendUnit(e.target.value as typeof trendUnit)}><option value="month">선택 연도 월별</option><option value="year">최근 5년 연별</option></select></div>
     <p className="text-xs text-slate-500">각 기간에 접수한 고객의 현재 인증상태를 비교합니다. 해당 월말·연말 당시 상태나 정지·철회 발생 건수는 아닙니다. 과거 상태 추이는 상태변경 이력 모델을 보강한 뒤 제공해야 합니다.</p>
     <div className="overflow-x-auto"><table className="w-full min-w-[540px] text-left text-sm"><thead className="bg-slate-50"><tr>{["접수 기간", "고객 수", "현재 유지", "현재 정지", "현재 철회"].map((label) => <th className="p-3" key={label}>{label}</th>)}</tr></thead><tbody>{trends.map((row) => <tr className="border-b" key={row.period}><td className="p-3">{row.period}</td>{[row.total, row.active, row.suspended, row.withdrawn].map((value, index) => <td className="p-3" key={index}>{value}</td>)}</tr>)}</tbody></table></div>
+    <ReportCertificationEvents jobs={jobs} periods={trends.map((row) => row.period)}/>
   </section>;
 }

@@ -20,6 +20,7 @@ const navigation = [
   { href: "/training-institutions", label: "협약 연수기관", icon: Building2 },
   { href: "/data-import", label: "과거자료 가져오기", icon: DatabaseBackup, adminOnly: true },
   { href: "/settings", label: "설정", icon: Settings, adminOnly: true },
+  { href: "/staff-invitations", label: "직원 초대", icon: Users, adminOnly: true },
 ];
 
 export function AppShell({ title, description, actions, children }: { title: string; description?: string; actions?: React.ReactNode; children: React.ReactNode }) {

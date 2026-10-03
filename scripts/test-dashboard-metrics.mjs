@@ -13,4 +13,7 @@ assert.equal(dashboardMetrics([{ ...base, workflow: { stage: 'DOCUMENT_REVIEW', 
 assert.equal(dashboardMetrics([{ ...base, workflow: { stage: 'PACKAGE_READY' } }, { ...base, jobId: 'j2', workflow: { stage: 'PACKAGE_READY' } }]).packageReady, 1);
 assert.equal(dashboardMetrics([{ ...base, businessArea: 'UNKNOWN' }]).beauty, 0);
 assert.equal(dashboardMetrics([]).jobs, 0);
-console.log('Dashboard metrics: 10 cases passed');
+const intake = dashboardMetrics([{ ...base, jobId: "", workflow: {} }]);
+assert.equal(intake.active, 1); assert.equal(intake.jobs, 0); assert.equal(intake.intake, 1); assert.equal(intake.iso, 0);
+assert.equal(dashboardMetrics([{ ...base, jobId: "" }, { ...base, jobId: "" }]).intake, 1);
+console.log('Dashboard metrics: 15 cases passed');

@@ -65,5 +65,22 @@
   body {
     @apply bg-background text-foreground;
     font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
+  :where(a, button, input, select, textarea):focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 3px;
+  }
+  [hidden] { display: none !important; }
 }
+
+/* Existing forms stay mounted across settings categories, preserving unsaved values. */
+.settings-general:not([data-category="all"]) > section { display: none; }
+.settings-general[data-category="users"] > #users,
+.settings-general[data-category="directory"] > #reviewers,
+.settings-general[data-category="directory"] > #partners,
+.settings-general[data-category="workflow"] > #date-rules,
+.settings-general[data-category="workflow"] > #reasons { display: block; margin-top: 0; }
+.settings-general[data-category="directory"] > #partners,
+.settings-general[data-category="workflow"] > #reasons { margin-top: 1.5rem; }

@@ -5,6 +5,7 @@ import { Plus, UsersRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { controlClass } from "@/components/form-fields";
 import { createClient } from "@/lib/supabase/client";
+import { hasEnvVars } from "@/lib/utils";
 
 type PanelMember = { id: string; name: string; active: boolean };
 
@@ -16,11 +17,13 @@ export function PanelMembersManager() {
 
   useEffect(() => { void load(); }, []);
   async function load() {
+    if (!hasEnvVars) { setNotice("심의위원 명단 관리는 Supabase 연결 후 사용할 수 있습니다."); return; }
     const { data, error } = await createClient().from("panel_members").select("id, name, active").order("name");
     if (error) { setNotice(`심의위원 명단을 불러오지 못했습니다: ${error.message}`); return; }
     setMembers((data ?? []) as PanelMember[]);
   }
   async function add() {
+    if (!hasEnvVars) { setNotice("Supabase 연결 후 등록해주세요."); return; }
     if (!name.trim()) { setNotice("심의위원 이름을 입력해 주세요."); return; }
     if (members.some((member) => member.name === name.trim())) { setNotice("이미 등록된 심의위원입니다."); return; }
     setSaving(true);
@@ -30,6 +33,7 @@ export function PanelMembersManager() {
     setName(""); setNotice("심의위원을 등록했습니다."); await load();
   }
   async function toggle(member: PanelMember) {
+    if (!hasEnvVars) return;
     setSaving(true);
     const { error } = await createClient().from("panel_members").update({ active: !member.active }).eq("id", member.id);
     setSaving(false);

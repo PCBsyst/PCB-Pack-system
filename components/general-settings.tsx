@@ -24,7 +24,7 @@ const defaultUsers: UserAccount[] = [
 const defaults: Settings = { reviewers: "박심의, 이위원, 최위원", reviewDays: "10", decisionDays: "5", deliveryDays: "1", suspensionReasons: "자격유지 요구사항 미충족\n인증서 오용\n시정조치 미이행\n기타", withdrawalReasons: "중대한 인증서 오용\n정지 후 시정조치 미이행\n본인 요청", users: defaultUsers };
 const statusLabels: Record<UserStatus, string> = { ACTIVE: "사용 중", INVITED: "승인 대기", INACTIVE: "비활성" };
 
-export function GeneralSettings() {
+export function GeneralSettings({ category = "all" }: { category?: "all" | "users" | "directory" | "workflow" | "documents" | "security" }) {
   const [settings, setSettings] = useState(defaults);
   const [notice, setNotice] = useState("");
   const [currentUserId, setCurrentUserId] = useState("");
@@ -48,7 +48,7 @@ export function GeneralSettings() {
     }
     setNotice("사용자 역할과 활성상태를 Supabase에 반영했습니다.");
   };
-  return <div className="mt-6 space-y-6">
+  return <div className="settings-general space-y-6" data-category={category}>
     {notice && <div role="status" className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900"><CheckCircle2 className="h-4 w-4"/>{notice}</div>}
     <PanelMembersManager/>
     <PartnersManager/>
@@ -61,7 +61,7 @@ export function GeneralSettings() {
       <div className="mt-5"><StaffInviteForm/></div>
       <div className="mt-5 rounded-lg border p-4"><div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-slate-600"/><p className="font-semibold">권한 기준</p></div><div className="mt-3 grid gap-3 md:grid-cols-2"><PermissionCard title="실무자" items={["모든 신청·후보자·Job 조회 및 업무처리", "주 담당자 지정 여부와 관계없이 공동 처리", "설정·사용자 관리 접근 불가"]}/><PermissionCard title="최고관리자" items={["실무자 권한 전체", "사용자 초대·역할·활성상태 관리", "심의자 명단 및 업무규칙 관리"]}/></div></div>
     </div></section>
-    <div className="flex justify-end"><Button onClick={save} className="bg-blue-800 hover:bg-blue-900"><Save/>전체 설정 저장</Button></div>
+    {(category === "workflow" || category === "all") && <div className="flex justify-end"><Button onClick={save} className="bg-blue-800 hover:bg-blue-900"><Save/>업무규칙 저장</Button></div>}
   </div>;
 }
 

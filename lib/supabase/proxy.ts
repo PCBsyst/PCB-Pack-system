@@ -1,18 +1,20 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { currentAuthEnvironment } from "@/lib/supabase/auth-environment";
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
   });
 
-  // If the env vars are not set, skip proxy check. You can remove this
-  // once you setup the project.
-  const hasSupabaseEnv = Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() &&
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim(),
-  );
-  if (!hasSupabaseEnv) {
+  const environment = currentAuthEnvironment();
+  if (environment.blocked) {
+    return NextResponse.json(
+      { error: "인증 서버 설정이 누락되어 접근을 중단했습니다. 최고관리자에게 문의해주세요." },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+  if (environment.localPrototype) {
     return supabaseResponse;
   }
 

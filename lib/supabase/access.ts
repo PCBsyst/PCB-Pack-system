@@ -1,13 +1,15 @@
 import "server-only";
 
 import { redirect } from "next/navigation";
-import { hasEnvVars } from "@/lib/utils";
+import { currentAuthEnvironment } from "@/lib/supabase/auth-environment";
 import { createClient } from "@/lib/supabase/server";
 
 export type StaffContext = { id: string; email: string; displayName: string; role: "STAFF" | "ADMIN"; active: boolean; prototype: boolean };
 
 export async function getCurrentStaff(): Promise<StaffContext> {
-  if (!hasEnvVars) return { id: "prototype-admin", email: "", displayName: "김담당", role: "ADMIN", active: true, prototype: true };
+  const environment = currentAuthEnvironment();
+  if (environment.blocked) redirect("/auth/error?error=configuration-required");
+  if (environment.localPrototype) return { id: "prototype-admin", email: "", displayName: "김담당", role: "ADMIN", active: true, prototype: true };
   const supabase = await createClient();
   const { data: claimsData } = await supabase.auth.getClaims();
   const userId = claimsData?.claims?.sub;

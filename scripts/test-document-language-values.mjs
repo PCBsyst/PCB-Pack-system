@@ -1,0 +1,34 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import ts from "typescript";
+const code = ts.transpileModule(fs.readFileSync(new URL("../lib/document-language-values.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText;
+const { documentChoice, documentLanguageValues: values } = await import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
+const context = { candidate: { name: "가상후보", nameEn: "Sample Candidate" }, reviewRequirements: { 교육요건: "충족" }, review: { comment: "국문검토", verificationComment: "국문검증" }, panelMembers: [{ name: "위원1", selected: true, decision: "승인", comment: "국문심의" }, { name: "위원2", selected: false, decision: "불승인", comment: "제외" }], decisions: { j1: { comment: "국문승인" } }, englishText: { reviewComment: "Review verified", verificationComment: "Evidence verified", panelComments: { 위원1: "Panel approved" }, decisionComments: { j1: "Final approved" } } };
+const en = values(context, "j1", "EN");
+assert.equal(en.candidateName, "Sample Candidate");
+assert.equal(en.reviewComment, "Review verified");
+assert.equal(en.verificationComment, "Secondary verification: Evidence verified");
+assert.equal(en.panelComments, "위원1: Panel approved");
+assert.equal(en.panelMembers, "위원1 (Approved)");
+assert.equal(en.finalApprovalComment, "Final approved");
+assert.equal(en.requirementSummary, "Education requirements: Met");
+const kr = values(context, "j1", "KR");
+assert.equal(kr.candidateName, "가상후보");
+assert.equal(kr.reviewComment, "국문검토");
+assert.equal(kr.panelComments, "위원1: 국문심의");
+assert.equal(kr.finalApprovalComment, "국문승인");
+const missing = structuredClone(context); missing.englishText = {};
+const blank = values(missing, "j1", "EN");
+assert.equal(blank.reviewComment, "");
+assert.equal(blank.verificationComment, "");
+assert.equal(blank.panelComments, "위원1: -");
+assert.equal(blank.finalApprovalComment, "-");
+assert.equal(documentChoice("적합", "EN"), "Conforming");
+assert.equal(documentChoice("사용자 정의", "EN"), "사용자 정의");
+assert.equal(documentChoice(undefined, "EN"), "-");
+for (const route of ["application-review", "decision-report", "delivery-confirmation"]) {
+  const source = fs.readFileSync(new URL(`../app/api/documents/${route}/route.ts`, import.meta.url), "utf8");
+  assert.ok(source.includes("candidateName: localized.candidateName"));
+  assert.ok(source.includes("documentChoice(job.currentGrade, language)"));
+}
+console.log("국영문 문서 내용: 언어별 의견·결과·선택위원·미번역 시 국문 대체 금지 검사 통과");

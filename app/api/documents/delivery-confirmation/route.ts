@@ -1,4 +1,5 @@
 import PizZip from "pizzip";
+import { documentChoice, documentLanguageValues } from "@/lib/document-language-values";
 import { documentTrainingSummary } from "@/lib/document-training-summary";
 import { docxOutputHeaders } from "@/lib/server/docx-response-headers";
 import { validateGeneratedDocx, invalidDocxResponse } from "@/lib/docx-output-validation";
@@ -20,6 +21,7 @@ export async function POST(request: Request) {
   const parsed = await readValidatedDocumentRequest(request, "EN");
   if (!parsed.ok) return parsed.response;
   const { context, job, language } = parsed.input;
+  const localized = documentLanguageValues(context, job.id, language);
   const certificate = context.certificates[job.id];
   const records = context.deliveryDocuments[job.id];
   const note = [
@@ -29,9 +31,9 @@ export async function POST(request: Request) {
     `Person in charge: ${context.application.primaryOwner}`,
   ].filter(Boolean).join(" | ");
   const values: Record<string, unknown> = {
-    candidateName: context.candidate.nameEn || context.candidate.name,
+    candidateName: localized.candidateName,
     standard: job.standard,
-    grade: job.currentGrade,
+    grade: documentChoice(job.currentGrade, language),
     jobNo: job.jobNo,
     certificationNo: certificate?.certificationNo,
     note,

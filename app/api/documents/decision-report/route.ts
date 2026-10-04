@@ -1,4 +1,5 @@
 import PizZip from "pizzip";
+import { documentChoice, documentLanguageValues } from "@/lib/document-language-values";
 import { documentTrainingSummary } from "@/lib/document-training-summary";
 import { docxOutputHeaders } from "@/lib/server/docx-response-headers";
 import { validateGeneratedDocx, invalidDocxResponse } from "@/lib/docx-output-validation";
@@ -32,27 +33,28 @@ export async function POST(request: Request) {
   const parsed = await readValidatedDocumentRequest(request, "KR");
   if (!parsed.ok) return parsed.response;
   const { context, job, language } = parsed.input;
+  const localized = documentLanguageValues(context, job.id, language);
   const decision = context.decisions[job.id];
   const certificate = context.certificates[job.id];
   const assessment = context.assessment[job.id] ?? {};
-  const selectedPanel = context.panelMembers.filter((member) => member.selected);
   const values: Record<string, unknown> = {
-    candidateName: context.candidate.name,
+    candidateName: localized.candidateName,
     jobNo: job.jobNo,
     standard: job.standard,
-    grade: job.currentGrade,
-    knowledge: assessment["지식 시험"],
-    personality: assessment["인성 시험"],
-    education: assessment["교육 요구사항"],
-    academic: assessment["학력 요구사항"],
-    auditExperience: assessment["심사이력"],
-    assessmentComment: [Object.entries(context.reviewRequirements ?? {}).map(([item, result]) => `${item}: ${result}`).join(" / "), documentTrainingSummary(context.examSchedules?.[job.id], language), context.review.comment, context.review.verificationComment ? `2차 검증: ${context.review.verificationComment}` : ""].filter(Boolean).join("\n"),
+    grade: documentChoice(job.currentGrade, language),
+    knowledge: documentChoice(assessment["지식 시험"], language),
+    personality: documentChoice(assessment["인성 시험"], language),
+    education: documentChoice(assessment["교육 요구사항"], language),
+    academic: documentChoice(assessment["학력 요구사항"], language),
+    auditExperience: documentChoice(assessment["심사이력"], language),
+    assessmentComment: [localized.requirementSummary, documentTrainingSummary(context.examSchedules?.[job.id], language), localized.reviewComment, localized.verificationComment].filter(Boolean).join("\n"),
     approveMark: decision?.result === "승인" ? "■" : "□",
     rejectMark: decision?.result === "불승인" ? "■" : "□",
     reapproveMark: decision?.result === "재승인" ? "■" : "□",
-    panelMembers: selectedPanel.map((member) => `${member.name} (${member.decision})`).join(", "),
+    panelMembers: localized.panelMembers,
     decisionDate: context.decisionDate,
-    decisionComment: selectedPanel.map((member) => `${member.name}: ${member.comment || "-"}`).join(" / "),
+    decisionComment: localized.panelComments,
+    finalApprovalComment: localized.finalApprovalComment,
     certificationNo: certificate?.certificationNo,
     validityPeriod: certificate ? `${certificate.issueDate} ~ ${certificate.expiryDate}` : "-",
     finalApprover: context.finalApprover,

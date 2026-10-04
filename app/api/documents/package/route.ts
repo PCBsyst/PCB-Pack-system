@@ -1,6 +1,7 @@
 import PizZip from "pizzip";
 import { readTemplateProvenance } from "@/lib/template-provenance";
 import { packageSafePath, validatePackageRequest } from "@/lib/package-request-validation";
+import { validateStoredPackageRecords } from "@/lib/server/package-record-validation";
 import type { PackageContext, DocumentLanguage } from "@/lib/prototype-package";
 import type { Job } from "@/types/certification";
 import { corporateTemplateRegistry, type CorporateDocumentType } from "@/lib/document-template-registry";
@@ -33,6 +34,8 @@ export async function POST(request: Request) {
   const validationError = validatePackageRequest(input);
   if (validationError) return Response.json({ error: validationError }, { status: 400 });
   const { context, jobs, languages } = input as RequestBody;
+  const recordError = await validateStoredPackageRecords(context, jobs);
+  if (recordError) return recordError;
 
   const selectedLanguages = new Set(languages);
   const activeTemplateKeys = await getActiveDocumentTemplateKeys();

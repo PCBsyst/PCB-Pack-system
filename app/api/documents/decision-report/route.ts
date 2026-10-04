@@ -1,4 +1,5 @@
 import PizZip from "pizzip";
+import { missingDocumentTemplateFields, documentTemplateFieldsError } from "@/lib/document-template-fields";
 import { privateDocumentResponse } from "@/lib/private-document-response";
 import { documentTranslationIssues, documentTranslationMessage } from "@/lib/document-translation-checks";
 import { documentChoice, documentLanguageValues } from "@/lib/document-language-values";
@@ -77,6 +78,8 @@ async function createDocumentResponse(request: Request) {
   let zip;
   try { zip = new PizZip(template.bytes); }
   catch { return invalidDocxResponse(); }
+  const missingFields = missingDocumentTemplateFields(zip, "CERTIFICATION_DECISION_REPORT");
+  if (missingFields.length) return documentTemplateFieldsError(missingFields);
   // 기존 양식은 승인 의견 칸이 없으므로 의견 영역에 역할을 구분하여 함께 기록합니다.
   // 전용 칸을 가진 신규 양식에서는 중복 출력하지 않습니다.
   const hasApprovalCommentField = Object.keys(zip.files).filter((name) => name.endsWith(".xml"))

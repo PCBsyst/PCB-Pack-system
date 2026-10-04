@@ -31,7 +31,7 @@ const deps = {
   "@/lib/prototype-package": moduleUrl(`export const deliveryDocumentRows=${JSON.stringify(keys.map((key) => ({ key })))};`),
   "@/lib/server/document-request-validation": moduleUrl(`export async function readValidatedDocumentRequest(request, language){return {ok:true,input:{context:${JSON.stringify(context)},job:${JSON.stringify(job)},language:(await request.json()).language||language}};}`),
 };
-for (const name of ["document-language-values", "document-training-summary", "document-delivery-values", "document-translation-checks", "docx-output-validation", "private-document-response"]) deps[`@/lib/${name}`] = moduleUrl(compile(`../lib/${name}.ts`));
+for (const name of ["document-template-fields", "document-language-values", "document-training-summary", "document-delivery-values", "document-translation-checks", "docx-output-validation", "private-document-response"]) deps[`@/lib/${name}`] = moduleUrl(compile(`../lib/${name}.ts`));
 async function loadRoute(route, overrides = {}) {
   let code = compile(`../app/api/documents/${route}/route.ts`);
   for (const [name, url] of Object.entries({ ...deps, ...overrides })) code = code.replaceAll(`"${name}"`, JSON.stringify(url));
@@ -46,6 +46,14 @@ for (const [route, template] of [
   const bytes = fs.readFileSync(new URL(`../templates/${template}`, import.meta.url)).toString("base64");
   deps["@/lib/server/document-template-loader"] = moduleUrl(`export async function loadDocumentTemplate(){return {bytes:Buffer.from('${bytes}','base64')};} export function templateLoadErrorResponse(){return new Response(null,{status:503});}`);
   const POST = await loadRoute(route);
+  const incomplete = new PizZip(Buffer.from(bytes, "base64"));
+  incomplete.file("word/document.xml", incomplete.file("word/document.xml").asText().replaceAll("{{candidateName}}", ""));
+  const incompleteBytes = incomplete.generate({ type: "nodebuffer" }).toString("base64");
+  const incompleteRoute = await loadRoute(route, { "@/lib/server/document-template-loader": moduleUrl(`export async function loadDocumentTemplate(){return {bytes:Buffer.from('${incompleteBytes}','base64')};} export function templateLoadErrorResponse(){return new Response(null,{status:503});}`) });
+  const rejected = await incompleteRoute(request());
+  assert.equal(rejected.status, 503, `${route}: 필수 입력 칸 누락 거절`);
+  assert.ok(!rejected.headers.get("Content-Disposition"));
+  assert.match((await rejected.json()).error, /candidateName/);
   for (const language of ["KR", "EN"]) {
     const response = await POST(new Request("https://example.com/test", { method: "POST", body: JSON.stringify({ language }) }));
     assert.equal(response.status, 200, `${route}/${language}`);

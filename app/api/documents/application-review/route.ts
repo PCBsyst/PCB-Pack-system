@@ -1,4 +1,5 @@
 import PizZip from "pizzip";
+import { missingDocumentTemplateFields, documentTemplateFieldsError } from "@/lib/document-template-fields";
 import { privateDocumentResponse } from "@/lib/private-document-response";
 import { documentTranslationIssues, documentTranslationMessage } from "@/lib/document-translation-checks";
 import { documentChoice, documentLanguageValues } from "@/lib/document-language-values";
@@ -48,6 +49,8 @@ async function createDocumentResponse(request: Request) {
   let zip;
   try { zip = new PizZip(template.bytes); }
   catch { return invalidDocxResponse(); }
+  const missingFields = missingDocumentTemplateFields(zip, "APPLICATION_REVIEW");
+  if (missingFields.length) return documentTemplateFieldsError(missingFields);
   for (const fileName of Object.keys(zip.files).filter((name) => name.endsWith(".xml"))) { let content = zip.file(fileName)?.asText(); if (!content) continue; for (const [key, value] of Object.entries(values)) content = content.replaceAll(`{{${key}}}`, xml(value)); zip.file(fileName, content); }
   if (!validateGeneratedDocx(zip)) return invalidDocxResponse();
   const output = zip.generate({ type: "uint8array", compression: "DEFLATE" }); const body = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength) as ArrayBuffer;

@@ -1,4 +1,5 @@
 import PizZip from "pizzip";
+import { missingDocumentTemplateFields, documentTemplateFieldsError } from "@/lib/document-template-fields";
 import { privateDocumentResponse } from "@/lib/private-document-response";
 import { documentDeliveryValues } from "@/lib/document-delivery-values";
 import { documentChoice, documentLanguageValues } from "@/lib/document-language-values";
@@ -60,6 +61,8 @@ async function createDocumentResponse(request: Request) {
   let zip;
   try { zip = new PizZip(template.bytes); }
   catch { return invalidDocxResponse(); }
+  const missingFields = missingDocumentTemplateFields(zip, "DELIVERY_CONFIRMATION");
+  if (missingFields.length) return documentTemplateFieldsError(missingFields);
   for (const fileName of Object.keys(zip.files).filter((name) => name.endsWith(".xml"))) {
     let content = zip.file(fileName)?.asText();
     if (!content) continue;

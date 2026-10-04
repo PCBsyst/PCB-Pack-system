@@ -1,5 +1,6 @@
 import PizZip from "pizzip";
 import { readTemplateProvenance } from "@/lib/template-provenance";
+import { packageSafePath, validatePackageRequest } from "@/lib/package-request-validation";
 import type { PackageContext, DocumentLanguage } from "@/lib/prototype-package";
 import type { Job } from "@/types/certification";
 import { corporateTemplateRegistry, type CorporateDocumentType } from "@/lib/document-template-registry";
@@ -23,17 +24,15 @@ const generators: Record<CorporateDocumentType, (request: Request) => Promise<Re
   DELIVERY_CONFIRMATION: createDeliveryConfirmation,
 };
 
-function safePath(value: string) {
-  return value.replace(/[^A-Za-z0-9_-]/g, "_");
-}
-
 export async function POST(request: Request) {
   const authError = await requireApiStaff(["DOCUMENT_GENERATION", "PACKAGE_DOWNLOAD"]);
   if (authError) return authError;
-  const { context, jobs, languages } = await request.json() as RequestBody;
-  if (!Array.isArray(jobs) || !jobs.length || jobs.some((job) => !job?.id) || new Set(jobs.map((job) => job.id)).size !== jobs.length || !Array.isArray(languages) || !languages.length || languages.some((language) => language !== "KR" && language !== "EN")) {
-    return Response.json({ error: "Job과 언어를 하나 이상 선택해 주세요." }, { status: 400 });
-  }
+  let input: unknown;
+  try { input = await request.json(); }
+  catch { return Response.json({ error: "요청 형식이 올바르지 않습니다." }, { status: 400 }); }
+  const validationError = validatePackageRequest(input);
+  if (validationError) return Response.json({ error: validationError }, { status: 400 });
+  const { context, jobs, languages } = input as RequestBody;
 
   const selectedLanguages = new Set(languages);
   const activeTemplateKeys = await getActiveDocumentTemplateKeys();
@@ -51,7 +50,7 @@ export async function POST(request: Request) {
   ];
 
   for (const job of jobs) {
-    const safeJobNo = safePath(job.jobNo);
+    const safeJobNo = packageSafePath(job.jobNo);
     for (const template of templates) {
       if (!selectedLanguages.has(template.language)) continue;
       const documentRequest = new Request(request.url, {
@@ -64,6 +63,12 @@ export async function POST(request: Request) {
         return Response.json({ error: `${job.jobNo} ${template.outputName} 생성에 실패했습니다.` }, { status: 500 });
       }
       const bytes = new Uint8Array(await response.arrayBuffer());
+      try {
+        const documentZip = new PizZip(bytes);
+        if (!documentZip.file("[Content_Types].xml") || !documentZip.file("word/document.xml")) throw new Error("Invalid DOCX");
+      } catch {
+        return Response.json({ error: "생성된 Word 파일을 확인하지 못해 패키지를 중단했습니다." }, { status: 503 });
+      }
       const entryName = `${safeJobNo}/${template.language}/${safeJobNo}_${template.outputName}`;
       zip.file(entryName, bytes);
       fileCount += 1;
@@ -90,7 +95,7 @@ export async function POST(request: Request) {
 
   const output = zip.generate({ type: "uint8array", compression: "DEFLATE" });
   const body = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength) as ArrayBuffer;
-  const safeApplicationNo = safePath(context.application.applicationNo);
+  const safeApplicationNo = packageSafePath(context.application.applicationNo);
   const accessError = await recordDocumentResponse("application", context.application.id, "CORPORATE_PACKAGE:ZIP");
   if (accessError) return accessError;
   const receipt = await recordPackageGeneration(context.application.id, generatedDocuments, complete, output);

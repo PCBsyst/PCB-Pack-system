@@ -10,6 +10,6 @@ assert.match(ui, /recordedJobCertificationState\(record.certificationState\)/);
 assert.match(ui, /useLinkedRecordsState\(revision\)/);
 assert.match(ui, /workflow.stage \?\? "UNKNOWN"/);
 assert.match(ui, /인증상태 미확인/);
-assert.match(ui, /!notice && databaseRows.length \+ mockRows.length === 0/);
+assert.match(ui, /!notice && !registryNotice && databaseRows.length \+ mockRows.length === 0/);
 assert.doesNotMatch(ui, /issueDate \? "ACTIVE"/);
 console.log("Job 목록 저장 인증상태·미확인 필터·재조회 연결 검사: 통과 (실제 화면 검증은 별도)");

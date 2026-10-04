@@ -1,4 +1,5 @@
 import PizZip from "pizzip";
+import { docxOutputHeaders } from "@/lib/server/docx-response-headers";
 import { validateGeneratedDocx, invalidDocxResponse } from "@/lib/docx-output-validation";
 import { loadDocumentTemplate, templateLoadErrorResponse } from "@/lib/server/document-template-loader";
 import { templateProvenanceHeaders } from "@/lib/template-provenance";
@@ -41,5 +42,5 @@ export async function POST(request: Request) {
   const safeJobNo = job.jobNo.replace(/[^A-Za-z0-9_-]/g, "_");
   const accessError = await recordDocumentResponse("job", job.id, `APPLICATION_REVIEW:${language}`);
   if (accessError) return accessError;
-  return new Response(body, { headers: { ...templateProvenanceHeaders(template), "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Content-Disposition": `attachment; filename="${safeJobNo}_Application_Review_${language}.docx"` } });
+  return new Response(body, { headers: { ...templateProvenanceHeaders(template), ...docxOutputHeaders(output), "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Content-Disposition": `attachment; filename="${safeJobNo}_Application_Review_${language}.docx"` } });
 }

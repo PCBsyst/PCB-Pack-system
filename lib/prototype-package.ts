@@ -1,6 +1,7 @@
 import type { Candidate, CertificationApplication, Job } from "@/types/certification";
 import { parsePackageGeneration } from "@/lib/package-generation";
 import { documentErrorMessage } from "@/lib/document-errors";
+import { verifiedDocxBlob } from "@/lib/document-download";
 
 export type DemoReview = { result: "적합" | "보완필요" | "부적합"; reviewer: string; reviewedAt: string; comment: string; verifier: string; verifiedAt: string; verificationResult: "확인" | "재검토요청"; verificationComment: string };
 export type AssessmentResult = "" | "적합" | "부적합" | "해당없음";
@@ -101,21 +102,21 @@ export async function downloadDecisionReportDocx(context: PackageContext, job: J
   if (!response.ok) throw new Error(await documentErrorMessage(response));
   const disposition = response.headers.get("Content-Disposition") ?? "";
   const fileName = disposition.match(/filename="([^"]+)"/)?.[1] ?? `${job.jobNo}_인증결정보고서_KR.docx`;
-  downloadBlob(fileName, await response.blob());
+  downloadBlob(fileName, await verifiedDocxBlob(response));
 }
 export async function downloadDeliveryConfirmationDocx(context: PackageContext, job: Job) {
   const response = await fetch("/api/documents/delivery-confirmation", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context, job }) });
   if (!response.ok) throw new Error(await documentErrorMessage(response));
   const disposition = response.headers.get("Content-Disposition") ?? "";
   const fileName = disposition.match(/filename="([^"]+)"/)?.[1] ?? `${job.jobNo}_Document_Delivery_Confirmation_EN.docx`;
-  downloadBlob(fileName, await response.blob());
+  downloadBlob(fileName, await verifiedDocxBlob(response));
 }
 export async function downloadApplicationReviewDocx(context: PackageContext, job: Job) {
   const response = await fetch("/api/documents/application-review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context, job }) });
   if (!response.ok) throw new Error(await documentErrorMessage(response));
   const disposition = response.headers.get("Content-Disposition") ?? "";
   const fileName = disposition.match(/filename="([^"]+)"/)?.[1] ?? `${job.jobNo}_Application_Review_KR.docx`;
-  downloadBlob(fileName, await response.blob());
+  downloadBlob(fileName, await verifiedDocxBlob(response));
 }
 export async function downloadCorporatePackageZip(context: PackageContext, jobs: Job[], languages: DocumentLanguage[]) {
   const response = await fetch("/api/documents/package", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context, jobs, languages }) });

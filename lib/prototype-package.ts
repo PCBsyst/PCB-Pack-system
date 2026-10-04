@@ -2,6 +2,7 @@ import type { Candidate, CertificationApplication, Job } from "@/types/certifica
 import { parsePackageGeneration } from "@/lib/package-generation";
 import { documentErrorMessage } from "@/lib/document-errors";
 import { verifiedDocxBlob } from "@/lib/document-download";
+import { withDownloadSingleFlight } from "@/lib/download-single-flight";
 
 export type DemoReview = { result: "적합" | "보완필요" | "부적합"; reviewer: string; reviewedAt: string; comment: string; verifier: string; verifiedAt: string; verificationResult: "확인" | "재검토요청"; verificationComment: string };
 export type AssessmentResult = "" | "적합" | "부적합" | "해당없음";
@@ -98,6 +99,9 @@ export function downloadBlob(fileName: string, blob: Blob) {
 }
 export function downloadWord(fileName: string, html: string) { downloadBlob(fileName, new Blob(["\ufeff", html], { type: "application/msword;charset=utf-8" })); }
 export async function downloadDecisionReportDocx(context: PackageContext, job: Job) {
+  return withDownloadSingleFlight(`decision:${context.application.id}:${job.id}`, () => downloadDecisionReportDocxImpl(context, job));
+}
+async function downloadDecisionReportDocxImpl(context: PackageContext, job: Job) {
   const response = await fetch("/api/documents/decision-report", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context, job }) });
   if (!response.ok) throw new Error(await documentErrorMessage(response));
   const disposition = response.headers.get("Content-Disposition") ?? "";
@@ -105,6 +109,9 @@ export async function downloadDecisionReportDocx(context: PackageContext, job: J
   downloadBlob(fileName, await verifiedDocxBlob(response));
 }
 export async function downloadDeliveryConfirmationDocx(context: PackageContext, job: Job) {
+  return withDownloadSingleFlight(`delivery:${context.application.id}:${job.id}`, () => downloadDeliveryConfirmationDocxImpl(context, job));
+}
+async function downloadDeliveryConfirmationDocxImpl(context: PackageContext, job: Job) {
   const response = await fetch("/api/documents/delivery-confirmation", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context, job }) });
   if (!response.ok) throw new Error(await documentErrorMessage(response));
   const disposition = response.headers.get("Content-Disposition") ?? "";
@@ -112,6 +119,9 @@ export async function downloadDeliveryConfirmationDocx(context: PackageContext, 
   downloadBlob(fileName, await verifiedDocxBlob(response));
 }
 export async function downloadApplicationReviewDocx(context: PackageContext, job: Job) {
+  return withDownloadSingleFlight(`review:${context.application.id}:${job.id}`, () => downloadApplicationReviewDocxImpl(context, job));
+}
+async function downloadApplicationReviewDocxImpl(context: PackageContext, job: Job) {
   const response = await fetch("/api/documents/application-review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context, job }) });
   if (!response.ok) throw new Error(await documentErrorMessage(response));
   const disposition = response.headers.get("Content-Disposition") ?? "";
@@ -119,6 +129,9 @@ export async function downloadApplicationReviewDocx(context: PackageContext, job
   downloadBlob(fileName, await verifiedDocxBlob(response));
 }
 export async function downloadCorporatePackageZip(context: PackageContext, jobs: Job[], languages: DocumentLanguage[]) {
+  return withDownloadSingleFlight(`package:${context.application.id}`, () => downloadCorporatePackageZipImpl(context, jobs, languages));
+}
+async function downloadCorporatePackageZipImpl(context: PackageContext, jobs: Job[], languages: DocumentLanguage[]) {
   const response = await fetch("/api/documents/package", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context, jobs, languages }) });
   if (!response.ok) {
     throw new Error(await documentErrorMessage(response, "기업 양식 ZIP 생성에 실패했습니다."));

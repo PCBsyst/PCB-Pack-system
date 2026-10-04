@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { DocumentDownloadButton } from "@/components/document-download-button";
 import { Check, Copy, Download, FileArchive, FileText, FolderOpen, PackageCheck, Printer, RotateCcw, Save } from "lucide-react";
 import type { Candidate, CertificationApplication, Invoice, Job } from "@/types/certification";
 import { accreditationLabels, businessAreaLabels } from "@/data/workflow-data";
@@ -98,6 +99,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   const [demo, setDemo] = useState(() => makeInitial(application, linkedJobs));
   const [languages, setLanguages] = useState<Record<DocumentLanguage, boolean>>({ KR: true, EN: true });
   const [generating, setGenerating] = useState(false);
+  const generationBusy = useRef(false);
   const [notice, setNotice] = useState("서류검토 탭에서 샘플 업무를 시작하세요.");
   const [trainingInstitutions, setTrainingInstitutions] = useState<TrainingInstitution[]>([]);
   const [hydrated, setHydrated] = useState(false);
@@ -355,9 +357,10 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     await downloadZip();
   };
   const downloadZip = async () => {
-    if (generating) return;
+    if (generationBusy.current) return;
     const selected = (["KR", "EN"] as DocumentLanguage[]).filter((language) => languages[language]);
     if (!selected.length) { setNotice("생성할 언어를 선택해 주세요."); return; }
+    generationBusy.current = true;
     setGenerating(true);
     try {
       setNotice("실제 기업 양식 DOCX ZIP을 생성하고 있습니다.");
@@ -366,7 +369,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
       setNotice(`${receipt.fileCount}개 DOCX를 포함한 ZIP을 생성하고 다운로드를 요청했습니다. ${receipt.complete ? "" : "일부 양식이 미등록되어 전체 패키지 완료로 처리하지 않았습니다. "}PDF 생성 및 PC 저장 완료를 의미하지 않습니다. ${receipt.receiptStatus === "RECORDED" ? "서버 생성기록 저장 확인." : "서버 생성기록은 DB 적용 대기 또는 로컬 미리보기입니다."} 업무단계 공유 저장은 별도로 확인해 주세요.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "기업 양식 ZIP 생성에 실패했습니다. 완료로 기록하지 않았습니다.");
-    } finally { setGenerating(false); }
+    } finally { generationBusy.current = false; setGenerating(false); }
   };
   const correctionOptions = [
     { key: "review.result", label: "1차 검토결과", value: demo.review.result },
@@ -467,7 +470,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     {active === "Job·패키지" && <Section title="Job별 인증정보 및 기록 패키지" description="화면은 한글로 운영하며, 기록 문서는 국문·영문으로 각각 생성합니다.">
       <PackageGenerationHistory applicationId={application.id} />
       <DeliveryDocumentChecklist jobs={linkedJobs} records={demo.deliveryDocuments} decisionDate={demo.decisionDate} certificates={demo.certificates} reasons={demo.dateOverrideReasons} auditLogs={demo.dateAuditLogs} actor={application.primaryOwner} dateRules={dateRules} setDemo={setDemo}/>
-      <div className="mb-5 rounded-lg border border-indigo-200 bg-indigo-50 p-4"><div><p className="text-sm font-semibold text-indigo-950">기업 양식 DOCX 생성</p><p className="mt-1 text-xs text-indigo-800">제공된 FGPC 양식의 머리글·바닥글·워터마크와 레이아웃을 유지하며 현재 업무 입력값을 반영합니다.</p></div><div className="mt-4 space-y-3">{linkedJobs.map((job) => <div key={`corporate-documents-${job.id}`} className="flex flex-wrap items-center gap-2 rounded-md border border-indigo-100 bg-white p-3"><span className="mr-auto text-sm font-semibold text-slate-800">{job.jobNo} · {job.standard}</span><Button size="sm" variant="outline" onClick={async () => { try { await downloadApplicationReviewDocx(packageContext, job); setNotice(`${job.jobNo} 신청서·서류검토서 DOCX를 생성했습니다.`); } catch { setNotice("신청서·서류검토서 DOCX 생성에 실패했습니다."); } }}><Download/>서류검토서</Button><Button size="sm" variant="outline" onClick={async () => { try { await downloadDecisionReportDocx(packageContext, job); setNotice(`${job.jobNo} 인증결정보고서 DOCX를 생성했습니다.`); } catch { setNotice("인증결정보고서 DOCX 생성에 실패했습니다."); } }}><Download/>인증결정보고서</Button><Button size="sm" variant="outline" onClick={async () => { try { await downloadDeliveryConfirmationDocx(packageContext, job); setNotice(`${job.jobNo} 문서전달확인서 DOCX를 생성했습니다.`); } catch { setNotice("문서전달확인서 DOCX 생성에 실패했습니다."); } }}><Download/>문서전달확인서</Button></div>)}</div></div>
+      <div className="mb-5 rounded-lg border border-indigo-200 bg-indigo-50 p-4"><div><p className="text-sm font-semibold text-indigo-950">기업 양식 DOCX 생성</p><p className="mt-1 text-xs text-indigo-800">현재 입력 저장 후 생성하세요. 생성 및 파일 확인 중에는 해당 버튼을 다시 누를 수 없습니다.</p></div><div className="mt-4 space-y-3">{linkedJobs.map((job) => <div key={`corporate-documents-${job.id}`} className="flex flex-wrap items-center gap-2 rounded-md border border-indigo-100 bg-white p-3"><span className="mr-auto text-sm font-semibold text-slate-800">{job.jobNo} · {job.standard}</span><DocumentDownloadButton label="서류검토서" task={() => downloadApplicationReviewDocx(packageContext, job)} setNotice={setNotice} successMessage={`${job.jobNo} 서류검토서 파일을 확인하고 다운로드를 요청했습니다.`}/><DocumentDownloadButton label="인증결정보고서" task={() => downloadDecisionReportDocx(packageContext, job)} setNotice={setNotice} successMessage={`${job.jobNo} 인증결정보고서 파일을 확인하고 다운로드를 요청했습니다.`}/><DocumentDownloadButton label="문서전달확인서" task={() => downloadDeliveryConfirmationDocx(packageContext, job)} setNotice={setNotice} successMessage={`${job.jobNo} 문서전달확인서 파일을 확인하고 다운로드를 요청했습니다.`}/></div>)}</div></div>
       <div className="mb-5 rounded-lg border border-blue-100 bg-blue-50 p-4"><p className="text-sm font-semibold text-blue-950">생성 언어</p><div className="mt-3 flex gap-5 text-sm">{(["KR", "EN"] as DocumentLanguage[]).map((language) => <label key={language} className="flex cursor-pointer items-center gap-2"><input type="checkbox" checked={languages[language]} onChange={(event) => setLanguages((current) => ({ ...current, [language]: event.target.checked }))}/>{language === "KR" ? "국문" : "영문"}</label>)}</div></div>
       <PackagePreflight jobs={linkedJobs} certificates={demo.certificates} documents={demo.deliveryDocuments} />
       {languages.EN && <div className="mb-5 rounded-lg border p-4"><h4 className="font-semibold">영문 자유서술 확인</h4><p className="mt-1 text-xs text-slate-500">공식 문서 생성 전에 번역 내용을 직접 확인하고 수정합니다.</p><div className="mt-4 grid gap-4 md:grid-cols-2"><Field label="서류검토 의견 (영문)"><textarea className={textareaClass} value={demo.englishText.reviewComment} onChange={(event) => changeEnglishText("reviewComment", event.target.value, setDemo)}/></Field><Field label="검증 의견 (영문)"><textarea className={textareaClass} value={demo.englishText.verificationComment} onChange={(event) => changeEnglishText("verificationComment", event.target.value, setDemo)}/></Field>{demo.panelMembers.filter((member) => member.selected).map((member) => <Field key={member.name} label={`${member.name} 위원 의견 (영문)`}><textarea className={textareaClass} value={demo.englishText.panelComments[member.name] ?? ""} onChange={(event) => changeEnglishPanelComment(member.name, event.target.value, setDemo)}/></Field>)}{linkedJobs.map((job) => <Field key={job.id} label={`${job.jobNo} 최종 승인 의견 (영문)`}><textarea className={textareaClass} value={demo.englishText.decisionComments[job.id] ?? ""} onChange={(event) => changeEnglishDecisionComment(job.id, event.target.value, setDemo)}/></Field>)}</div></div>}

@@ -1,0 +1,15 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import ts from "typescript";
+const code = ts.transpileModule(fs.readFileSync(new URL("../lib/download-single-flight.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+const { withDownloadSingleFlight: run } = await import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
+let release; let calls = 0;
+const first = run("same", () => { calls++; return new Promise((resolve) => { release = resolve; }); });
+await assert.rejects(() => run("same", async () => { calls++; }));
+assert.equal(calls, 1);
+assert.equal(await run("different", async () => 2), 2);
+release(1); assert.equal(await first, 1);
+assert.equal(await run("same", async () => 3), 3);
+await assert.rejects(() => run("failure", async () => { throw new Error("시험 실패"); }));
+assert.equal(await run("failure", async () => 4), 4);
+console.log("중복 다운로드 차단·성공/실패 후 재시도 검사: 통과");

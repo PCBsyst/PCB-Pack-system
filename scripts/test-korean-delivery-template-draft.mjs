@@ -1,0 +1,31 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import PizZip from "pizzip";
+import ts from "typescript";
+const compile = (path) => ts.transpileModule(fs.readFileSync(new URL(path, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+const load = async (path) => import(`data:text/javascript;base64,${Buffer.from(compile(path)).toString("base64")}`);
+const { prepareKoreanDeliveryTemplateDraft: prepare } = await load("../lib/korean-delivery-template-draft.ts");
+const { missingDocumentTemplateFields: missing } = await load("../lib/document-template-fields.ts");
+const zip = new PizZip(fs.readFileSync(new URL("../templates/FGPC-012-03-delivery-confirmation-en.docx", import.meta.url)));
+const originalBody = zip.file("word/document.xml").asText();
+const unchanged = new Map(Object.keys(zip.files).filter((name) => name !== "word/document.xml" && !zip.files[name].dir).map((name) => [name, zip.file(name).asUint8Array()]));
+prepare(zip);
+const body = zip.file("word/document.xml").asText();
+assert.deepEqual(missing(zip, "DELIVERY_CONFIRMATION"), []);
+for (const field of originalBody.match(/\{\{\w+\}\}/g)) assert.ok(body.includes(field), field);
+for (const label of ["문서전달확인서", "후보자명", "교육수료증", "시험통보서", "시험답안지", "인증결정보고서"]) assert.ok(body.includes(label), label);
+for (const label of ["List of Certification Documents", "Application Form", "Career Certification", "GPC Examination Answer Sheets"]) assert.ok(!body.includes(label));
+assert.ok(!/<w:t(?:\s[^>]*)?>☐<\/w:t>/.test(body), "정적인 체크박스와 실제 기록 표시를 중복하지 않습니다.");
+for (const key of ["application", "career", "education", "diploma", "auditLog", "agreement", "examNotice", "examAnswers", "decisionReport", "certificate", "survey", "deliveryConfirmation"]) assert.ok(body.includes(`{{${key}Comment}}`));
+for (const row of body.matchAll(/<w:tr(?:\s[^>]*)?>[\s\S]*?<\/w:tr>/g)) {
+  const key = row[0].match(/\{\{(\w+)Mark\}\}/)?.[1];
+  if (!key) continue;
+  const cells = [...row[0].matchAll(/<w:tc(?:\s[^>]*)?>[\s\S]*?<\/w:tc>/g)].map((match) => match[0]);
+  assert.equal(cells.length, 5);
+  for (const [index, suffix] of [[2, "Mark"], [3, "Date"], [4, "Comment"]]) assert.ok(cells[index].includes(`{{${key}${suffix}}}`), `${key}: ${suffix} 열 정렬`);
+}
+for (const [name, bytes] of unchanged) assert.deepEqual(zip.file(name).asUint8Array(), bytes, `머릿글·바닥글·로고·관계 보존: ${name}`);
+assert.throws(() => prepare(new PizZip()), /원본 본문/);
+const registry = fs.readFileSync(new URL("../lib/document-template-registry.ts", import.meta.url), "utf8");
+assert.match(registry.split(/\r?\n/).find((line) => line.includes('id: "delivery-confirmation-kr"')), /available: false/, "렌더링 전에는 정식 양식으로 표시하지 않습니다.");
+console.log("국문 문서전달확인서 제작 코드: 원본 항목·국문 제목·항목별 비고·머릿글/바닥글/로고 보존 통과 (파일 미배포, 출력 검증 대기)");

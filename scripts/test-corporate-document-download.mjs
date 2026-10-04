@@ -14,7 +14,7 @@ const functions = new Function("fetch", "withDownloadSingleFlight", "documentErr
   async () => "모의 생성 실패", async () => new Blob(["가상 DOCX"]), (name, blob) => downloads.push({ name, blob }),
 );
 const context = { application: { id: "a1" } }, job = { id: "j1", jobNo: "TEST-001" };
-for (const [name, route, defaultLanguage] of [["downloadApplicationReviewDocx", "application-review", "KR"], ["downloadDecisionReportDocx", "decision-report", "KR"], ["downloadDeliveryConfirmationDocx", "delivery-confirmation", "EN"]]) {
+for (const [name, route, defaultLanguage] of [["downloadApplicationReviewDocx", "application-review", "KR"], ["downloadDecisionReportDocx", "decision-report", "KR"], ["downloadDeliveryConfirmationDocx", "delivery-confirmation", "KR"]]) {
   await functions[name](context, job);
   assert.equal(requests.at(-1).body.language, defaultLanguage);
   for (const language of ["KR", "EN"]) {
@@ -30,6 +30,9 @@ const count = downloads.length;
 await assert.rejects(functions.downloadApplicationReviewDocx(context, job, "EN"), /모의 생성 실패/);
 assert.equal(downloads.length, count);
 const ui = fs.readFileSync(new URL("../components/application-detail.tsx", import.meta.url), "utf8");
+assert.ok(ui.includes("({ KR: true, EN: false })"), "기본 패키지는 국문 우선이며 영문은 선택 가능합니다.");
+const deliveryRoute = fs.readFileSync(new URL("../app/api/documents/delivery-confirmation/route.ts", import.meta.url), "utf8");
+assert.ok(deliveryRoute.includes('readValidatedDocumentRequest(request, "KR")'));
 const buttons = ui.split(/\r?\n/).find((line) => line.startsWith("function DocumentButtons"));
 assert.ok(!buttons.includes("downloadWord("));
 assert.ok(buttons.includes("개발용 미리보기·인쇄"));

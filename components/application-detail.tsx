@@ -104,7 +104,7 @@ function makeInitial(application: CertificationApplication, jobs: Job[]): DemoSt
 export function ApplicationDetail({ application, candidate, linkedJobs, invoices }: { application: CertificationApplication; candidate: Candidate; linkedJobs: Job[]; invoices: Invoice[] }) {
   const [active, setActive] = useState<Tab>("신청 개요");
   const [demo, setDemo] = useState(() => makeInitial(application, linkedJobs));
-  const [languages, setLanguages] = useState<Record<DocumentLanguage, boolean>>({ KR: true, EN: true });
+  const [languages, setLanguages] = useState<Record<DocumentLanguage, boolean>>({ KR: true, EN: false });
   const [generating, setGenerating] = useState(false);
   const generationBusy = useRef(false);
   const [notice, setNotice] = useState("서류검토 탭에서 샘플 업무를 시작하세요.");

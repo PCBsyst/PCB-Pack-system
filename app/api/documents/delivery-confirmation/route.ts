@@ -25,7 +25,7 @@ export async function POST(request: Request) {
 async function createDocumentResponse(request: Request) {
   const authError = await requireApiStaff(["DOCUMENT_GENERATION"]);
   if (authError) return authError;
-  const parsed = await readValidatedDocumentRequest(request, "EN");
+  const parsed = await readValidatedDocumentRequest(request, "KR");
   if (!parsed.ok) return parsed.response;
   const { context, job, language } = parsed.input;
   const localized = documentLanguageValues(context, job.id, language);

@@ -111,7 +111,7 @@ export async function downloadCorporateDocumentDocx(context: PackageContext, job
 export function downloadDecisionReportDocx(context: PackageContext, job: Job, language: DocumentLanguage = "KR") {
   return downloadCorporateDocumentDocx(context, job, "CERTIFICATION_DECISION_REPORT", language);
 }
-export function downloadDeliveryConfirmationDocx(context: PackageContext, job: Job, language: DocumentLanguage = "EN") {
+export function downloadDeliveryConfirmationDocx(context: PackageContext, job: Job, language: DocumentLanguage = "KR") {
   return downloadCorporateDocumentDocx(context, job, "DELIVERY_CONFIRMATION", language);
 }
 export function downloadApplicationReviewDocx(context: PackageContext, job: Job, language: DocumentLanguage = "KR") {

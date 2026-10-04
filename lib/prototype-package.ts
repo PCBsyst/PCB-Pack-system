@@ -98,35 +98,24 @@ export function downloadBlob(fileName: string, blob: Blob) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 export function downloadWord(fileName: string, html: string) { downloadBlob(fileName, new Blob(["\ufeff", html], { type: "application/msword;charset=utf-8" })); }
-export async function downloadDecisionReportDocx(context: PackageContext, job: Job) {
-  return withDownloadSingleFlight(`decision:${context.application.id}:${job.id}`, () => downloadDecisionReportDocxImpl(context, job));
+export async function downloadCorporateDocumentDocx(context: PackageContext, job: Job, documentType: "APPLICATION_REVIEW" | "CERTIFICATION_DECISION_REPORT" | "DELIVERY_CONFIRMATION", language: DocumentLanguage) {
+  const routes = { APPLICATION_REVIEW: "application-review", CERTIFICATION_DECISION_REPORT: "decision-report", DELIVERY_CONFIRMATION: "delivery-confirmation" };
+  return withDownloadSingleFlight(`document:${context.application.id}:${job.id}:${documentType}:${language}`, async () => {
+    const response = await fetch(`/api/documents/${routes[documentType]}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context, job, language }) });
+    if (!response.ok) throw new Error(await documentErrorMessage(response));
+    const disposition = response.headers.get("Content-Disposition") ?? "";
+    const fileName = disposition.match(/filename="([^"]+)"/)?.[1] ?? `${job.jobNo}_${documentType}_${language}.docx`;
+    downloadBlob(fileName, await verifiedDocxBlob(response));
+  });
 }
-async function downloadDecisionReportDocxImpl(context: PackageContext, job: Job) {
-  const response = await fetch("/api/documents/decision-report", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context, job }) });
-  if (!response.ok) throw new Error(await documentErrorMessage(response));
-  const disposition = response.headers.get("Content-Disposition") ?? "";
-  const fileName = disposition.match(/filename="([^"]+)"/)?.[1] ?? `${job.jobNo}_인증결정보고서_KR.docx`;
-  downloadBlob(fileName, await verifiedDocxBlob(response));
+export function downloadDecisionReportDocx(context: PackageContext, job: Job, language: DocumentLanguage = "KR") {
+  return downloadCorporateDocumentDocx(context, job, "CERTIFICATION_DECISION_REPORT", language);
 }
-export async function downloadDeliveryConfirmationDocx(context: PackageContext, job: Job) {
-  return withDownloadSingleFlight(`delivery:${context.application.id}:${job.id}`, () => downloadDeliveryConfirmationDocxImpl(context, job));
+export function downloadDeliveryConfirmationDocx(context: PackageContext, job: Job, language: DocumentLanguage = "EN") {
+  return downloadCorporateDocumentDocx(context, job, "DELIVERY_CONFIRMATION", language);
 }
-async function downloadDeliveryConfirmationDocxImpl(context: PackageContext, job: Job) {
-  const response = await fetch("/api/documents/delivery-confirmation", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context, job }) });
-  if (!response.ok) throw new Error(await documentErrorMessage(response));
-  const disposition = response.headers.get("Content-Disposition") ?? "";
-  const fileName = disposition.match(/filename="([^"]+)"/)?.[1] ?? `${job.jobNo}_Document_Delivery_Confirmation_EN.docx`;
-  downloadBlob(fileName, await verifiedDocxBlob(response));
-}
-export async function downloadApplicationReviewDocx(context: PackageContext, job: Job) {
-  return withDownloadSingleFlight(`review:${context.application.id}:${job.id}`, () => downloadApplicationReviewDocxImpl(context, job));
-}
-async function downloadApplicationReviewDocxImpl(context: PackageContext, job: Job) {
-  const response = await fetch("/api/documents/application-review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context, job }) });
-  if (!response.ok) throw new Error(await documentErrorMessage(response));
-  const disposition = response.headers.get("Content-Disposition") ?? "";
-  const fileName = disposition.match(/filename="([^"]+)"/)?.[1] ?? `${job.jobNo}_Application_Review_KR.docx`;
-  downloadBlob(fileName, await verifiedDocxBlob(response));
+export function downloadApplicationReviewDocx(context: PackageContext, job: Job, language: DocumentLanguage = "KR") {
+  return downloadCorporateDocumentDocx(context, job, "APPLICATION_REVIEW", language);
 }
 export async function downloadCorporatePackageZip(context: PackageContext, jobs: Job[], languages: DocumentLanguage[]) {
   return withDownloadSingleFlight(`package:${context.application.id}`, () => downloadCorporatePackageZipImpl(context, jobs, languages));

@@ -55,7 +55,9 @@ export function MfaSetup({ prototype }: { prototype: boolean }) {
       if (assurance.error || assurance.data.currentLevel !== "aal2") { setMessage("2단계 인증 완료 상태를 확인하지 못했습니다. 다시 시도해 주세요."); return; }
       setSetup(null); setLevel("aal2");
       setFactors((items) => items.map((item) => item.id === factorId ? { ...item, status: "verified" } : item));
-      setMessage("인증 코드 확인이 완료되었습니다. 현재 로그인 세션은 2단계 인증을 완료했습니다.");
+      setMessage("인증이 완료되었습니다. 업무 화면으로 이동합니다.");
+      // 새 인증 세션으로 서버 권한을 다시 확인하고 등록 화면은 뒤로가기 이력에서 제거합니다.
+      window.location.replace("/");
     } catch { setMessage("인증 서버에 연결하지 못했습니다."); }
     finally { setBusy(false); }
   }

@@ -5,6 +5,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { DocumentDownloadButton } from "@/components/document-download-button";
 import { PackageTemplateReadiness } from "@/components/package-template-readiness";
 import { canAttachPackageGeneration } from "@/lib/package-completion-policy";
+import { confirmPackageReadiness, isTemplateReadinessRows } from "@/lib/template-readiness";
+import { documentErrorMessage } from "@/lib/document-errors";
 import { Check, Copy, Download, FileArchive, FileText, FolderOpen, PackageCheck, Printer, RotateCcw, Save } from "lucide-react";
 import type { Candidate, CertificationApplication, Invoice, Job } from "@/types/certification";
 import { accreditationLabels, businessAreaLabels } from "@/data/workflow-data";
@@ -365,9 +367,18 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     const selected = (["KR", "EN"] as DocumentLanguage[]).filter((language) => languages[language]);
     if (!selected.length) { setNotice("생성할 언어를 선택해 주세요."); return; }
     generationBusy.current = true;
-    setGenerating(true);
-    try {
-      setNotice("실제 기업 양식 DOCX ZIP을 생성하고 있습니다.");
+      setGenerating(true);
+      try {
+        setNotice("선택한 양식의 준비 상태를 다시 확인하고 있습니다.");
+        const readinessResponse = await fetch("/api/documents/template-readiness", { cache: "no-store" });
+        if (!readinessResponse.ok) throw new Error(await documentErrorMessage(readinessResponse));
+        const readiness = await readinessResponse.json();
+        if (!isTemplateReadinessRows(readiness.templates)) throw new Error("양식 준비 상태를 확인하지 못했습니다. 다시 시도해 주세요.");
+        const choice = confirmPackageReadiness(readiness.templates, { KR: selected.includes("KR"), EN: selected.includes("EN") }, linkedJobs.length, (message) => window.confirm(message));
+        if (choice === "EMPTY") { setNotice("선택한 언어로 생성할 수 있는 양식이 없습니다. 양식을 등록한 뒤 다시 진행해 주세요."); return; }
+        if (choice === "CANCEL") { setNotice("패키지 생성을 취소했습니다. 파일 생성이나 완료 처리는 하지 않았습니다."); return; }
+        if (!canAttachPackageGeneration(packageContext, latestPackageContext.current)) { setNotice("확인 중 업무 입력이 변경되었습니다. 입력 저장 후 다시 생성해 주세요."); return; }
+        setNotice("실제 기업 양식 DOCX ZIP을 생성하고 있습니다.");
       const receipt = await downloadCorporatePackageZip(packageContext, linkedJobs, selected);
       if (!canAttachPackageGeneration(packageContext, latestPackageContext.current)) {
         setNotice("생성 중 업무 입력이 변경되었습니다. 파일 다운로드는 요청됐지만 현재 업무를 새로 완료 처리하지 않았습니다. 입력 저장 후 다시 생성해 주세요.");

@@ -1,0 +1,15 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import ts from "typescript";
+const code = ts.transpileModule(fs.readFileSync(new URL("../lib/job-list-state.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+const { recordedJobCertificationState: state } = await import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
+for (const value of ["ACTIVE", "SUSPENDED", "WITHDRAWN", "NONE"]) assert.equal(state(value), value);
+for (const value of [undefined, null, "", "EXPIRED", "active", {}, false, "2026-10-04"]) assert.equal(state(value), "UNKNOWN");
+const ui = fs.readFileSync(new URL("../components/jobs-table.tsx", import.meta.url), "utf8");
+assert.match(ui, /recordedJobCertificationState\(record.certificationState\)/);
+assert.match(ui, /useLinkedRecordsState\(revision\)/);
+assert.match(ui, /workflow.stage \?\? "UNKNOWN"/);
+assert.match(ui, /인증상태 미확인/);
+assert.match(ui, /!notice && databaseRows.length \+ mockRows.length === 0/);
+assert.doesNotMatch(ui, /issueDate \? "ACTIVE"/);
+console.log("Job 목록 저장 인증상태·미확인 필터·재조회 연결 검사: 통과 (실제 화면 검증은 별도)");

@@ -1,19 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ArrowUpDown, FolderOpen, RotateCcw, Search } from "lucide-react";
 import { ApplicationStatusBadge } from "@/components/application-status-badge";
 import { Button } from "@/components/ui/button";
 import { getCandidate, jobs } from "@/data/mock-data";
 import { accreditationLabels, applicationStatusLabels, applications, businessAreaLabels } from "@/data/workflow-data";
-import { prototypeApplicationStatus, prototypeCandidateId, prototypeJobId, readPrototypeApplications, readPrototypeWorkflow, type PrototypeApplicationRecord } from "@/lib/prototype-storage";
-import { createClient } from "@/lib/supabase/client";
-import { hasEnvVars } from "@/lib/utils";
+import { prototypeApplicationStatus, prototypeCandidateId, prototypeJobId, readPrototypeWorkflow } from "@/lib/prototype-storage";
+import { useLinkedRecordsState } from "@/components/prototype-linked-rows";
+import { groupApplicationRecords, sortApplicationGroups, type ApplicationListSort } from "@/lib/application-list-groups";
+
 
 const controlClass = "h-9 rounded-md border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-blue-200";
-type SortKey = "received-desc" | "received-asc" | "candidate" | "standard" | "partner" | "status";
-type ApplicationJobRow = { id: string; job_no: string; management_no: number; standard: string; grade: string; primary_owner_id: string | null };
+type SortKey = ApplicationListSort;
+
 
 export function ApplicationsTable() {
   const [query, setQuery] = useState("");
@@ -24,29 +25,9 @@ export function ApplicationsTable() {
   const [track, setTrack] = useState("ALL");
   const [status, setStatus] = useState("ALL");
   const [sort, setSort] = useState<SortKey>("received-desc");
-  const [localRows, setLocalRows] = useState<PrototypeApplicationRecord[]>([]);
-
-  useEffect(() => {
-    setLocalRows(readPrototypeApplications());
-    if (!hasEnvVars) return;
-    const supabase = createClient();
-    void supabase.from("applications").select("*, candidates(id, name), jobs(id, job_no, management_no, standard, grade, primary_owner_id)").order("received_at", { ascending: false }).then(async ({ data }) => {
-      if (!data) return;
-      const applicationIds = data.map((item) => item.id);
-      const { data: workspaceRows } = applicationIds.length ? await supabase.from("application_workspaces").select("application_id, state").in("application_id", applicationIds) : { data: [] };
-      const workspaces = new Map((workspaceRows ?? []).map((workspace) => [workspace.application_id, workspace.state]));
-      const ownerIds = [...new Set(data.flatMap((item) => ((Array.isArray(item.jobs) ? item.jobs : []) as ApplicationJobRow[]).map((job) => job.primary_owner_id).filter((ownerId): ownerId is string => Boolean(ownerId))))];
-      const { data: profiles } = ownerIds.length ? await supabase.from("profiles").select("id, display_name").in("id", ownerIds) : { data: [] };
-      const ownerNames = new Map((profiles ?? []).map((profile) => [profile.id, profile.display_name]));
-      const databaseRows: PrototypeApplicationRecord[] = data.flatMap((item) => {
-        const job = (Array.isArray(item.jobs) ? item.jobs[0] : undefined) as ApplicationJobRow | undefined;
-        const candidate = Array.isArray(item.candidates) ? item.candidates[0] : item.candidates;
-        if (!job) return [];
-        return [{ id: item.id, candidateId: candidate?.id, jobId: job.id, applicationNo: item.application_no, receivedAt: item.received_at, candidateName: candidate?.name ?? "이름 미입력", businessArea: item.business_area, scheme: item.accreditation_scheme === "PJLA" ? "PJLA" : "IAS", accreditationTrack: item.accreditation_track, accreditationHidden: item.accreditation_hidden, applicationType: item.application_type, managementNo: job.management_no, jobNo: job.job_no, standard: job.standard, grade: job.grade, partnerCompany: item.partner_name_snapshot, primaryOwner: job.primary_owner_id ? ownerNames.get(job.primary_owner_id) ?? "담당자 미확인" : "담당자 미지정", status: "INTAKE_REVIEW", createdAt: item.created_at, workflow: workspaces.get(item.id) ?? undefined } satisfies PrototypeApplicationRecord];
-      });
-      setLocalRows(databaseRows);
-    });
-  }, []);
+  const [revision, setRevision] = useState(0);
+  const { records: localRows, notice } = useLinkedRecordsState(revision);
+  const localGroups = useMemo(() => groupApplicationRecords(localRows), [localRows]);
 
   const standards = useMemo(() => [...new Set([...jobs.map((job) => job.standard), ...localRows.map((record) => record.standard)])].sort(), [localRows]);
   const grades = useMemo(() => [...new Set([...jobs.map((job) => job.currentGrade), ...localRows.map((record) => record.grade)])].sort(), [localRows]);
@@ -74,20 +55,21 @@ export function ApplicationsTable() {
     return applicationStatusLabels[a.application.status].localeCompare(applicationStatusLabels[b.application.status], "ko");
   }), [area, grade, partner, query, sort, standard, status, track]);
 
-  const visibleLocalRows = useMemo(() => localRows.filter((record) => {
-    const haystack = `${record.applicationNo} ${record.candidateName} ${record.partnerCompany} ${record.jobNo} ${record.standard} ${record.grade}`.toLowerCase();
+  const visibleLocalRows = useMemo(() => sortApplicationGroups(localGroups.filter(({ record, linkedRecords }) => {
+    const haystack = `${record.applicationNo} ${record.candidateName} ${record.partnerCompany} ${linkedRecords.map((item) => `${item.jobNo} ${item.standard} ${item.grade}`).join(" ")}`.toLowerCase();
     return haystack.includes(query.trim().toLowerCase())
       && (area === "ALL" || record.businessArea === area)
-      && (standard === "ALL" || record.standard === standard)
-      && (grade === "ALL" || record.grade === grade)
+      && (standard === "ALL" || linkedRecords.some((item) => item.standard === standard))
+      && (grade === "ALL" || linkedRecords.some((item) => item.grade === grade))
       && (partner === "ALL" || record.partnerCompany === partner)
       && (track === "ALL" || record.accreditationTrack === track)
       && (status === "ALL" || prototypeApplicationStatus(readPrototypeWorkflow(record)) === status);
-  }), [area, grade, localRows, partner, query, standard, status, track]);
+  }), sort, (record) => applicationStatusLabels[prototypeApplicationStatus(readPrototypeWorkflow(record))]), [area, grade, localGroups, partner, query, sort, standard, status, track]);
 
   const reset = () => { setQuery(""); setArea("ALL"); setStandard("ALL"); setGrade("ALL"); setPartner("ALL"); setTrack("ALL"); setStatus("ALL"); setSort("received-desc"); };
 
   return <section className="overflow-hidden rounded-lg border bg-white shadow-sm">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-card p-4"><p role="status" className="text-sm text-muted-foreground">{notice || "신청 단위로 표시합니다. 복수 Job은 한 신청 행에 함께 표시됩니다."}</p><Button type="button" variant="outline" onClick={() => setRevision((value) => value + 1)}><RotateCcw/>서버 기록 다시 조회</Button></div>
     <div className="border-b bg-slate-50/70 p-4">
       <div className="flex flex-col gap-3 lg:flex-row"><label className="relative flex-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400"/><input className={`${controlClass} w-full pl-9`} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="신청번호, 후보자, 파트너사, Job No. 검색"/></label><label className="flex items-center gap-2 text-xs font-medium text-slate-500"><ArrowUpDown className="h-4 w-4"/><select className={controlClass} value={sort} onChange={(event) => setSort(event.target.value as SortKey)}><option value="received-desc">접수일 최신순</option><option value="received-asc">접수일 오래된순</option><option value="candidate">후보자명순</option><option value="standard">표준명순</option><option value="partner">파트너사순</option><option value="status">상태명순</option></select></label><Button type="button" variant="outline" onClick={reset}><RotateCcw/>초기화</Button></div>
       <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
@@ -99,8 +81,9 @@ export function ApplicationsTable() {
         <Filter value={status} onChange={setStatus} allLabel="전체 상태" options={Object.entries(applicationStatusLabels)}/>
       </div>
     </div>
-    <div className="overflow-x-auto"><table className="w-full min-w-[1200px] text-left text-sm"><thead className="bg-slate-50 text-xs font-semibold text-slate-500"><tr>{["신청번호","공식 접수일","후보자","분야 / 인정","신청구분","관리 No.","표준 / 등급 / Job No.","파트너사","Dropbox 폴더","현재상태","담당자"].map((heading) => <th key={heading} className="px-4 py-3">{heading}</th>)}</tr></thead><tbody className="divide-y">{visibleLocalRows.map((record) => <tr key={record.id} className="bg-blue-50/30 hover:bg-blue-50"><td className="px-4 py-4 font-semibold text-blue-800"><Link href={`/applications/${record.id}`}>{record.applicationNo}</Link><span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-[10px]">신규</span></td><td className="whitespace-nowrap px-4 py-4 text-slate-600">{record.receivedAt}</td><td className="whitespace-nowrap px-4 py-4 font-medium"><Link href={`/candidates/${prototypeCandidateId(record)}`}>{record.candidateName}</Link></td><td className="px-4 py-4 text-slate-600">{businessAreaLabels[record.businessArea]}<br/><span className="text-xs text-slate-400">{accreditationLabels[record.accreditationTrack]}{record.accreditationHidden ? " · 숨김" : ""}</span></td><td className="px-4 py-4">{record.applicationType}</td><td className="px-4 py-4 font-medium">{record.managementNo}</td><td className="min-w-64 px-4 py-4"><span className="font-medium">{record.standard}</span><span className="text-slate-500"> · {record.grade} · <Link href={`/jobs/${prototypeJobId(record)}`} className="text-blue-800 underline">{record.jobNo}</Link></span></td><td className="whitespace-nowrap px-4 py-4 text-slate-600">{record.partnerCompany}</td><td className="max-w-56 px-4 py-4 text-xs text-slate-400">Dropbox 생성 대기</td><td className="px-4 py-4"><ApplicationStatusBadge status={prototypeApplicationStatus(readPrototypeWorkflow(record))}/></td><td className="whitespace-nowrap px-4 py-4 text-slate-600">{record.primaryOwner}</td></tr>)}{rows.map(({ application, candidate, linkedJobs }) => <tr key={application.id} className="hover:bg-blue-50/40"><td className="px-4 py-4 font-semibold text-blue-800"><Link href={`/applications/${application.id}`}>{application.applicationNo}</Link></td><td className="whitespace-nowrap px-4 py-4 text-slate-600">{application.receivedAt}</td><td className="whitespace-nowrap px-4 py-4 font-medium">{candidate.name}</td><td className="px-4 py-4 text-slate-600">{businessAreaLabels[application.businessArea]}<br/><span className="text-xs text-slate-400">{accreditationLabels[application.accreditationTrack]}</span></td><td className="px-4 py-4">{application.applicationType}</td><td className="px-4 py-4 font-medium">{application.managementNoFrom === application.managementNoTo ? application.managementNoFrom : `${application.managementNoFrom}~${application.managementNoTo}`}</td><td className="min-w-64 px-4 py-4">{linkedJobs.map((job) => <div key={job.id} className="mb-1 last:mb-0"><span className="font-medium">{job.standard}</span><span className="text-slate-500"> · {job.currentGrade} · {job.jobNo}</span></div>)}</td><td className="whitespace-nowrap px-4 py-4 text-slate-600">{application.partnerCompany}</td><td className="max-w-56 px-4 py-4"><div className="flex items-start gap-2"><FolderOpen className="mt-0.5 h-4 w-4 shrink-0 text-slate-400"/><span className="truncate text-xs text-slate-600">{application.dropboxFolderName}</span></div></td><td className="px-4 py-4"><ApplicationStatusBadge status={application.status}/></td><td className="whitespace-nowrap px-4 py-4 text-slate-600">{application.primaryOwner}</td></tr>)}</tbody></table></div>
-    <div className="border-t px-5 py-3 text-xs text-slate-500">조회 결과 {rows.length + visibleLocalRows.length}건 / 전체 {applications.length + localRows.length}건</div>
+    <div className="overflow-x-auto"><table className="w-full min-w-[1200px] text-left text-sm"><thead className="bg-slate-50 text-xs font-semibold text-slate-500"><tr>{["신청번호","공식 접수일","후보자","분야 / 인정","신청구분","관리 No.","표준 / 등급 / Job No.","파트너사","Dropbox 폴더","현재상태","담당자"].map((heading) => <th key={heading} className="px-4 py-3">{heading}</th>)}</tr></thead><tbody className="divide-y">{visibleLocalRows.map(({ record, linkedRecords }) => <tr key={record.id} className="bg-blue-50/30 hover:bg-blue-50"><td className="px-4 py-4 font-semibold text-blue-800"><Link href={`/applications/${record.id}`}>{record.applicationNo}</Link><span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-[10px]">신규</span></td><td className="whitespace-nowrap px-4 py-4 text-slate-600">{record.receivedAt}</td><td className="whitespace-nowrap px-4 py-4 font-medium"><Link href={`/candidates/${record.candidateId ?? prototypeCandidateId(record)}`}>{record.candidateName}</Link></td><td className="px-4 py-4 text-slate-600">{businessAreaLabels[record.businessArea]}<br/><span className="text-xs text-slate-400">{accreditationLabels[record.accreditationTrack]}{record.accreditationHidden ? " · 숨김" : ""}</span></td><td className="px-4 py-4">{record.applicationType}</td><td className="px-4 py-4 font-medium">{linkedRecords.map((item) => item.managementNo).join(", ")}</td><td className="min-w-64 px-4 py-4">{linkedRecords.map((item) => <div key={item.jobId ?? item.jobNo} className="mb-1 last:mb-0"><span className="font-medium">{item.standard}</span><span className="text-slate-500"> · {item.grade} · <Link href={`/jobs/${prototypeJobId(item)}`} className="text-blue-800 underline">{item.jobNo}</Link></span></div>)}</td><td className="whitespace-nowrap px-4 py-4 text-slate-600">{record.partnerCompany}</td><td className="max-w-56 px-4 py-4 text-xs text-slate-400">Dropbox 생성 대기</td><td className="px-4 py-4"><ApplicationStatusBadge status={prototypeApplicationStatus(readPrototypeWorkflow(record))}/></td><td className="whitespace-nowrap px-4 py-4 text-slate-600">{record.primaryOwner}</td></tr>)}{rows.map(({ application, candidate, linkedJobs }) => <tr key={application.id} className="hover:bg-blue-50/40"><td className="px-4 py-4 font-semibold text-blue-800"><Link href={`/applications/${application.id}`}>{application.applicationNo}</Link><span className="ml-2 rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground">샘플</span></td><td className="whitespace-nowrap px-4 py-4 text-slate-600">{application.receivedAt}</td><td className="whitespace-nowrap px-4 py-4 font-medium">{candidate.name}</td><td className="px-4 py-4 text-slate-600">{businessAreaLabels[application.businessArea]}<br/><span className="text-xs text-slate-400">{accreditationLabels[application.accreditationTrack]}</span></td><td className="px-4 py-4">{application.applicationType}</td><td className="px-4 py-4 font-medium">{application.managementNoFrom === application.managementNoTo ? application.managementNoFrom : `${application.managementNoFrom}~${application.managementNoTo}`}</td><td className="min-w-64 px-4 py-4">{linkedJobs.map((job) => <div key={job.id} className="mb-1 last:mb-0"><span className="font-medium">{job.standard}</span><span className="text-slate-500"> · {job.currentGrade} · {job.jobNo}</span></div>)}</td><td className="whitespace-nowrap px-4 py-4 text-slate-600">{application.partnerCompany}</td><td className="max-w-56 px-4 py-4"><div className="flex items-start gap-2"><FolderOpen className="mt-0.5 h-4 w-4 shrink-0 text-slate-400"/><span className="truncate text-xs text-slate-600">{application.dropboxFolderName}</span></div></td><td className="px-4 py-4"><ApplicationStatusBadge status={application.status}/></td><td className="whitespace-nowrap px-4 py-4 text-slate-600">{application.primaryOwner}</td></tr>)}</tbody></table></div>
+    {!notice && rows.length + visibleLocalRows.length === 0 && <p className="p-8 text-center text-sm text-muted-foreground">조건에 맞는 신청이 없습니다.</p>}
+    <div className="border-t px-5 py-3 text-xs text-slate-500">등록 신청 {visibleLocalRows.length}건 / {localGroups.length}건 · 기본 샘플 {rows.length}건 / {applications.length}건{notice ? " · 서버 조회 미확인: 현재 수량은 확정값이 아닙니다." : ""}</div>
   </section>;
 }
 

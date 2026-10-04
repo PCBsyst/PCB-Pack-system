@@ -40,3 +40,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Database exports must never be committed (SQL migrations remain tracked).
+/backups/
+/.tools/
+/supabase/.temp/
+*.dump
+*.backup
+roles.sql
+schema.sql
+data.sql

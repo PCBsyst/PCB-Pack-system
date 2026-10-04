@@ -64,6 +64,11 @@ $$;
 revoke all on function public.update_candidate_with_reason_v2(uuid,text,text,date,text,text,text,text,text,bigint) from public;
 grant execute on function public.update_candidate_with_reason_v2(uuid,text,text,date,text,text,text,text,text,bigint) to authenticated;
 -- Old save RPC cannot be used to bypass version validation after this migration.
-revoke execute on function public.update_candidate_with_reason(uuid,text,text,date,text,text,text,text,text) from public, anon, authenticated;
+do $$
+begin
+  if to_regprocedure('public.update_candidate_with_reason(uuid,text,text,date,text,text,text,text,text)') is not null then
+    revoke execute on function public.update_candidate_with_reason(uuid,text,text,date,text,text,text,text,text) from public, anon, authenticated;
+  end if;
+end;
+$$;
 commit;
-

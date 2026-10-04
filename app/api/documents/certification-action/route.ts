@@ -1,25 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { requireApiStaff } from "@/lib/server/api-auth";
+import { validateActionDocumentInput } from "@/lib/action-document-records";
+import { loadStoredActionDocument } from "@/lib/server/action-document-records";
+import { validateGeneratedDocx, invalidDocxResponse } from "@/lib/docx-output-validation";
 import { recordDocumentResponse } from "@/lib/server/privacy-access";
 import path from "node:path";
 import PizZip from "pizzip";
 import { privateDocumentResponse } from "@/lib/private-document-response";
 
-type ActionDocumentRequest = {
-  kind: "REPORT" | "LETTER";
-  jobNo: string;
-  managementNo: number;
-  candidateName: string;
-  candidateContact: string;
-  certificationNo: string;
-  certificationIssueDate: string;
-  actionType: "SUSPENDED" | "WITHDRAWN";
-  standardReason: string;
-  detailReason: string;
-  effectiveDate: string;
-  actor: string;
-  recordedAt: string;
-};
 
 function xml(value: unknown) {
   return String(value ?? "-").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
@@ -60,12 +48,18 @@ export async function POST(request: Request) {
 async function createDocumentResponse(request: Request) {
   const authError = await requireApiStaff(["DOCUMENT_GENERATION"]);
   if (authError) return authError;
-  const body = await request.json() as ActionDocumentRequest;
-  if (!body.certificationNo || !body.candidateName || !body.effectiveDate) return Response.json({ error: "필수 문서정보가 없습니다." }, { status: 400 });
+  let input: unknown;
+  try { input = await request.json(); }
+  catch { return Response.json({ error: "요청 형식이 올바르지 않습니다." }, { status: 400 }); }
+  if (!validateActionDocumentInput(input)) return Response.json({ error: "Job과 정지·철회 기록을 다시 선택해 주세요." }, { status: 400 });
+  const stored = await loadStoredActionDocument(input);
+  if (!stored.ok) return stored.response;
+  const body = stored.values;
   const actionLabel = body.actionType === "SUSPENDED" ? "정지" : "철회";
   const templateName = body.kind === "REPORT" ? "FGPC-015-02-certification-action-report-kr.docx" : "FGPC-015-03-certification-action-letter-kr.docx";
-  const template = await readFile(path.join(process.cwd(), "templates", templateName));
-  const zip = new PizZip(template);
+  let zip: PizZip;
+  try { zip = new PizZip(await readFile(path.join(process.cwd(), "templates", templateName))); }
+  catch { return invalidDocxResponse(); }
 
   if (body.kind === "REPORT") {
     replaceAllXml(zip, [
@@ -94,11 +88,12 @@ async function createDocumentResponse(request: Request) {
     ]);
   }
 
+  if (!validateGeneratedDocx(zip)) return invalidDocxResponse();
   const output = zip.generate({ type: "uint8array", compression: "DEFLATE" });
   const result = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength) as ArrayBuffer;
   const safeJobNo = body.jobNo.replace(/[^A-Za-z0-9_-]/g, "_");
   const suffix = body.kind === "REPORT" ? "Certification_Action_Report" : "Certification_Action_Letter";
-  const accessError = await recordDocumentResponse("certification_action", body.jobNo, `${suffix}:KR`);
+  const accessError = await recordDocumentResponse("certification_action", input.actionId, `${suffix}:KR`);
   if (accessError) return accessError;
   return new Response(result, { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Content-Disposition": `attachment; filename="${safeJobNo}_${suffix}_KR.docx"` } });
 }

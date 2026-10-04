@@ -112,7 +112,7 @@ function Summary({ label, value }: { label: string; value: string }) { return <d
 function Info({ label, value }: { label: string; value: string }) { return <div><dt className="text-xs font-medium text-slate-500">{label}</dt><dd className="mt-1.5 text-sm font-medium text-slate-900">{value}</dd></div>; }
 
 async function downloadActionDocument(view: JobView, record: AftercareRecord, kind: "REPORT" | "LETTER", setNotice: (message: string) => void) {
-  const response = await fetch("/api/documents/certification-action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, jobNo: view.jobNo, managementNo: view.managementNo, candidateName: view.candidateName, candidateContact: "후보자 상세정보 참조", certificationNo: view.certificationNo, certificationIssueDate: view.certificationIssueDate, actionType: record.type, standardReason: record.reason, detailReason: record.detail, effectiveDate: record.effectiveDate, actor: record.actor, recordedAt: record.recordedAt }) });
+  const response = await fetch("/api/documents/certification-action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, jobId: view.id, actionId: record.id }) });
   if (!response.ok) { setNotice("문서를 생성하지 못했습니다."); return; }
   const disposition = response.headers.get("Content-Disposition") ?? "";
   const fileName = disposition.match(/filename="([^"]+)"/)?.[1] ?? `${view.jobNo}_${kind}.docx`;

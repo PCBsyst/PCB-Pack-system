@@ -7,16 +7,23 @@ import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
 type LinkedJobRow = { id: string; job_no: string; management_no: number; standard: string; grade: string; primary_owner_id: string | null };
 
-export function useLinkedRecords() {
+export function useLinkedRecordsState(revision = 0) {
   const [records, setRecords] = useState<PrototypeApplicationRecord[]>([]);
+  const [notice, setNotice] = useState("");
   useEffect(() => {
-    setRecords(readPrototypeApplications());
-    if (!hasEnvVars) return;
-    const supabase = createClient();
-    void supabase.from("applications").select("*, candidates(id, name, name_en, birth_date, nationality, email, phone), jobs(id, job_no, management_no, standard, grade, primary_owner_id)").order("received_at", { ascending: false }).then(async ({ data }) => {
-      if (!data) return;
+    let cancelled = false;
+    if (!hasEnvVars) { setRecords(readPrototypeApplications()); setNotice(""); return; }
+    setRecords([]); setNotice("신청·Job 업무기록을 조회하고 있습니다.");
+    const load = async () => {
+      try {
+      const supabase = createClient();
+      const { data, error } = await supabase.from("applications").select("*, candidates(id, name, name_en, birth_date, nationality, email, phone), jobs(id, job_no, management_no, standard, grade, primary_owner_id)").order("received_at", { ascending: false });
+      if (error || !data) throw new Error("신청 조회 실패");
+      if (cancelled) return;
       const applicationIds = data.map((item) => item.id);
-      const { data: workspaceRows } = applicationIds.length ? await supabase.from("application_workspaces").select("application_id, state").in("application_id", applicationIds) : { data: [] };
+      const { data: workspaceRows, error: workspaceError } = applicationIds.length ? await supabase.from("application_workspaces").select("application_id, state").in("application_id", applicationIds) : { data: [], error: null };
+      if (workspaceError) throw new Error("업무기록 조회 실패");
+      if (cancelled) return;
       const workspaces = new Map((workspaceRows ?? []).map((workspace) => [workspace.application_id, workspace.state]));
       const ownerIds = [...new Set(data.flatMap((item) => ((Array.isArray(item.jobs) ? item.jobs : []) as LinkedJobRow[]).map((job) => job.primary_owner_id).filter((ownerId): ownerId is string => Boolean(ownerId))))];
       const { data: profiles } = ownerIds.length ? await supabase.from("profiles").select("id, display_name").in("id", ownerIds) : { data: [] };
@@ -26,11 +33,16 @@ export function useLinkedRecords() {
         const jobRows = (Array.isArray(item.jobs) ? item.jobs : []) as LinkedJobRow[];
         return jobRows.map((job) => ({ id: item.id, candidateId: candidate?.id, jobId: job.id, applicationNo: item.application_no, receivedAt: item.received_at, candidateName: candidate?.name ?? "이름 미입력", candidateNameEn: candidate?.name_en ?? undefined, candidateBirthDate: candidate?.birth_date ?? undefined, candidateNationality: candidate?.nationality ?? undefined, candidateEmail: candidate?.email ?? undefined, candidatePhone: candidate?.phone ?? undefined, businessArea: item.business_area, scheme: item.accreditation_scheme === "PJLA" ? "PJLA" : "IAS", accreditationTrack: item.accreditation_track, accreditationHidden: item.accreditation_hidden, applicationType: item.application_type, managementNo: job.management_no, jobNo: job.job_no, standard: job.standard, grade: job.grade, partnerCompany: item.partner_name_snapshot, primaryOwner: job.primary_owner_id ? ownerNames.get(job.primary_owner_id) ?? "담당자 미확인" : "담당자 미지정", status: "INTAKE_REVIEW", createdAt: item.created_at, workflow: workspaces.get(item.id) ?? undefined }));
       });
-      setRecords(mapped);
-    });
-  }, []);
-  return records;
+      if (!cancelled) { setRecords(mapped); setNotice(""); }
+      } catch { if (!cancelled) { setRecords([]); setNotice("신청·Job 업무기록을 조회하지 못했습니다. 연결 또는 접근권한을 확인한 뒤 다시 조회해 주세요. 조회 실패는 기록 없음이 아닙니다."); } }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [revision]);
+  return { records, notice };
 }
+
+export function useLinkedRecords() { return useLinkedRecordsState().records; }
 
 function candidateLink(record: PrototypeApplicationRecord) { return record.candidateId ? `/candidates/${record.candidateId}` : `/candidates/${prototypeCandidateId(record)}`; }
 function jobLink(record: PrototypeApplicationRecord) { return `/jobs/${prototypeJobId(record)}`; }

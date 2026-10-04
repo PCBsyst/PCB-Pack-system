@@ -32,6 +32,12 @@ const deps = {
   "@/lib/server/document-request-validation": moduleUrl(`export async function readValidatedDocumentRequest(request, language){return {ok:true,input:{context:${JSON.stringify(context)},job:${JSON.stringify(job)},language:(await request.json()).language||language}};}`),
 };
 for (const name of ["document-language-values", "document-training-summary", "document-delivery-values", "document-translation-checks", "docx-output-validation"]) deps[`@/lib/${name}`] = moduleUrl(compile(`../lib/${name}.ts`));
+async function loadRoute(route, overrides = {}) {
+  let code = compile(`../app/api/documents/${route}/route.ts`);
+  for (const [name, url] of Object.entries({ ...deps, ...overrides })) code = code.replaceAll(`"${name}"`, JSON.stringify(url));
+  return (await import(moduleUrl(code))).POST;
+}
+const request = (language = "KR") => new Request("https://example.com/test", { method: "POST", body: JSON.stringify({ language }) });
 for (const [route, template] of [
   ["application-review", "FGPC-008-01-application-review-kr.docx"],
   ["decision-report", "FGPC-012-01-decision-report-kr.docx"],
@@ -39,9 +45,7 @@ for (const [route, template] of [
 ]) {
   const bytes = fs.readFileSync(new URL(`../templates/${template}`, import.meta.url)).toString("base64");
   deps["@/lib/server/document-template-loader"] = moduleUrl(`export async function loadDocumentTemplate(){return {bytes:Buffer.from('${bytes}','base64')};} export function templateLoadErrorResponse(){return new Response(null,{status:503});}`);
-  let code = compile(`../app/api/documents/${route}/route.ts`);
-  for (const [name, url] of Object.entries(deps)) code = code.replaceAll(`"${name}"`, JSON.stringify(url));
-  const { POST } = await import(moduleUrl(code));
+  const POST = await loadRoute(route);
   for (const language of ["KR", "EN"]) {
     const response = await POST(new Request("https://example.com/test", { method: "POST", body: JSON.stringify({ language }) }));
     assert.equal(response.status, 200, `${route}/${language}`);
@@ -58,6 +62,31 @@ for (const [route, template] of [
       assert.ok(xml.includes(language === "KR" ? "국문최종승인" : "Final approval confirmed"), "기본 양식에도 최종 승인 의견이 들어가야 합니다.");
     }
     if (route === "delivery-confirmation") for (const date of ["2026-09-02", "2026-09-04", "2026-09-08", "2026-09-09"]) assert.ok(xml.includes(date));
+  }
+  // 권한·저장값 대조·양식·접근이력 검사에 실패하면 파일을 반환하지 않습니다.
+  for (const [dependency, stub, status] of [
+    ["@/lib/server/api-auth", 'export async function requireApiStaff(){return Response.json({error:"권한 부족"},{status:403});}', 403],
+    ["@/lib/server/document-request-validation", 'export async function readValidatedDocumentRequest(){return {ok:false,response:Response.json({error:"저장값 불일치"},{status:409})};}', 409],
+    ["@/lib/server/document-template-loader", 'export async function loadDocumentTemplate(){return {bytes:Buffer.from("invalid")};} export function templateLoadErrorResponse(){return Response.json({error:"양식 오류"},{status:503});}', 503],
+    ["@/lib/server/privacy-access", 'export async function recordDocumentResponse(){return Response.json({error:"이력 저장 실패"},{status:503});}', 503],
+  ]) {
+    const guarded = await loadRoute(route, { [dependency]: moduleUrl(stub) });
+    const response = await guarded(request());
+    assert.equal(response.status, status, `${route}: 실패 시 Word 차단`);
+    assert.ok(!response.headers.get("Content-Disposition"));
+  }
+  if (route === "decision-report") {
+    const customized = new PizZip(Buffer.from(bytes, "base64"));
+    customized.file("word/document.xml", customized.file("word/document.xml").asText().replace("</w:body>", "<w:p><w:r><w:t>{{finalApprovalComment}}</w:t></w:r></w:p></w:body>"));
+    const customBytes = customized.generate({ type: "nodebuffer" }).toString("base64");
+    const customRoute = await loadRoute(route, { "@/lib/server/document-template-loader": moduleUrl(`export async function loadDocumentTemplate(){return {bytes:Buffer.from('${customBytes}','base64')};} export function templateLoadErrorResponse(){return new Response(null,{status:503});}`) });
+    for (const language of ["KR", "EN"]) {
+      const response = await customRoute(request(language));
+      assert.equal(response.status, 200);
+      const content = new PizZip(await response.arrayBuffer()).file("word/document.xml").asText();
+      const comment = language === "KR" ? "국문최종승인" : "Final approval confirmed";
+      assert.equal(content.split(comment).length - 1, 1, "승인 의견 전용 칸이 있으면 한 번만 출력");
+    }
   }
 }
 console.log("세 문서 생성 API: 국영문 파일 내용·날짜·의견·XML 이스케이프 검사 통과 (인증/DB는 모의, 영문 미등록 양식의 디자인 검증 아님)");

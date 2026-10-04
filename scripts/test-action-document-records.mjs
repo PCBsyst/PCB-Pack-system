@@ -22,7 +22,7 @@ for (const [index, key, value] of [[0, "id", "other"], [0, "job_id", "other"], [
   assert.equal(map(input, ...rows), null);
 }
 const route = fs.readFileSync(new URL("../app/api/documents/certification-action/route.ts", import.meta.url), "utf8");
-assert.ok(route.indexOf("loadStoredActionDocument(input)") < route.indexOf("try { zip ="));
+assert.ok(route.indexOf("loadStoredActionDocument(input)") < route.indexOf("const bytes = await readFile"));
 assert.ok(route.includes('recordDocumentResponse("certification_action", input.actionId'));
 const loader = fs.readFileSync(new URL("../lib/server/action-document-records.ts", import.meta.url), "utf8");
 assert.ok(loader.includes('eq("id", action.data.certification_record_id)'));

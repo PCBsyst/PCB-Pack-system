@@ -1,4 +1,5 @@
 import PizZip from "pizzip";
+import { validateGeneratedDocx, invalidDocxResponse } from "@/lib/docx-output-validation";
 import { loadDocumentTemplate, templateLoadErrorResponse } from "@/lib/server/document-template-loader";
 import { templateProvenanceHeaders } from "@/lib/template-provenance";
 import { requireApiStaff } from "@/lib/server/api-auth";
@@ -59,7 +60,9 @@ export async function POST(request: Request) {
   let template;
   try { template = await loadDocumentTemplate("CERTIFICATION_DECISION_REPORT", language, language === "KR" ? "FGPC-012-01-decision-report-kr.docx" : undefined); }
   catch { return templateLoadErrorResponse(); }
-  const zip = new PizZip(template.bytes);
+  let zip;
+  try { zip = new PizZip(template.bytes); }
+  catch { return invalidDocxResponse(); }
   for (const fileName of Object.keys(zip.files).filter((name) => name.endsWith(".xml"))) {
     let content = zip.file(fileName)?.asText();
     if (!content) continue;
@@ -67,6 +70,7 @@ export async function POST(request: Request) {
     content = removeGradePlaceholder(content);
     zip.file(fileName, content);
   }
+  if (!validateGeneratedDocx(zip)) return invalidDocxResponse();
   const output = zip.generate({ type: "uint8array", compression: "DEFLATE" });
   const body = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength) as ArrayBuffer;
   const safeJobNo = job.jobNo.replace(/[^A-Za-z0-9_-]/g, "_");

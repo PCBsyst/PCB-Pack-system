@@ -1,4 +1,5 @@
 import PizZip from "pizzip";
+import { validateGeneratedDocx } from "@/lib/docx-output-validation";
 import { readTemplateProvenance } from "@/lib/template-provenance";
 import { packageSafePath, validatePackageRequest } from "@/lib/package-request-validation";
 import { validateStoredPackageRecords } from "@/lib/server/package-record-validation";
@@ -70,7 +71,7 @@ export async function POST(request: Request) {
       const bytes = new Uint8Array(await response.arrayBuffer());
       try {
         const documentZip = new PizZip(bytes);
-        if (!documentZip.file("[Content_Types].xml") || !documentZip.file("word/document.xml")) throw new Error("Invalid DOCX");
+        if (!validateGeneratedDocx(documentZip)) throw new Error("Invalid DOCX");
       } catch {
         return Response.json({ error: "생성된 Word 파일을 확인하지 못해 패키지를 중단했습니다." }, { status: 503 });
       }

@@ -1,4 +1,5 @@
 import PizZip from "pizzip";
+import { validateGeneratedDocx, invalidDocxResponse } from "@/lib/docx-output-validation";
 import { loadDocumentTemplate, templateLoadErrorResponse } from "@/lib/server/document-template-loader";
 import { templateProvenanceHeaders } from "@/lib/template-provenance";
 import { requireApiStaff } from "@/lib/server/api-auth";
@@ -42,13 +43,16 @@ export async function POST(request: Request) {
   let template;
   try { template = await loadDocumentTemplate("DELIVERY_CONFIRMATION", language, language === "EN" ? "FGPC-012-03-delivery-confirmation-en.docx" : undefined); }
   catch { return templateLoadErrorResponse(); }
-  const zip = new PizZip(template.bytes);
+  let zip;
+  try { zip = new PizZip(template.bytes); }
+  catch { return invalidDocxResponse(); }
   for (const fileName of Object.keys(zip.files).filter((name) => name.endsWith(".xml"))) {
     let content = zip.file(fileName)?.asText();
     if (!content) continue;
     for (const [key, value] of Object.entries(values)) content = content.replaceAll(`{{${key}}}`, xml(value));
     zip.file(fileName, content);
   }
+  if (!validateGeneratedDocx(zip)) return invalidDocxResponse();
   const output = zip.generate({ type: "uint8array", compression: "DEFLATE" });
   const body = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength) as ArrayBuffer;
   const safeJobNo = job.jobNo.replace(/[^A-Za-z0-9_-]/g, "_");

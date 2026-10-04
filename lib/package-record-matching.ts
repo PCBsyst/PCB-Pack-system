@@ -2,7 +2,8 @@ import type { PackageContext } from "@/lib/prototype-package";
 import type { Job } from "@/types/certification";
 
 export type PackageApplicationRow = { id: string; application_no: string; candidate_id: string };
-export type PackageCandidateRow = { id: string; name: string };
+export type PackageCandidateRow = { id: string; name: string; name_en: string | null; birth_date: string | null;
+  nationality: string | null; email: string | null; phone: string | null; address: string | null };
 export type PackageJobRow = { id: string; application_id: string; candidate_id: string; job_no: string; standard: string; grade: string };
 
 export function matchesPackageRecords(context: PackageContext, jobs: Job[], application: PackageApplicationRow | null,
@@ -11,6 +12,17 @@ export function matchesPackageRecords(context: PackageContext, jobs: Job[], appl
     || application.id !== context.application.id || application.application_no !== context.application.applicationNo
     || application.candidate_id !== context.candidate.id || candidate.id !== context.candidate.id
     || candidate.name !== context.candidate.name) return false;
+  const candidateFields = [
+    ["nameEn", "name_en"], ["birthDate", "birth_date"], ["nationality", "nationality"],
+    ["email", "email"], ["phone", "phone"], ["address", "address"],
+  ] as const;
+  if (candidateFields.some(([inputKey, storedKey]) => {
+    const stored = candidate[storedKey];
+    const input = context.candidate[inputKey];
+    // The current workspace presents database NULL as "미입력"; never normalize real values.
+    if (stored === null) return input !== "" && input !== "미입력";
+    return typeof stored !== "string" || stored !== input;
+  })) return false;
   const byId = new Map(records.map((row) => [row.id, row]));
   if (byId.size !== records.length) return false;
   return jobs.every((job) => {

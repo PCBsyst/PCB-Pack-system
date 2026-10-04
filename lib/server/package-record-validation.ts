@@ -16,7 +16,7 @@ export async function validateStoredPackageRecords(context: PackageContext, jobs
     const client = await createClient();
     const [application, candidate, records, workspace] = await Promise.all([
       client.from("applications").select("id,application_no,candidate_id").eq("id", context.application.id).maybeSingle(),
-      client.from("candidates").select("id,name").eq("id", context.candidate.id).maybeSingle(),
+      client.rpc("read_candidate_with_access_log", { target_id: context.candidate.id }),
       client.from("jobs").select("id,application_id,candidate_id,job_no,standard,grade").in("id", jobs.map((job) => job.id)),
       client.from("application_workspaces").select("state").eq("application_id", context.application.id).maybeSingle(),
     ]);

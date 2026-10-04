@@ -1,4 +1,5 @@
 import PizZip from "pizzip";
+import { documentDeliveryValues } from "@/lib/document-delivery-values";
 import { documentChoice, documentLanguageValues } from "@/lib/document-language-values";
 import { documentTrainingSummary } from "@/lib/document-training-summary";
 import { docxOutputHeaders } from "@/lib/server/docx-response-headers";
@@ -24,13 +25,16 @@ export async function POST(request: Request) {
   const localized = documentLanguageValues(context, job.id, language);
   const certificate = context.certificates[job.id];
   const records = context.deliveryDocuments[job.id];
+  const delivery = documentDeliveryValues(context, job.id, language);
   const note = [
     documentTrainingSummary(context.examSchedules?.[job.id], language),
-    context.invoiceNo ? `Invoice: ${context.invoiceNo} / Issued: ${context.invoiceIssuedAt || "-"} / Paid: ${context.paymentConfirmedAt || "-"}` : "",
-    certificate?.originalSentAt ? `Original dispatched: ${certificate.originalSentAt} / Tracking No.: ${certificate.trackingNumber || "-"}` : "",
-    `Person in charge: ${context.application.primaryOwner}`,
+    delivery.chronology,
+    delivery.invoiceNote,
+    delivery.dispatchNote,
+    delivery.ownerNote,
   ].filter(Boolean).join(" | ");
   const values: Record<string, unknown> = {
+    ...delivery,
     candidateName: localized.candidateName,
     standard: job.standard,
     grade: documentChoice(job.currentGrade, language),
@@ -40,7 +44,7 @@ export async function POST(request: Request) {
   };
   for (const row of deliveryDocumentRows) {
     const record = records?.[row.key];
-    values[`${row.key}Mark`] = record?.applicability === "NOT_APPLICABLE" ? "N/A" : record?.received ? "■" : "□";
+    values[`${row.key}Mark`] = record?.applicability === "NOT_APPLICABLE" ? language === "KR" ? "해당 없음" : "N/A" : record?.received ? "■" : "□";
     values[`${row.key}Date`] = record?.date || "-";
     values[`${row.key}Comment`] = record?.comment || "";
   }

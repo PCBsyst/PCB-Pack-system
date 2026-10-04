@@ -24,4 +24,21 @@ collision.jobs[0].jobNo = "QMS/1";
 const second = { ...collision.jobs[0], id: "j2", jobNo: "QMS_1" };
 collision.jobs.push(second); collision.context.jobs = structuredClone(collision.jobs); collision.context.application.jobIds.push("j2");
 assert.ok(validate(collision));
-console.log("패키지 요청 정합성: 13건 검사 통과");
+function scheduledFixture() {
+  const value = fixture();
+  value.context.examSchedules = { j1: { providerType: "PARTNER", providerName: "가상 연수기관", trainingEndDate: "2028-02-29", examNoticeDate: "2028-02-22", examDate: "2028-02-29" } };
+  return value;
+}
+assert.equal(validate(scheduledFixture()), null);
+const emptySchedule = scheduledFixture();
+Object.assign(emptySchedule.context.examSchedules.j1, { providerName: "", trainingEndDate: "", examNoticeDate: "", examDate: "" });
+assert.equal(validate(emptySchedule), null); // 미입력은 사실을 만들어 채우지 않는다.
+for (const [key, invalid] of [["providerType", "UNKNOWN"], ["providerName", 123], ["providerName", "x".repeat(501)], ["providerName", "잘못\u0000된 값"], ["examDate", "2026-02-29"], ["examDate", "2026-04-31"], ["examDate", "26-01-01"], ["examDate", null], ["trainingEndDate", "2026-13-01"], ["examNoticeDate", "2026-01-00"]]) {
+  const value = scheduledFixture(); value.context.examSchedules.j1[key] = invalid;
+  assert.ok(validate(value), `${key}: 잘못된 입력 차단`);
+}
+const missingSchedule = scheduledFixture(); delete missingSchedule.context.examSchedules.j1;
+assert.ok(validate(missingSchedule));
+const arraySchedule = scheduledFixture(); arraySchedule.context.examSchedules = [];
+assert.ok(validate(arraySchedule));
+console.log("패키지 요청 정합성: 기존 연결 및 교육·시험 날짜 검사 통과");

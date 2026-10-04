@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DocumentDownloadButton } from "@/components/document-download-button";
+import { PackageTemplateReadiness } from "@/components/package-template-readiness";
 import { canAttachPackageGeneration } from "@/lib/package-completion-policy";
 import { Check, Copy, Download, FileArchive, FileText, FolderOpen, PackageCheck, Printer, RotateCcw, Save } from "lucide-react";
 import type { Candidate, CertificationApplication, Invoice, Job } from "@/types/certification";
@@ -476,6 +477,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
 
     {active === "Job·패키지" && <Section title="Job별 인증정보 및 기록 패키지" description="화면은 한글로 운영하며, 기록 문서는 국문·영문으로 각각 생성합니다.">
       <PackageGenerationHistory applicationId={application.id} />
+      <PackageTemplateReadiness languages={languages} jobCount={linkedJobs.length}/>
       <DeliveryDocumentChecklist jobs={linkedJobs} records={demo.deliveryDocuments} decisionDate={demo.decisionDate} certificates={demo.certificates} reasons={demo.dateOverrideReasons} auditLogs={demo.dateAuditLogs} actor={application.primaryOwner} dateRules={dateRules} setDemo={setDemo}/>
       <div className="mb-5 rounded-lg border border-indigo-200 bg-indigo-50 p-4"><div><p className="text-sm font-semibold text-indigo-950">기업 양식 DOCX 생성</p><p className="mt-1 text-xs text-indigo-800">현재 입력 저장 후 생성하세요. 생성 및 파일 확인 중에는 해당 버튼을 다시 누를 수 없습니다.</p></div><div className="mt-4 space-y-3">{linkedJobs.map((job) => <div key={`corporate-documents-${job.id}`} className="flex flex-wrap items-center gap-2 rounded-md border border-indigo-100 bg-white p-3"><span className="mr-auto text-sm font-semibold text-slate-800">{job.jobNo} · {job.standard}</span><DocumentDownloadButton label="서류검토서" task={() => downloadApplicationReviewDocx(packageContext, job)} setNotice={setNotice} successMessage={`${job.jobNo} 서류검토서 파일을 확인하고 다운로드를 요청했습니다.`}/><DocumentDownloadButton label="인증결정보고서" task={() => downloadDecisionReportDocx(packageContext, job)} setNotice={setNotice} successMessage={`${job.jobNo} 인증결정보고서 파일을 확인하고 다운로드를 요청했습니다.`}/><DocumentDownloadButton label="문서전달확인서" task={() => downloadDeliveryConfirmationDocx(packageContext, job)} setNotice={setNotice} successMessage={`${job.jobNo} 문서전달확인서 파일을 확인하고 다운로드를 요청했습니다.`}/></div>)}</div></div>
       <div className="mb-5 rounded-lg border border-blue-100 bg-blue-50 p-4"><p className="text-sm font-semibold text-blue-950">생성 언어</p><div className="mt-3 flex gap-5 text-sm">{(["KR", "EN"] as DocumentLanguage[]).map((language) => <label key={language} className="flex cursor-pointer items-center gap-2"><input type="checkbox" checked={languages[language]} onChange={(event) => setLanguages((current) => ({ ...current, [language]: event.target.checked }))}/>{language === "KR" ? "국문" : "영문"}</label>)}</div></div>

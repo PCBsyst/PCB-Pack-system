@@ -1,4 +1,5 @@
 import PizZip from "pizzip";
+import { packageDocumentFailure } from "@/lib/document-errors";
 import { validateGeneratedDocx } from "@/lib/docx-output-validation";
 import { readTemplateProvenance } from "@/lib/template-provenance";
 import { packageSafePath, validatePackageRequest } from "@/lib/package-request-validation";
@@ -66,7 +67,7 @@ export async function POST(request: Request) {
       });
       const response = await generators[template.documentType](documentRequest);
       if (!response.ok) {
-        return Response.json({ error: `${job.jobNo} ${template.outputName} 생성에 실패했습니다.` }, { status: 500 });
+        return packageDocumentFailure(response);
       }
       const bytes = new Uint8Array(await response.arrayBuffer());
       try {

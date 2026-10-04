@@ -108,6 +108,8 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   const [notice, setNotice] = useState("서류검토 탭에서 샘플 업무를 시작하세요.");
   const [trainingInstitutions, setTrainingInstitutions] = useState<TrainingInstitution[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [workspaceLoadError, setWorkspaceLoadError] = useState("");
+  const [workspaceLoadRevision, setWorkspaceLoadRevision] = useState(0);
   const [lastSavedAt, setLastSavedAt] = useState("");
   const [correctionTarget, setCorrectionTarget] = useState("review.result");
   const [correctionValue, setCorrectionValue] = useState("");
@@ -119,7 +121,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   const usesSupabaseWorkspace = Boolean(hasEnvVars && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(application.id));
   const [editLock, setEditLock] = useState<EditLockState>(usesSupabaseWorkspace ? "CHECKING" : "LOCAL");
   const [lockOwner, setLockOwner] = useState("");
-  const canEdit = editLock === "LOCAL" || editLock === "OWNED";
+  const canEdit = hydrated && (editLock === "LOCAL" || editLock === "OWNED");
 
   useEffect(() => {
     if (!usesSupabaseWorkspace) { setEditLock("LOCAL"); return; }
@@ -149,7 +151,28 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     };
   }, [application.id, usesSupabaseWorkspace]);
 
-  useEffect(() => { if (usesSupabaseWorkspace) { const supabase = createClient(); void supabase.from("application_workspaces").select("state").eq("application_id", application.id).maybeSingle().then(({ data, error }) => { if (error) setNotice(`공유 업무기록을 읽지 못했습니다: ${error.message}`); else if (data?.state) setDemo((current) => ({ ...current, ...(data.state as Partial<DemoState>) })); setLastSavedAt(data?.state ? "Supabase 저장 내용을 불러왔습니다." : "새 공유 업무기록입니다."); setHydrated(true); }); return; } try { const stored = window.localStorage.getItem(storageKey); if (stored) { const initial = makeInitial(application, linkedJobs); const saved = JSON.parse(stored) as Partial<DemoState>; const certificates = Object.fromEntries(linkedJobs.map((job) => [job.id, { ...initial.certificates[job.id], ...saved.certificates?.[job.id] }])); const deliveryDocuments = Object.fromEntries(linkedJobs.map((job) => [job.id, { ...initial.deliveryDocuments[job.id], ...saved.deliveryDocuments?.[job.id], education: { ...initial.deliveryDocuments[job.id].education, ...saved.deliveryDocuments?.[job.id]?.education, applicability: "REQUIRED" as DocumentApplicability } }])) as DemoDeliveryDocuments; const dateAuditLogs = (saved.dateAuditLogs ?? initial.dateAuditLogs).map((log) => ({ ...log, category: log.category ?? "정정" as const })); setDemo({ ...initial, ...saved, storedDocuments: { ...initial.storedDocuments, ...saved.storedDocuments }, reviewRequirements: { ...initial.reviewRequirements, ...saved.reviewRequirements }, review: { ...initial.review, ...saved.review }, englishText: { ...initial.englishText, ...saved.englishText }, examSchedules: { ...initial.examSchedules, ...saved.examSchedules }, assessment: saved.assessment ?? initial.assessment, panelMembers: saved.panelMembers ?? initial.panelMembers, certificates, deliveryDocuments, dateAuditLogs }); setLastSavedAt("저장된 내용을 불러왔습니다."); } else { const profiles = readStoredProfiles(); if (profiles.length) setDemo((current) => ({ ...current, deliveryDocuments: Object.fromEntries(linkedJobs.map((job) => { const profile = profiles.find((item) => profileKey(item) === profileKey({ businessArea: job.businessArea ?? application.businessArea, standard: job.standard, grade: job.currentGrade })); return [job.id, Object.fromEntries(deliveryDocumentRows.map(({ key }) => [key, { ...current.deliveryDocuments[job.id][key], applicability: key === "education" ? "REQUIRED" : profile?.rules[key] ?? current.deliveryDocuments[job.id][key].applicability }]))]; })) as DemoDeliveryDocuments })); } } catch { setNotice("저장된 업무기록을 읽지 못했습니다. 다시 저장해 주세요."); } finally { setHydrated(true); } }, [application, linkedJobs, storageKey, usesSupabaseWorkspace]);
+  useEffect(() => {
+    let cancelled = false;
+    setHydrated(false); setWorkspaceLoadError(""); setLastSavedAt("");
+    if (usesSupabaseWorkspace) {
+      const load = async () => {
+        try {
+          const { data, error } = await createClient().from("application_workspaces").select("state").eq("application_id", application.id).maybeSingle();
+          if (cancelled) return;
+          if (error) throw new Error("업무기록 조회 실패");
+          if (data && (!data.state || typeof data.state !== "object" || Array.isArray(data.state))) throw new Error("업무기록 형식 확인 필요");
+          const initial = makeInitial(application, linkedJobs);
+          setDemo(data?.state ? { ...initial, ...(data.state as Partial<DemoState>) } : initial);
+          setLastSavedAt(data?.state ? "Supabase 저장 내용을 불러왔습니다." : "새 공유 업무기록입니다.");
+          setHydrated(true);
+        } catch {
+          if (!cancelled) { setHydrated(false); setWorkspaceLoadError("저장된 공유 업무기록을 읽지 못했습니다. 기존 기록 보호를 위해 편집·저장을 중단했습니다. 다시 조회해 주세요."); }
+        }
+      };
+      void load();
+      return () => { cancelled = true; };
+    }
+    try { const stored = window.localStorage.getItem(storageKey); if (stored) { const initial = makeInitial(application, linkedJobs); const saved = JSON.parse(stored) as Partial<DemoState>; const certificates = Object.fromEntries(linkedJobs.map((job) => [job.id, { ...initial.certificates[job.id], ...saved.certificates?.[job.id] }])); const deliveryDocuments = Object.fromEntries(linkedJobs.map((job) => [job.id, { ...initial.deliveryDocuments[job.id], ...saved.deliveryDocuments?.[job.id], education: { ...initial.deliveryDocuments[job.id].education, ...saved.deliveryDocuments?.[job.id]?.education, applicability: "REQUIRED" as DocumentApplicability } }])) as DemoDeliveryDocuments; const dateAuditLogs = (saved.dateAuditLogs ?? initial.dateAuditLogs).map((log) => ({ ...log, category: log.category ?? "정정" as const })); setDemo({ ...initial, ...saved, storedDocuments: { ...initial.storedDocuments, ...saved.storedDocuments }, reviewRequirements: { ...initial.reviewRequirements, ...saved.reviewRequirements }, review: { ...initial.review, ...saved.review }, englishText: { ...initial.englishText, ...saved.englishText }, examSchedules: { ...initial.examSchedules, ...saved.examSchedules }, assessment: saved.assessment ?? initial.assessment, panelMembers: saved.panelMembers ?? initial.panelMembers, certificates, deliveryDocuments, dateAuditLogs }); setLastSavedAt("저장된 내용을 불러왔습니다."); } else { const profiles = readStoredProfiles(); if (profiles.length) setDemo((current) => ({ ...current, deliveryDocuments: Object.fromEntries(linkedJobs.map((job) => { const profile = profiles.find((item) => profileKey(item) === profileKey({ businessArea: job.businessArea ?? application.businessArea, standard: job.standard, grade: job.currentGrade })); return [job.id, Object.fromEntries(deliveryDocumentRows.map(({ key }) => [key, { ...current.deliveryDocuments[job.id][key], applicability: key === "education" ? "REQUIRED" : profile?.rules[key] ?? current.deliveryDocuments[job.id][key].applicability }]))]; })) as DemoDeliveryDocuments })); } } catch { setWorkspaceLoadError("브라우저 업무기록을 읽지 못했습니다. 원본 확인 전에는 편집·저장하지 않습니다."); return; } setHydrated(true); return () => { cancelled = true; }; }, [application, linkedJobs, storageKey, usesSupabaseWorkspace, workspaceLoadRevision]);
   useEffect(() => { if (!hydrated || (usesSupabaseWorkspace && editLock !== "OWNED")) return; if (usesSupabaseWorkspace) { const timeout = window.setTimeout(() => { const supabase = createClient(); void supabase.from("application_workspaces").upsert({ application_id: application.id, state: demo }, { onConflict: "application_id" }).then(({ error }) => { if (error) setNotice(`공유 저장에 실패했습니다: ${error.message}`); }); }, 800); return () => window.clearTimeout(timeout); } try { window.localStorage.setItem(storageKey, JSON.stringify(demo)); } catch { setNotice("브라우저 저장공간에 기록하지 못했습니다."); } }, [application.id, demo, editLock, hydrated, storageKey, usesSupabaseWorkspace]);
   useEffect(() => {
     if (!hydrated || !usesSupabaseWorkspace || editLock !== "OWNED") return;
@@ -436,6 +459,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     <section className="rounded-lg border bg-white p-5 shadow-sm"><div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-6"><Summary label="후보자" value={candidate.name}/><Summary label="분야" value={businessAreaLabels[application.businessArea]}/><Summary label="인정 구분" value={accreditationLabels[application.accreditationTrack]}/><Summary label="공식 접수일" value={application.receivedAt}/><Summary label="관리 No." value={`${application.managementNoFrom}${application.managementNoFrom === application.managementNoTo ? "" : `~${application.managementNoTo}`}`}/><div><p className="text-xs font-medium text-slate-500">기준상태</p><div className="mt-1.5"><ApplicationStatusBadge status={application.status}/></div></div></div></section>
     <div className="overflow-x-auto rounded-lg border bg-white px-2"><div className="flex min-w-max">{tabs.map((tab) => <Link key={tab} href={`?tab=${tabSlugs[tab]}`} onClick={() => setActive(tab)} aria-current={active === tab ? "page" : undefined} className={`border-b-2 px-4 py-3 text-sm font-medium ${active === tab ? "border-blue-800 text-blue-800" : "border-transparent text-slate-500 hover:text-slate-800"}`}>{tab}</Link>)}</div></div>
 
+    {!hydrated && <div role="status" className="rounded-lg border border-amber-300 bg-card p-4 text-sm text-amber-700 dark:text-amber-300"><p>{workspaceLoadError || "저장된 업무기록을 확인하고 있습니다. 확인 전에는 편집·저장·업무 처리를 할 수 없습니다."}</p>{workspaceLoadError && <Button type="button" className="mt-3" variant="outline" onClick={() => setWorkspaceLoadRevision((value) => value + 1)}><RotateCcw/>저장된 업무기록 다시 조회</Button>}</div>}
     <fieldset disabled={!canEdit} className="space-y-5 border-0 p-0 disabled:opacity-80">
 
     {active === "신청 개요" && <div className="grid gap-5 xl:grid-cols-2">

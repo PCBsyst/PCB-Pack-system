@@ -1,4 +1,5 @@
 import PizZip from "pizzip";
+import { readTemplateProvenance } from "@/lib/template-provenance";
 import type { PackageContext, DocumentLanguage } from "@/lib/prototype-package";
 import type { Job } from "@/types/certification";
 import { corporateTemplateRegistry, type CorporateDocumentType } from "@/lib/document-template-registry";
@@ -66,8 +67,12 @@ export async function POST(request: Request) {
       const entryName = `${safeJobNo}/${template.language}/${safeJobNo}_${template.outputName}`;
       zip.file(entryName, bytes);
       fileCount += 1;
-      generatedDocuments.push({ jobId: job.id, documentType: template.documentType, language: template.language, entryName });
+      let provenance;
+      try { provenance = readTemplateProvenance(response.headers); }
+      catch { return Response.json({ error: "양식 생성 근거를 확인하지 못해 패키지 생성을 중단했습니다." }, { status: 503 }); }
+      generatedDocuments.push({ jobId: job.id, documentType: template.documentType, language: template.language, entryName, template: provenance });
       manifestLines.push(`- ${entryName}`);
+      manifestLines.push(`  양식 개정: ${provenance.version} / 출처: ${provenance.source === "DATABASE" ? "등록 양식" : "기본 내장 양식"} / SHA-256: ${provenance.sha256}`);
     }
   }
 
@@ -93,6 +98,7 @@ export async function POST(request: Request) {
   return new Response(body, {
     headers: {
       "Content-Type": "application/zip",
+      "Cache-Control": "private, no-store",
       "X-Package-File-Count": String(fileCount),
       "X-Package-Generated-At": generatedAt,
       "X-Package-Complete": String(complete),

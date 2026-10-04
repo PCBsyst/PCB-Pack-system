@@ -1,10 +1,11 @@
 import "server-only";
+import type { TemplateProvenance } from "@/lib/template-provenance";
 import { createHash } from "node:crypto";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { currentAuthEnvironment } from "@/lib/supabase/auth-environment";
 
-export type GeneratedPackageDocument = { jobId: string; documentType: string; language: string; entryName: string };
+export type GeneratedPackageDocument = { jobId: string; documentType: string; language: string; entryName: string; template: TemplateProvenance };
 
 /** Receipt proves server file creation, not successful transport or saving to a PC. */
 export async function recordPackageGeneration(applicationId: string, documents: GeneratedPackageDocument[], complete: boolean, bytes: Uint8Array) {

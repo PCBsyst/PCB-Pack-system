@@ -1,5 +1,6 @@
 import PizZip from "pizzip";
 import { loadDocumentTemplate } from "@/lib/server/document-template-loader";
+import { templateProvenanceHeaders } from "@/lib/template-provenance";
 import { requireApiStaff } from "@/lib/server/api-auth";
 import { recordDocumentResponse } from "@/lib/server/privacy-access";
 import { deliveryDocumentRows, type DocumentLanguage, type PackageContext } from "@/lib/prototype-package";
@@ -50,5 +51,5 @@ export async function POST(request: Request) {
   const safeJobNo = job.jobNo.replace(/[^A-Za-z0-9_-]/g, "_");
   const accessError = await recordDocumentResponse("job", job.id, `DELIVERY_CONFIRMATION:${language}`);
   if (accessError) return accessError;
-  return new Response(body, { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Content-Disposition": `attachment; filename="${safeJobNo}_Document_Delivery_Confirmation_${language}.docx"` } });
+  return new Response(body, { headers: { ...templateProvenanceHeaders(template), "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Content-Disposition": `attachment; filename="${safeJobNo}_Document_Delivery_Confirmation_${language}.docx"` } });
 }

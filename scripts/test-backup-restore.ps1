@@ -174,6 +174,16 @@ END $$;
         $securityResult = Invoke-RestoreDocker @('exec','-i',$restoreContainer,'psql','-X','-U','supabase_admin','-d','postgres','-v','ON_ERROR_STOP=1') $securitySql
         if ($securityResult.code -ne 0) { throw 'Restored security behavior check failed.' }
         Write-Output '격리 DB의 변경 사유·동시 수정 충돌·보관/복원·삭제 이력 보호: 확인'
+        $restoreStage = 'VERIFY_DATABASE_MFA'
+        $mfaSql = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../supabase/migrations/202610040025_database_mfa_guard.sql') -Raw
+        foreach ($pass in 1..2) {
+            $mfaResult = Invoke-RestoreDocker @('exec','-i',$restoreContainer,'psql','-X','-U','supabase_admin','-d','postgres','-v','ON_ERROR_STOP=1') $mfaSql
+            if ($mfaResult.code -ne 0) { throw 'Database MFA migration check failed.' }
+        }
+        $mfaTest = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'verify-restored-mfa.sql') -Raw
+        $mfaResult = Invoke-RestoreDocker @('exec','-i',$restoreContainer,'psql','-X','-U','supabase_admin','-d','postgres','-v','ON_ERROR_STOP=1') $mfaTest
+        if ($mfaResult.code -ne 0) { throw 'Database MFA behavior check failed.' }
+        Write-Output '격리 DB MFA 정책 재실행·직접 조회/RPC 차단·본인 설정 조회: 확인'
     }
     Write-Output '복원 시험: 성공 (실제 사용자 권한 및 파일 저장소 복구 시험은 별도 필요)'
 } catch {

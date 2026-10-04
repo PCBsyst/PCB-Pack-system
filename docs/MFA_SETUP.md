@@ -17,3 +17,9 @@
 후속 수동 검증: 인증 앱 등록 → 잘못된 코드 거절 → 정상 코드 승인 → 새로고침 후 등록 상태 유지 → 새 로그인 세션의 인증 수준 확인. 실제 QR/키/코드를 검증 기록이나 스크린샷에 남기지 않는다. 검증 전 실제 개인정보 운영에 투입하지 않는다.
 
 공식 참고: https://supabase.com/docs/guides/auth/auth-mfa/totp
+
+## DB 직접 접근 보호 준비
+
+SQL 025는 서버 정책과 같은 조건을 권한 함수에 적용하고, public의 기존 RLS 업무 테이블에 restrictive 정책을 추가합니다. 본인 프로필 SELECT만 인증 등록·승인 대기 화면을 위해 예외로 유지합니다. 서버 소유 서비스 키 경로는 RLS를 우회하므로 별도 서버 인증 검사를 계속 유지해야 합니다. 인증 서비스 자체의 MFA 수단 삭제 제한은 이 SQL의 대상이 아닙니다.
+
+격리 복원 DB에서 SQL 재실행과 직접 조회/RPC 차단을 검증했습니다. 운영 DB에는 미적용입니다. 실제 최고관리자 등록 및 AAL2 로그인 확인 전에 적용하지 않습니다. 검증 스크립트는 `scripts/test-backup-restore.ps1 -VerifyPendingMigrations`이며 임시 DB에만 변경하고 제거합니다. Windows PowerShell 5가 아닌 PowerShell 7에서 실행합니다.

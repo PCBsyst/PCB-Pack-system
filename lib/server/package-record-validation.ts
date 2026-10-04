@@ -10,7 +10,7 @@ import type { Job } from "@/types/certification";
 export async function validateStoredPackageRecords(context: PackageContext, jobs: Job[]) {
   const environment = currentAuthEnvironment();
   if (environment.localPrototype) return null;
-  const unavailable = () => Response.json({ error: "DB 업무기록을 확인하지 못해 패키지 생성을 중단했습니다." }, { status: 503 });
+  const unavailable = () => Response.json({ error: "DB 업무기록을 확인하지 못해 문서 생성을 중단했습니다." }, { status: 503 });
   if (environment.blocked) return unavailable();
   try {
     const client = await createClient();

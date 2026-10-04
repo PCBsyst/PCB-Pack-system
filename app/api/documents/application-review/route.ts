@@ -3,16 +3,16 @@ import { loadDocumentTemplate } from "@/lib/server/document-template-loader";
 import { templateProvenanceHeaders } from "@/lib/template-provenance";
 import { requireApiStaff } from "@/lib/server/api-auth";
 import { recordDocumentResponse } from "@/lib/server/privacy-access";
-import type { DocumentLanguage, PackageContext } from "@/lib/prototype-package";
-import type { Job } from "@/types/certification";
+import { readValidatedDocumentRequest } from "@/lib/server/document-request-validation";
 
-type RequestBody = { context: PackageContext; job: Job; language?: DocumentLanguage };
 function xml(value: unknown) { return String(value ?? "-").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;"); }
 
 export async function POST(request: Request) {
   const authError = await requireApiStaff(["DOCUMENT_GENERATION"]);
   if (authError) return authError;
-  const { context, job, language = "KR" } = await request.json() as RequestBody;
+  const parsed = await readValidatedDocumentRequest(request, "KR");
+  if (!parsed.ok) return parsed.response;
+  const { context, job, language } = parsed.input;
   const records = context.deliveryDocuments[job.id];
   const mark = (key: keyof typeof records) => records?.[key]?.applicability === "NOT_APPLICABLE" ? "해당 없음" : records?.[key]?.received ? "■" : "□";
   const requirementSummary = Object.entries(context.reviewRequirements ?? {}).map(([item, result]) => `${item}: ${result}`).join(" / ");

@@ -103,6 +103,9 @@ export async function POST(request: Request) {
   const output = zip.generate({ type: "uint8array", compression: "DEFLATE" });
   const body = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength) as ArrayBuffer;
   const safeApplicationNo = packageSafePath(context.application.applicationNo);
+  // Recheck after the last document, before recording or returning the archive.
+  const finalRecordError = await validateStoredPackageRecords(context, jobs);
+  if (finalRecordError) return finalRecordError;
   const accessError = await recordDocumentResponse("application", context.application.id, "CORPORATE_PACKAGE:ZIP");
   if (accessError) return accessError;
   const receipt = await recordPackageGeneration(context.application.id, generatedDocuments, complete, output);

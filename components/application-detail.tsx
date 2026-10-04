@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DocumentDownloadButton } from "@/components/document-download-button";
+import { canAttachPackageGeneration } from "@/lib/package-completion-policy";
 import { Check, Copy, Download, FileArchive, FileText, FolderOpen, PackageCheck, Printer, RotateCcw, Save } from "lucide-react";
 import type { Candidate, CertificationApplication, Invoice, Job } from "@/types/certification";
 import { accreditationLabels, businessAreaLabels } from "@/data/workflow-data";
@@ -212,6 +213,8 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   useEffect(() => { setDemo((current) => { const normalize = (value: string) => value ? nextKoreanBusinessDay(value) : value; const review = { ...current.review, reviewedAt: normalize(current.review.reviewedAt), verifiedAt: normalize(current.review.verifiedAt) }; const certificates = Object.fromEntries(Object.entries(current.certificates).map(([jobId, item]) => [jobId, { ...item, draftIssuedAt: normalize(item.draftIssuedAt), issueDate: normalize(item.issueDate), expiryDate: normalize(item.expiryDate), originalSentAt: normalize(item.originalSentAt) }])); const deliveryDocuments = Object.fromEntries(Object.entries(current.deliveryDocuments).map(([jobId, rows]) => [jobId, Object.fromEntries(Object.entries(rows).map(([key, item]) => [key, { ...item, date: key === "examNotice" || key === "examAnswers" ? item.date : normalize(item.date) }]))])); const next = { ...current, review, invoiceIssuedAt: normalize(current.invoiceIssuedAt), paymentConfirmedAt: normalize(current.paymentConfirmedAt), decisionDate: normalize(current.decisionDate), finalApprovalDate: normalize(current.finalApprovalDate), certificates, deliveryDocuments } as DemoState; return JSON.stringify(next) === JSON.stringify(current) ? current : next; }); }, [demo]);
 
   const packageContext = useMemo(() => ({ application, candidate, jobs: linkedJobs, reviewRequirements: demo.reviewRequirements, review: demo.review, invoiceNo: demo.invoiceNo, invoiceAmount: demo.invoiceAmount, invoiceIssuedAt: demo.invoiceIssuedAt, paidAmount: demo.paidAmount, paymentConfirmedAt: demo.paymentConfirmedAt, assessment: demo.assessment, panelMembers: demo.panelMembers, decisions: demo.decisions, certificates: demo.certificates, deliveryDocuments: demo.deliveryDocuments, decisionDate: demo.decisionDate, finalApprover: demo.finalApprover, finalApprovalDate: demo.finalApprovalDate, englishText: demo.englishText }), [application, candidate, linkedJobs, demo]);
+  const latestPackageContext = useRef(packageContext);
+  useEffect(() => { latestPackageContext.current = packageContext; }, [packageContext]);
   const currentIndex = stageOrder.indexOf(demo.stage);
   const saveDraft = async () => { if (!canEdit) { setNotice("다른 직원이 편집 중이므로 현재 화면은 조회 전용입니다."); return; } try { if (usesSupabaseWorkspace) { const supabase = createClient(); const { error } = await supabase.from("application_workspaces").upsert({ application_id: application.id, state: demo }, { onConflict: "application_id" }); if (error) throw error; } else window.localStorage.setItem(storageKey, JSON.stringify(demo)); const savedAt = new Date().toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" }); setLastSavedAt(`${savedAt} 저장 완료`); setNotice(usesSupabaseWorkspace ? "공유 업무 입력값을 Supabase에 저장했습니다." : "현재 화면의 업무 입력값을 저장했습니다."); } catch (error) { setNotice(`업무기록을 저장하지 못했습니다: ${error instanceof Error ? error.message : "알 수 없는 오류"}`); } };
   const move = (stage: DemoStage, tab: Tab, message: string) => { setDemo((current) => ({ ...current, stage, dateAuditLogs: [...current.dateAuditLogs, createAuditLog("처리", "", "업무 단계", stageLabels[current.stage], stageLabels[stage], message, application.primaryOwner)] })); setActive(tab); setNotice(message); };
@@ -365,7 +368,11 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     try {
       setNotice("실제 기업 양식 DOCX ZIP을 생성하고 있습니다.");
       const receipt = await downloadCorporatePackageZip(packageContext, linkedJobs, selected);
-      setDemo((current) => ({ ...current, stage: receipt.complete ? "COMPLETED" : "PACKAGE_READY", generated: true, packageGeneration: receipt, dateAuditLogs: [...current.dateAuditLogs, createAuditLog("처리", "", "기록 패키지", "생성 준비", receipt.complete ? "DOCX ZIP 생성" : "일부 DOCX 생성", `실제 ${receipt.fileCount}개 DOCX 생성 응답 확인. PDF 생성·사용자 저장 완료는 별도 확인 필요.`, application.primaryOwner)] }));
+      if (!canAttachPackageGeneration(packageContext, latestPackageContext.current)) {
+        setNotice("생성 중 업무 입력이 변경되었습니다. 파일 다운로드는 요청됐지만 현재 업무를 새로 완료 처리하지 않았습니다. 입력 저장 후 다시 생성해 주세요.");
+        return;
+      }
+      setDemo((current) => canAttachPackageGeneration(packageContext, { ...latestPackageContext.current, ...current }) ? ({ ...current, stage: receipt.complete ? "COMPLETED" : "PACKAGE_READY", generated: true, packageGeneration: receipt, dateAuditLogs: [...current.dateAuditLogs, createAuditLog("처리", "", "기록 패키지", "생성 준비", receipt.complete ? "DOCX ZIP 생성" : "일부 DOCX 생성", `실제 ${receipt.fileCount}개 DOCX 생성 응답 확인. PDF 생성·사용자 저장 완료는 별도 확인 필요.`, application.primaryOwner)] }) : current);
       setNotice(`${receipt.fileCount}개 DOCX를 포함한 ZIP을 생성하고 다운로드를 요청했습니다. ${receipt.complete ? "" : "일부 양식이 미등록되어 전체 패키지 완료로 처리하지 않았습니다. "}PDF 생성 및 PC 저장 완료를 의미하지 않습니다. ${receipt.receiptStatus === "RECORDED" ? "서버 생성기록 저장 확인." : "서버 생성기록은 DB 적용 대기 또는 로컬 미리보기입니다."} 업무단계 공유 저장은 별도로 확인해 주세요.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "기업 양식 ZIP 생성에 실패했습니다. 완료로 기록하지 않았습니다.");

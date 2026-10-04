@@ -1,4 +1,5 @@
 import PizZip from "pizzip";
+import { documentTrainingSummary } from "@/lib/document-training-summary";
 import { docxOutputHeaders } from "@/lib/server/docx-response-headers";
 import { validateGeneratedDocx, invalidDocxResponse } from "@/lib/docx-output-validation";
 import { loadDocumentTemplate, templateLoadErrorResponse } from "@/lib/server/document-template-loader";
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
     education: assessment["교육 요구사항"],
     academic: assessment["학력 요구사항"],
     auditExperience: assessment["심사이력"],
-    assessmentComment: [Object.entries(context.reviewRequirements ?? {}).map(([item, result]) => `${item}: ${result}`).join(" / "), context.review.comment, context.review.verificationComment ? `2차 검증: ${context.review.verificationComment}` : ""].filter(Boolean).join("\n"),
+    assessmentComment: [Object.entries(context.reviewRequirements ?? {}).map(([item, result]) => `${item}: ${result}`).join(" / "), documentTrainingSummary(context.examSchedules?.[job.id], language), context.review.comment, context.review.verificationComment ? `2차 검증: ${context.review.verificationComment}` : ""].filter(Boolean).join("\n"),
     approveMark: decision?.result === "승인" ? "■" : "□",
     rejectMark: decision?.result === "불승인" ? "■" : "□",
     reapproveMark: decision?.result === "재승인" ? "■" : "□",

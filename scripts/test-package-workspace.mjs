@@ -15,4 +15,13 @@ const reordered = structuredClone(context); reordered.review = { comment: "확�
 assert.equal(match(context, ["j1"], reordered), true);
 const extra = structuredClone(context); extra.stage = "COMPLETED"; extra.certificates.j2 = { issueDate: "other" };
 assert.equal(match(context, ["j1"], extra), true);
-console.log("패키지 저장 업무값 대조: 21건 검사 통과");
+const scheduled = structuredClone(context);
+scheduled.examSchedules = { j1: { providerType: "PARTNER", providerName: "시험 연수기관", trainingEndDate: "2026-09-01", examNoticeDate: "2026-08-25", examDate: "2026-09-01" } };
+assert.equal(match(scheduled, ["j1"], structuredClone(scheduled)), true);
+assert.equal(match(context, ["j1"], scheduled), false);
+assert.equal(match(scheduled, ["j1"], context), false);
+for (const key of Object.keys(scheduled.examSchedules.j1)) {
+  const changed = structuredClone(scheduled); changed.examSchedules.j1[key] = "변경";
+  assert.equal(match(scheduled, ["j1"], changed), false);
+}
+console.log("패키지 저장 업무값 및 교육·시험 입력 대조 검사 통과");

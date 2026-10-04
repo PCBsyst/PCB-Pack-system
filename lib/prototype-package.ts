@@ -29,7 +29,7 @@ export const deliveryDocumentRows: Array<{ key: DeliveryDocumentKey; form: strin
 ];
 export type DocumentLanguage = "KR" | "EN";
 export type DemoEnglishText = { reviewComment: string; verificationComment: string; panelComments: Record<string, string>; decisionComments: Record<string, string> };
-export type PackageContext = { application: CertificationApplication; candidate: Candidate; jobs: Job[]; reviewRequirements: Record<string, "충족" | "미충족" | "해당없음">; review: DemoReview; invoiceNo: string; invoiceAmount: string; invoiceIssuedAt: string; paidAmount: string; paymentConfirmedAt: string; assessment: DemoAssessment; panelMembers: DemoPanelMember[]; decisions: DemoDecision; certificates: DemoCertificate; deliveryDocuments: DemoDeliveryDocuments; decisionDate: string; finalApprover: string; finalApprovalDate: string; englishText: DemoEnglishText };
+export type PackageContext = { application: CertificationApplication; candidate: Candidate; jobs: Job[]; reviewRequirements: Record<string, "충족" | "미충족" | "해당없음">; review: DemoReview; invoiceNo: string; invoiceAmount: string; invoiceIssuedAt: string; paidAmount: string; paymentConfirmedAt: string; assessment: DemoAssessment; panelMembers: DemoPanelMember[]; decisions: DemoDecision; certificates: DemoCertificate; deliveryDocuments: DemoDeliveryDocuments; examSchedules?: Record<string, import("@/lib/document-training-summary").DocumentExamSchedule>; decisionDate: string; finalApprover: string; finalApprovalDate: string; englishText: DemoEnglishText };
 
 function escapeHtml(value: string | number | undefined) {
   return String(value ?? "-").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");

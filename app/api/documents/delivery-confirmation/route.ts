@@ -1,4 +1,5 @@
 import PizZip from "pizzip";
+import { documentTrainingSummary } from "@/lib/document-training-summary";
 import { docxOutputHeaders } from "@/lib/server/docx-response-headers";
 import { validateGeneratedDocx, invalidDocxResponse } from "@/lib/docx-output-validation";
 import { loadDocumentTemplate, templateLoadErrorResponse } from "@/lib/server/document-template-loader";
@@ -22,6 +23,7 @@ export async function POST(request: Request) {
   const certificate = context.certificates[job.id];
   const records = context.deliveryDocuments[job.id];
   const note = [
+    documentTrainingSummary(context.examSchedules?.[job.id], language),
     context.invoiceNo ? `Invoice: ${context.invoiceNo} / Issued: ${context.invoiceIssuedAt || "-"} / Paid: ${context.paymentConfirmedAt || "-"}` : "",
     certificate?.originalSentAt ? `Original dispatched: ${certificate.originalSentAt} / Tracking No.: ${certificate.trackingNumber || "-"}` : "",
     `Person in charge: ${context.application.primaryOwner}`,

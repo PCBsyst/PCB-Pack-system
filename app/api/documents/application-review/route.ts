@@ -1,4 +1,5 @@
 import PizZip from "pizzip";
+import { documentTrainingSummary } from "@/lib/document-training-summary";
 import { docxOutputHeaders } from "@/lib/server/docx-response-headers";
 import { validateGeneratedDocx, invalidDocxResponse } from "@/lib/docx-output-validation";
 import { loadDocumentTemplate, templateLoadErrorResponse } from "@/lib/server/document-template-loader";
@@ -18,7 +19,7 @@ export async function POST(request: Request) {
   const records = context.deliveryDocuments[job.id];
   const mark = (key: keyof typeof records) => records?.[key]?.applicability === "NOT_APPLICABLE" ? "해당 없음" : records?.[key]?.received ? "■" : "□";
   const requirementSummary = Object.entries(context.reviewRequirements ?? {}).map(([item, result]) => `${item}: ${result}`).join(" / ");
-  const reviewComment = [requirementSummary, context.review.comment, context.review.verificationComment ? `2차 검증: ${context.review.verificationComment}` : ""].filter(Boolean).join("\n");
+  const reviewComment = [requirementSummary, documentTrainingSummary(context.examSchedules?.[job.id], language), context.review.comment, context.review.verificationComment ? `2차 검증: ${context.review.verificationComment}` : ""].filter(Boolean).join("\n");
   const values: Record<string, unknown> = {
     jobNo: job.jobNo, candidateName: context.candidate.name, candidateNameEn: context.candidate.nameEn,
     birthDate: context.candidate.birthDate, nationality: context.candidate.nationality, address: context.candidate.address,

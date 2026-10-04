@@ -22,5 +22,11 @@ export function matchesPackageWorkspace(context: PackageContext, jobIds: string[
     if (!record(saved) || !record(context[key])) return false;
     if (jobIds.some((id) => !Object.hasOwn(saved, id) || !Object.hasOwn(context[key], id) || !equal(context[key][id], saved[id]))) return false;
   }
+  if (context.examSchedules !== undefined || state.examSchedules !== undefined) {
+    const saved = state.examSchedules;
+    const requested = context.examSchedules;
+    if (!record(saved) || !record(requested)) return false;
+    if (jobIds.some((id) => !Object.hasOwn(saved, id) || !Object.hasOwn(requested, id) || !equal(requested[id], saved[id]))) return false;
+  }
   return true;
 }

@@ -1,0 +1,63 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
+import ts from "typescript";
+import PizZip from "pizzip";
+const require = createRequire(import.meta.url);
+const moduleUrl = (code) => `data:text/javascript;base64,${Buffer.from(code).toString("base64")}`;
+const compile = (path) => ts.transpileModule(fs.readFileSync(new URL(path, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+const keys = ["application", "career", "education", "diploma", "auditLog", "agreement", "examNotice", "examAnswers", "decisionReport", "certificate", "survey", "deliveryConfirmation"];
+const job = { id: "j1", jobNo: "QMS260099", standard: "ISO 9001", currentGrade: "심사원" };
+const context = {
+  application: { receivedAt: "2026-09-01", applicationType: "최초", primaryOwner: "가상 담당자" },
+  candidate: { name: "가상후보", nameEn: "Sample Candidate", birthDate: "1990-01-01", nationality: "KR", address: "가상 주소", email: "sample@example.com", phone: "000-0000-0000" },
+  jobs: [job], reviewRequirements: { 교육요건: "충족" }, review: { result: "적합", comment: "국문검토 & 확인", verificationComment: "국문검증", reviewer: "검토자", reviewedAt: "2026-09-02", verifier: "검증자", verifiedAt: "2026-09-03", verificationResult: "확인" },
+  panelMembers: [{ name: "위원1", selected: true, decision: "승인", comment: "국문심의" }, { name: "위원2", selected: true, decision: "승인", comment: "국문심의2" }, { name: "제외위원", selected: false, decision: "", comment: "미선택의견" }],
+  decisions: { j1: { result: "승인", comment: "국문최종승인" } }, decisionDate: "2026-09-04", finalApprover: "대표자", finalApprovalDate: "2026-09-07",
+  assessment: { j1: Object.fromEntries(["지식 시험", "인성 시험", "교육 요구사항", "학력 요구사항", "심사이력"].map((key) => [key, "적합"])) },
+  certificates: { j1: { certificationNo: "26130099", draftIssuedAt: "2026-09-08", issueDate: "2026-09-09", expiryDate: "2029-09-08", originalSentAt: "", trackingNumber: "" } },
+  deliveryDocuments: { j1: Object.fromEntries(keys.map((key) => [key, { applicability: "REQUIRED", received: true, date: "2026-09-10", comment: "가상 기록" }])) },
+  examSchedules: { j1: { providerType: "PARTNER", providerName: "가상기관 & 교육", trainingEndDate: "2026-08-25", examNoticeDate: "2026-08-18", examDate: "2026-08-25" } },
+  invoiceNo: "TEST-INV", invoiceIssuedAt: "2026-09-03", paymentConfirmedAt: "2026-09-04",
+  englishText: { reviewComment: "Review & evidence verified", verificationComment: "Evidence confirmed", panelComments: { 위원1: "Panel approved", 위원2: "Panel approved twice" }, decisionComments: { j1: "Final approval confirmed" } },
+};
+const deps = {
+  pizzip: pathToFileURL(require.resolve("pizzip")).href,
+  "@/lib/server/api-auth": moduleUrl('export async function requireApiStaff(){return null;}'),
+  "@/lib/server/privacy-access": moduleUrl('export async function recordDocumentResponse(){return null;}'),
+  "@/lib/server/docx-response-headers": moduleUrl('export function docxOutputHeaders(){return {};}'),
+  "@/lib/template-provenance": moduleUrl('export function templateProvenanceHeaders(){return {};}'),
+  "@/lib/prototype-package": moduleUrl(`export const deliveryDocumentRows=${JSON.stringify(keys.map((key) => ({ key })))};`),
+  "@/lib/server/document-request-validation": moduleUrl(`export async function readValidatedDocumentRequest(request, language){return {ok:true,input:{context:${JSON.stringify(context)},job:${JSON.stringify(job)},language:(await request.json()).language||language}};}`),
+};
+for (const name of ["document-language-values", "document-training-summary", "document-delivery-values", "document-translation-checks", "docx-output-validation"]) deps[`@/lib/${name}`] = moduleUrl(compile(`../lib/${name}.ts`));
+for (const [route, template] of [
+  ["application-review", "FGPC-008-01-application-review-kr.docx"],
+  ["decision-report", "FGPC-012-01-decision-report-kr.docx"],
+  ["delivery-confirmation", "FGPC-012-03-delivery-confirmation-en.docx"],
+]) {
+  const bytes = fs.readFileSync(new URL(`../templates/${template}`, import.meta.url)).toString("base64");
+  deps["@/lib/server/document-template-loader"] = moduleUrl(`export async function loadDocumentTemplate(){return {bytes:Buffer.from('${bytes}','base64')};} export function templateLoadErrorResponse(){return new Response(null,{status:503});}`);
+  let code = compile(`../app/api/documents/${route}/route.ts`);
+  for (const [name, url] of Object.entries(deps)) code = code.replaceAll(`"${name}"`, JSON.stringify(url));
+  const { POST } = await import(moduleUrl(code));
+  for (const language of ["KR", "EN"]) {
+    const response = await POST(new Request("https://example.com/test", { method: "POST", body: JSON.stringify({ language }) }));
+    assert.equal(response.status, 200, `${route}/${language}`);
+    const zip = new PizZip(await response.arrayBuffer());
+    const xml = zip.file("word/document.xml").asText();
+    assert.ok(xml.includes(job.jobNo));
+    assert.ok(xml.includes(language === "KR" ? "가상후보" : "Sample Candidate"));
+    assert.ok(xml.includes("가상기관 &amp; 교육"));
+    assert.ok(!xml.includes("{{"));
+    assert.ok(!xml.includes("미선택의견"));
+    if (route !== "delivery-confirmation") assert.ok(xml.includes(language === "KR" ? "국문검토 &amp; 확인" : "Review &amp; evidence verified"));
+    if (route === "decision-report") {
+      assert.ok(xml.includes(language === "KR" ? "국문심의" : "Panel approved"));
+      assert.ok(xml.includes(language === "KR" ? "국문최종승인" : "Final approval confirmed"), "기본 양식에도 최종 승인 의견이 들어가야 합니다.");
+    }
+    if (route === "delivery-confirmation") for (const date of ["2026-09-02", "2026-09-04", "2026-09-08", "2026-09-09"]) assert.ok(xml.includes(date));
+  }
+}
+console.log("세 문서 생성 API: 국영문 파일 내용·날짜·의견·XML 이스케이프 검사 통과 (인증/DB는 모의, 영문 미등록 양식의 디자인 검증 아님)");

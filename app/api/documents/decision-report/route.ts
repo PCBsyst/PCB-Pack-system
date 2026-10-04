@@ -1,4 +1,5 @@
 import PizZip from "pizzip";
+import { privateDocumentResponse } from "@/lib/private-document-response";
 import { documentTranslationIssues, documentTranslationMessage } from "@/lib/document-translation-checks";
 import { documentChoice, documentLanguageValues } from "@/lib/document-language-values";
 import { documentTrainingSummary } from "@/lib/document-training-summary";
@@ -29,6 +30,10 @@ function removeGradePlaceholder(content: string) {
 }
 
 export async function POST(request: Request) {
+  return privateDocumentResponse(await createDocumentResponse(request));
+}
+
+async function createDocumentResponse(request: Request) {
   const authError = await requireApiStaff(["DOCUMENT_GENERATION"]);
   if (authError) return authError;
   const parsed = await readValidatedDocumentRequest(request, "KR");

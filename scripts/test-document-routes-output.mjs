@@ -31,7 +31,7 @@ const deps = {
   "@/lib/prototype-package": moduleUrl(`export const deliveryDocumentRows=${JSON.stringify(keys.map((key) => ({ key })))};`),
   "@/lib/server/document-request-validation": moduleUrl(`export async function readValidatedDocumentRequest(request, language){return {ok:true,input:{context:${JSON.stringify(context)},job:${JSON.stringify(job)},language:(await request.json()).language||language}};}`),
 };
-for (const name of ["document-language-values", "document-training-summary", "document-delivery-values", "document-translation-checks", "docx-output-validation"]) deps[`@/lib/${name}`] = moduleUrl(compile(`../lib/${name}.ts`));
+for (const name of ["document-language-values", "document-training-summary", "document-delivery-values", "document-translation-checks", "docx-output-validation", "private-document-response"]) deps[`@/lib/${name}`] = moduleUrl(compile(`../lib/${name}.ts`));
 async function loadRoute(route, overrides = {}) {
   let code = compile(`../app/api/documents/${route}/route.ts`);
   for (const [name, url] of Object.entries({ ...deps, ...overrides })) code = code.replaceAll(`"${name}"`, JSON.stringify(url));
@@ -49,6 +49,8 @@ for (const [route, template] of [
   for (const language of ["KR", "EN"]) {
     const response = await POST(new Request("https://example.com/test", { method: "POST", body: JSON.stringify({ language }) }));
     assert.equal(response.status, 200, `${route}/${language}`);
+    assert.match(response.headers.get("Cache-Control"), /private, no-store/);
+    assert.equal(response.headers.get("X-Content-Type-Options"), "nosniff");
     const zip = new PizZip(await response.arrayBuffer());
     const xml = zip.file("word/document.xml").asText();
     assert.ok(xml.includes(job.jobNo));
@@ -73,6 +75,8 @@ for (const [route, template] of [
     const guarded = await loadRoute(route, { [dependency]: moduleUrl(stub) });
     const response = await guarded(request());
     assert.equal(response.status, status, `${route}: 실패 시 Word 차단`);
+    assert.match(response.headers.get("Cache-Control"), /private, no-store/);
+    assert.equal(response.headers.get("CDN-Cache-Control"), "no-store");
     assert.ok(!response.headers.get("Content-Disposition"));
   }
   if (route === "decision-report") {

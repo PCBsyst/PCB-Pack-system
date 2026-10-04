@@ -3,6 +3,7 @@ import { requireApiStaff } from "@/lib/server/api-auth";
 import { recordDocumentResponse } from "@/lib/server/privacy-access";
 import path from "node:path";
 import PizZip from "pizzip";
+import { privateDocumentResponse } from "@/lib/private-document-response";
 
 type ActionDocumentRequest = {
   kind: "REPORT" | "LETTER";
@@ -53,6 +54,10 @@ function replaceParagraphXml(zip: PizZip, values: Array<[string, string]>) {
 }
 
 export async function POST(request: Request) {
+  return privateDocumentResponse(await createDocumentResponse(request));
+}
+
+async function createDocumentResponse(request: Request) {
   const authError = await requireApiStaff(["DOCUMENT_GENERATION"]);
   if (authError) return authError;
   const body = await request.json() as ActionDocumentRequest;

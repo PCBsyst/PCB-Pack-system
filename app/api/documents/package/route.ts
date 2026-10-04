@@ -1,4 +1,5 @@
 import PizZip from "pizzip";
+import { privateDocumentResponse } from "@/lib/private-document-response";
 import { documentTranslationIssues, documentTranslationMessage } from "@/lib/document-translation-checks";
 import { packageDocumentFailure } from "@/lib/document-errors";
 import { validateGeneratedDocx } from "@/lib/docx-output-validation";
@@ -29,6 +30,10 @@ const generators: Record<CorporateDocumentType, (request: Request) => Promise<Re
 };
 
 export async function POST(request: Request) {
+  return privateDocumentResponse(await createDocumentResponse(request));
+}
+
+async function createDocumentResponse(request: Request) {
   const authError = await requireApiStaff(["DOCUMENT_GENERATION", "PACKAGE_DOWNLOAD"]);
   if (authError) return authError;
   let input: unknown;

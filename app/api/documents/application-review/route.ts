@@ -1,4 +1,5 @@
 import PizZip from "pizzip";
+import { privateDocumentResponse } from "@/lib/private-document-response";
 import { documentTranslationIssues, documentTranslationMessage } from "@/lib/document-translation-checks";
 import { documentChoice, documentLanguageValues } from "@/lib/document-language-values";
 import { documentTrainingSummary } from "@/lib/document-training-summary";
@@ -13,6 +14,10 @@ import { readValidatedDocumentRequest } from "@/lib/server/document-request-vali
 function xml(value: unknown) { return String(value ?? "-").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;"); }
 
 export async function POST(request: Request) {
+  return privateDocumentResponse(await createDocumentResponse(request));
+}
+
+async function createDocumentResponse(request: Request) {
   const authError = await requireApiStaff(["DOCUMENT_GENERATION"]);
   if (authError) return authError;
   const parsed = await readValidatedDocumentRequest(request, "KR");

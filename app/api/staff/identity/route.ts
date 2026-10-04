@@ -1,7 +1,10 @@
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { requireApiStaff } from "@/lib/server/api-auth";
 
 export async function POST(request: Request) {
+  const authError = await requireApiStaff();
+  if (authError) return authError;
   const siteUrl = process.env.APP_SITE_URL;
   let expectedOrigin: string;
   try { expectedOrigin = new URL(siteUrl ?? "").origin; }

@@ -1,7 +1,10 @@
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { requireApiStaff } from "@/lib/server/api-auth";
 
 export async function POST(request: Request) {
+  const authError = await requireApiStaff();
+  if (authError) return authError;
   const origin = request.headers.get("origin");
   const siteUrl = process.env.APP_SITE_URL;
   if (!siteUrl || origin !== new URL(siteUrl).origin) return Response.json({ error: "허용되지 않은 요청 또는 사이트 설정 누락입니다." }, { status: 403 });

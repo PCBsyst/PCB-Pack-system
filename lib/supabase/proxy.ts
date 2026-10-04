@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { currentAuthEnvironment } from "@/lib/supabase/auth-environment";
+import { checkServerMfa } from "@/lib/server/mfa-access";
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -51,25 +52,43 @@ export async function updateSession(request: NextRequest) {
   // with the Supabase client, your users may be randomly logged out.
   const { data } = await supabase.auth.getClaims();
   const user = data?.claims;
+  const finish = (response: NextResponse) => {
+    // Preserve refreshed auth cookies on denials and redirects as well.
+    supabaseResponse.cookies.getAll().forEach((cookie) => response.cookies.set(cookie));
+    response.headers.set("Cache-Control", "private, no-store");
+    return response;
+  };
 
   if (user && !request.nextUrl.pathname.startsWith("/auth")) {
-    const { data: profile } = await supabase.from("profiles").select("active").eq("id", user.sub).maybeSingle();
+    const { data: profile, error } = await supabase.from("profiles").select("active,is_owner").eq("id", user.sub).maybeSingle();
+    if (error) return finish(NextResponse.json({ error: "직원 권한을 확인하지 못했습니다." }, { status: 503 }));
     if (!profile?.active) {
       if (request.nextUrl.pathname.startsWith("/api/")) {
-        return NextResponse.json({ error: "최고관리자의 계정 활성화 승인이 필요합니다." }, { status: 403 });
+        return finish(NextResponse.json({ error: "최고관리자의 계정 활성화 승인이 필요합니다." }, { status: 403 }));
       }
       const url = request.nextUrl.clone();
       url.pathname = "/auth/error";
       url.search = "?error=approval-required";
-      return NextResponse.redirect(url);
+      return finish(NextResponse.redirect(url));
+    }
+    const mfa = await checkServerMfa(supabase, user.sub, user.aal, profile.is_owner === true);
+    if (mfa !== "allow") {
+      if (request.nextUrl.pathname.startsWith("/api/") || mfa === "unavailable") {
+        return finish(NextResponse.json({ error: mfa === "unavailable" ? "2단계 인증 상태를 확인하지 못했습니다." : "내 계정 보안에서 2단계 인증을 완료해 주세요.", code: mfa === "unavailable" ? "MFA_UNAVAILABLE" : "MFA_REQUIRED" }, { status: mfa === "unavailable" ? 503 : 403 }));
+      }
+      const url = request.nextUrl.clone();
+      url.pathname = "/auth/mfa";
+      url.search = "";
+      return finish(NextResponse.redirect(url));
     }
   }
 
   if (!user && !request.nextUrl.pathname.startsWith("/auth")) {
+    if (request.nextUrl.pathname.startsWith("/api/")) return finish(NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 }));
     // no user, potentially respond by redirecting the user to the login page
     const url = request.nextUrl.clone();
     url.pathname = "/auth/login";
-    return NextResponse.redirect(url);
+    return finish(NextResponse.redirect(url));
   }
 
   // IMPORTANT: You *must* return the supabaseResponse object as it is.
@@ -85,5 +104,5 @@ export async function updateSession(request: NextRequest) {
   // If this is not done, you may be causing the browser and server to go out
   // of sync and terminate the user's session prematurely!
 
-  return supabaseResponse;
+  return finish(supabaseResponse);
 }

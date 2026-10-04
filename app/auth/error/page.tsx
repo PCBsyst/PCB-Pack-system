@@ -14,11 +14,11 @@ async function ErrorContent({
         <p className="text-sm text-muted-foreground">
           {params.error === "approval-required" || params.error === "inactive"
             ? "이 계정은 승인 대기 또는 비활성 상태입니다. 최고관리자에게 계정 활성화를 요청해 주세요."
-            : `인증 처리 오류: ${params.error}`}
+            : params.error === "verification-unavailable" ? "인증 서버에서 보안 상태를 확인하지 못했습니다. 잠시 후 다시 로그인해 주세요." : `인증 처리 오류: ${params.error}`}
         </p>
       ) : (
         <p className="text-sm text-muted-foreground">
-          An unspecified error occurred.
+          인증 상태를 확인하지 못했습니다. 다시 로그인해 주세요.
         </p>
       )}
     </>

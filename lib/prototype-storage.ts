@@ -8,6 +8,7 @@ export interface PrototypeApplicationRecord {
   id: string;
   candidateId?: string;
   jobId?: string;
+  certificationState?: "ACTIVE" | "SUSPENDED" | "WITHDRAWN" | "NONE";
   applicationNo: string;
   receivedAt: string;
   candidateName: string;

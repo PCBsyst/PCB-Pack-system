@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { prototypeCandidateId, prototypeJobId, prototypeWorkflowLabels, readPrototypeApplications, readPrototypeWorkflow, type PrototypeApplicationRecord } from "@/lib/prototype-storage";
 import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
-type LinkedJobRow = { id: string; job_no: string; management_no: number; standard: string; grade: string; primary_owner_id: string | null };
+type LinkedJobRow = { id: string; job_no: string; management_no: number; standard: string; grade: string; certification_state: PrototypeApplicationRecord["certificationState"]; primary_owner_id: string | null };
 
 export function useLinkedRecordsState(revision = 0) {
   const [records, setRecords] = useState<PrototypeApplicationRecord[]>([]);
@@ -17,7 +17,7 @@ export function useLinkedRecordsState(revision = 0) {
     const load = async () => {
       try {
       const supabase = createClient();
-      const { data, error } = await supabase.from("applications").select("*, candidates(id, name, name_en, birth_date, nationality, email, phone), jobs(id, job_no, management_no, standard, grade, primary_owner_id)").order("received_at", { ascending: false });
+      const { data, error } = await supabase.from("applications").select("*, candidates(id, name, name_en, birth_date, nationality, email, phone), jobs(id, job_no, management_no, standard, grade, certification_state, primary_owner_id)").order("received_at", { ascending: false });
       if (error || !data) throw new Error("신청 조회 실패");
       if (cancelled) return;
       const applicationIds = data.map((item) => item.id);
@@ -31,7 +31,7 @@ export function useLinkedRecordsState(revision = 0) {
       const mapped: PrototypeApplicationRecord[] = data.flatMap((item) => {
         const candidate = Array.isArray(item.candidates) ? item.candidates[0] : item.candidates;
         const jobRows = (Array.isArray(item.jobs) ? item.jobs : []) as LinkedJobRow[];
-        return jobRows.map((job) => ({ id: item.id, candidateId: candidate?.id, jobId: job.id, applicationNo: item.application_no, receivedAt: item.received_at, candidateName: candidate?.name ?? "이름 미입력", candidateNameEn: candidate?.name_en ?? undefined, candidateBirthDate: candidate?.birth_date ?? undefined, candidateNationality: candidate?.nationality ?? undefined, candidateEmail: candidate?.email ?? undefined, candidatePhone: candidate?.phone ?? undefined, businessArea: item.business_area, scheme: item.accreditation_scheme === "PJLA" ? "PJLA" : "IAS", accreditationTrack: item.accreditation_track, accreditationHidden: item.accreditation_hidden, applicationType: item.application_type, managementNo: job.management_no, jobNo: job.job_no, standard: job.standard, grade: job.grade, partnerCompany: item.partner_name_snapshot, primaryOwner: job.primary_owner_id ? ownerNames.get(job.primary_owner_id) ?? "담당자 미확인" : "담당자 미지정", status: "INTAKE_REVIEW", createdAt: item.created_at, workflow: workspaces.get(item.id) ?? undefined }));
+        return jobRows.map((job) => ({ id: item.id, candidateId: candidate?.id, jobId: job.id, certificationState: job.certification_state, applicationNo: item.application_no, receivedAt: item.received_at, candidateName: candidate?.name ?? "이름 미입력", candidateNameEn: candidate?.name_en ?? undefined, candidateBirthDate: candidate?.birth_date ?? undefined, candidateNationality: candidate?.nationality ?? undefined, candidateEmail: candidate?.email ?? undefined, candidatePhone: candidate?.phone ?? undefined, businessArea: item.business_area, scheme: item.accreditation_scheme === "PJLA" ? "PJLA" : "IAS", accreditationTrack: item.accreditation_track, accreditationHidden: item.accreditation_hidden, applicationType: item.application_type, managementNo: job.management_no, jobNo: job.job_no, standard: job.standard, grade: job.grade, partnerCompany: item.partner_name_snapshot, primaryOwner: job.primary_owner_id ? ownerNames.get(job.primary_owner_id) ?? "담당자 미확인" : "담당자 미지정", status: "INTAKE_REVIEW", createdAt: item.created_at, workflow: workspaces.get(item.id) ?? undefined }));
       });
       if (!cancelled) { setRecords(mapped); setNotice(""); }
       } catch { if (!cancelled) { setRecords([]); setNotice("신청·Job 업무기록을 조회하지 못했습니다. 연결 또는 접근권한을 확인한 뒤 다시 조회해 주세요. 조회 실패는 기록 없음이 아닙니다."); } }

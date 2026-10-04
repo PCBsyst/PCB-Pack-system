@@ -7,6 +7,7 @@ import { PackageTemplateReadiness } from "@/components/package-template-readines
 import { canAttachPackageGeneration } from "@/lib/package-completion-policy";
 import { confirmPackageReadiness, isTemplateReadinessRows } from "@/lib/template-readiness";
 import { documentErrorMessage } from "@/lib/document-errors";
+import { packageDocumentIssues } from "@/lib/package-document-checks";
 import { Check, Copy, Download, FileArchive, FileText, FolderOpen, PackageCheck, Printer, RotateCcw, Save } from "lucide-react";
 import type { Candidate, CertificationApplication, Invoice, Job } from "@/types/certification";
 import { accreditationLabels, businessAreaLabels } from "@/data/workflow-data";
@@ -350,10 +351,9 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   };
   const generate = async () => {
     if (!languages.KR && !languages.EN) { setNotice("생성할 언어를 하나 이상 선택해 주세요."); return; }
-    const missing = linkedJobs.flatMap((job) => deliveryDocumentRows.filter(({ key }) => { const record = demo.deliveryDocuments[job.id]?.[key]; return record?.applicability === "REQUIRED" && (!record.received || !record.date); }).map((row) => `${job.jobNo} ${row.document}`));
-    const conditionalWithoutDate = linkedJobs.flatMap((job) => deliveryDocumentRows.filter(({ key }) => { const record = demo.deliveryDocuments[job.id]?.[key]; return record?.applicability === "CONDITIONAL" && record.received && !record.date; }).map((row) => `${job.jobNo} ${row.document}`));
-    if (missing.length) { setNotice(`필수 문서의 확인 또는 날짜가 누락되었습니다: ${missing.join(", ")}`); return; }
-    if (conditionalWithoutDate.length) { setNotice(`해당 시 필수 문서의 날짜가 누락되었습니다: ${conditionalWithoutDate.join(", ")}`); return; }
+    const issues = packageDocumentIssues(linkedJobs, demo.deliveryDocuments, deliveryDocumentRows);
+    if (!linkedJobs.length) { setNotice("연결된 Job이 없어 패키지를 생성할 수 없습니다."); return; }
+    if (issues.length) { setNotice(`문서전달 기록을 확인해 주세요: ${issues.map((issue) => `${linkedJobs.find((job) => job.id === issue.jobId)?.jobNo} ${issue.label} (${issue.reason})`).join(", ")}`); return; }
     const decisionOverride = linkedJobs.some((job) => { const issueDate = demo.certificates[job.id]?.issueDate; return issueDate && demo.decisionDate !== addKoreanBusinessDays(issueDate, -dateRules.decisionDays); });
     const deliveryOverrideMissing = linkedJobs.some((job) => { const issueDate = demo.certificates[job.id]?.issueDate; const deliveryDate = demo.deliveryDocuments[job.id]?.deliveryConfirmation.date; return issueDate && deliveryDate !== addKoreanBusinessDays(issueDate, dateRules.deliveryDays) && !demo.dateOverrideReasons.delivery[job.id]?.trim(); });
     if (decisionOverride && !demo.dateOverrideReasons.decision.trim()) { setNotice("자동 계산된 심의일을 변경한 사유를 입력해 주세요."); return; }
@@ -541,8 +541,15 @@ function DateOverrideFields({ job, issueDate, decisionDate, deliveryDate, reason
 
 function ReadinessCard({ label, value, alert = false }: { label: string; value: string; alert?: boolean }) { return <div className={`rounded-md border p-3 ${alert ? "border-amber-300 bg-amber-50" : "bg-white"}`}><p className="text-xs text-slate-500">{label}</p><p className={`mt-1 text-sm font-semibold ${alert ? "text-amber-900" : "text-slate-900"}`}>{value}</p></div>; }
 function PackagePreflight({ jobs, certificates, documents }: { jobs: Job[]; certificates: DemoCertificate; documents: DemoDeliveryDocuments }) {
-  return <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50 p-4"><div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold text-slate-900">패키지 생성 전 점검</p><p className="mt-1 text-xs text-slate-500">생성 버튼을 누르기 전에 Job별 인증정보와 원본 송부 추적값을 확인합니다.</p></div><span className="rounded-full bg-white px-2 py-1 text-xs font-medium text-slate-600">{jobs.length}개 Job</span></div><div className="mt-3 grid gap-2 md:grid-cols-2">{jobs.map((job) => { const certificate = certificates[job.id]; const delivery = documents[job.id]; const missing = [!certificate?.issueDate && "전자본 발행일", !certificate?.certificationNo && "인증번호", !certificate?.originalSentAt && "원본 송부일", !certificate?.trackingNumber && "운송장 번호"].filter(Boolean) as string[]; return <div key={job.id} className={`rounded-md border bg-white p-3 ${missing.length ? "border-amber-300" : "border-emerald-200"}`}><div className="flex items-center justify-between gap-2"><span className="text-sm font-semibold text-slate-800">{job.jobNo}</span><span className={`text-xs font-semibold ${missing.length ? "text-amber-800" : "text-emerald-700"}`}>{missing.length ? "확인 필요" : "생성 준비 완료"}</span></div><p className="mt-1 text-xs text-slate-500">{missing.length ? `누락: ${missing.join(", ")}` : `인증번호 ${certificate?.certificationNo} · 송부 ${certificate?.originalSentAt}`}</p>{delivery?.deliveryConfirmation?.date && <p className="mt-1 text-xs text-slate-400">문서전달확인서 작성일: {delivery.deliveryConfirmation.date}</p>}</div>; })}</div></div>;
+  const issues = packageDocumentIssues(jobs, documents, deliveryDocumentRows);
+  return <div className="mb-5 space-y-3 rounded-lg border bg-card p-4 text-card-foreground"><h4 className="text-sm font-semibold">패키지 생성 전 업무 점검</h4><p className="text-xs text-muted-foreground">문서 적용 기준·확인 여부·날짜를 점검합니다. 입력 저장 여부와 실제 양식 파일은 생성 시 서버에서 별도로 확인합니다.</p>{!jobs.length && <p className="text-sm text-amber-700 dark:text-amber-300">연결된 Job이 없습니다.</p>}{jobs.map((job) => {
+    const pending = issues.filter((issue) => issue.jobId === job.id);
+    const certificate = certificates[job.id];
+    const fields = [!certificate?.issueDate && "전자본 발행일", !certificate?.certificationNo && "인증번호"].filter(Boolean);
+    return <div key={job.id} className="rounded-md border p-3"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm font-semibold">{job.jobNo} · {job.standard}</span><span className="text-xs text-muted-foreground">{pending.length || fields.length ? "입력 확인 필요" : "문서 입력 점검 통과"}</span></div>{fields.length > 0 && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">인증정보 누락: {fields.join(", ")}</p>}{pending.length > 0 && <ul className="mt-2 space-y-1 text-xs">{pending.map((issue) => <li key={issue.key}><a className="text-amber-700 underline underline-offset-2 dark:text-amber-300" href={`#delivery-${job.id}-${issue.key}`}>{issue.label} · {issue.reason} → 입력 위치</a></li>)}</ul>}<p className="mt-2 text-xs text-muted-foreground">원본 추적: {certificate?.originalSentAt || "송부일 미입력"} · {certificate?.trackingNumber || "운송장 미입력"} (인증 완료 기준과 별도)</p></div>;
+  })}</div>;
 }
+
 
 function createAuditLog(category: DateAuditLog["category"], jobId: string, field: string, before: string, after: string, reason: string, actor: string): DateAuditLog { return { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, category, jobId, field, before, after, reason, actor, occurredAt: new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) }; }
 function recordDateAudit(jobId: string, field: string, before: string, after: string, reason: string, actor: string, setDemo: React.Dispatch<React.SetStateAction<DemoState>>) { setDemo((current) => ({ ...current, dateAuditLogs: [...current.dateAuditLogs, createAuditLog("정정", jobId, field, before, after, reason, actor)] })); }

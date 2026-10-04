@@ -1,5 +1,5 @@
 import PizZip from "pizzip";
-import { loadDocumentTemplate } from "@/lib/server/document-template-loader";
+import { loadDocumentTemplate, templateLoadErrorResponse } from "@/lib/server/document-template-loader";
 import { templateProvenanceHeaders } from "@/lib/template-provenance";
 import { requireApiStaff } from "@/lib/server/api-auth";
 import { recordDocumentResponse } from "@/lib/server/privacy-access";
@@ -39,7 +39,9 @@ export async function POST(request: Request) {
     values[`${row.key}Comment`] = record?.comment || "";
   }
 
-  const template = await loadDocumentTemplate("DELIVERY_CONFIRMATION", language, language === "EN" ? "FGPC-012-03-delivery-confirmation-en.docx" : undefined);
+  let template;
+  try { template = await loadDocumentTemplate("DELIVERY_CONFIRMATION", language, language === "EN" ? "FGPC-012-03-delivery-confirmation-en.docx" : undefined); }
+  catch { return templateLoadErrorResponse(); }
   const zip = new PizZip(template.bytes);
   for (const fileName of Object.keys(zip.files).filter((name) => name.endsWith(".xml"))) {
     let content = zip.file(fileName)?.asText();

@@ -5,7 +5,7 @@ import { validateStoredPackageRecords } from "@/lib/server/package-record-valida
 import type { PackageContext, DocumentLanguage } from "@/lib/prototype-package";
 import type { Job } from "@/types/certification";
 import { corporateTemplateRegistry, type CorporateDocumentType } from "@/lib/document-template-registry";
-import { getActiveDocumentTemplateKeys } from "@/lib/server/document-template-loader";
+import { getActiveDocumentTemplateKeys, templateLoadErrorResponse } from "@/lib/server/document-template-loader";
 import { requireApiStaff } from "@/lib/server/api-auth";
 import { recordDocumentResponse } from "@/lib/server/privacy-access";
 import { recordPackageGeneration, type GeneratedPackageDocument } from "@/lib/server/package-receipts";
@@ -38,7 +38,9 @@ export async function POST(request: Request) {
   if (recordError) return recordError;
 
   const selectedLanguages = new Set(languages);
-  const activeTemplateKeys = await getActiveDocumentTemplateKeys();
+  let activeTemplateKeys;
+  try { activeTemplateKeys = await getActiveDocumentTemplateKeys(); }
+  catch { return templateLoadErrorResponse(); }
   const templates = corporateTemplateRegistry.filter((template) => template.available || activeTemplateKeys.has(`${template.documentType}:${template.language}`));
   const zip = new PizZip();
   let fileCount = 0;

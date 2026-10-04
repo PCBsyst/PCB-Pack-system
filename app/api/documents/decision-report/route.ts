@@ -1,5 +1,5 @@
 import PizZip from "pizzip";
-import { loadDocumentTemplate } from "@/lib/server/document-template-loader";
+import { loadDocumentTemplate, templateLoadErrorResponse } from "@/lib/server/document-template-loader";
 import { templateProvenanceHeaders } from "@/lib/template-provenance";
 import { requireApiStaff } from "@/lib/server/api-auth";
 import { recordDocumentResponse } from "@/lib/server/privacy-access";
@@ -56,7 +56,9 @@ export async function POST(request: Request) {
     finalApprovalDate: context.finalApprovalDate,
   };
 
-  const template = await loadDocumentTemplate("CERTIFICATION_DECISION_REPORT", language, language === "KR" ? "FGPC-012-01-decision-report-kr.docx" : undefined);
+  let template;
+  try { template = await loadDocumentTemplate("CERTIFICATION_DECISION_REPORT", language, language === "KR" ? "FGPC-012-01-decision-report-kr.docx" : undefined); }
+  catch { return templateLoadErrorResponse(); }
   const zip = new PizZip(template.bytes);
   for (const fileName of Object.keys(zip.files).filter((name) => name.endsWith(".xml"))) {
     let content = zip.file(fileName)?.asText();

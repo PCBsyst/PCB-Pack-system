@@ -1,4 +1,5 @@
 import PizZip from "pizzip";
+import { documentTranslationIssues, documentTranslationMessage } from "@/lib/document-translation-checks";
 import { packageDocumentFailure } from "@/lib/document-errors";
 import { validateGeneratedDocx } from "@/lib/docx-output-validation";
 import { readTemplateProvenance } from "@/lib/template-provenance";
@@ -44,6 +45,10 @@ export async function POST(request: Request) {
   try { activeTemplateKeys = await getActiveDocumentTemplateKeys(); }
   catch { return templateLoadErrorResponse(); }
   const templates = corporateTemplateRegistry.filter((template) => template.available || activeTemplateKeys.has(`${template.documentType}:${template.language}`));
+  if (selectedLanguages.has("EN")) {
+    const issues = documentTranslationIssues(context, jobs.map((job) => job.id), templates.filter((template) => template.language === "EN").map((template) => template.documentType));
+    if (issues.length) return Response.json({ error: documentTranslationMessage(issues) }, { status: 422 });
+  }
   const zip = new PizZip();
   let fileCount = 0;
   const generatedDocuments: GeneratedPackageDocument[] = [];

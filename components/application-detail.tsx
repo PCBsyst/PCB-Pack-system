@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { corporateTemplateRegistry } from "@/lib/document-template-registry";
+import { documentTranslationIssues, documentTranslationMessage } from "@/lib/document-translation-checks";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DocumentDownloadButton } from "@/components/document-download-button";
 import { PackageTemplateReadiness } from "@/components/package-template-readiness";
@@ -397,6 +399,11 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
         if (!readinessResponse.ok) throw new Error(await documentErrorMessage(readinessResponse));
         const readiness = await readinessResponse.json();
         if (!isTemplateReadinessRows(readiness.templates)) throw new Error("양식 준비 상태를 확인하지 못했습니다. 다시 시도해 주세요.");
+        if (selected.includes("EN")) {
+          const types = corporateTemplateRegistry.filter((template) => template.language === "EN" && readiness.templates.some((row: { id: string; source: string }) => row.id === template.id && row.source !== "MISSING")).map((template) => template.documentType);
+          const issues = documentTranslationIssues(packageContext, linkedJobs.map((job) => job.id), types);
+          if (issues.length) { setNotice(documentTranslationMessage(issues)); return; }
+        }
         const choice = confirmPackageReadiness(readiness.templates, { KR: selected.includes("KR"), EN: selected.includes("EN") }, linkedJobs.length, (message) => window.confirm(message));
         if (choice === "EMPTY") { setNotice("선택한 언어로 생성할 수 있는 양식이 없습니다. 양식을 등록한 뒤 다시 진행해 주세요."); return; }
         if (choice === "CANCEL") { setNotice("패키지 생성을 취소했습니다. 파일 생성이나 완료 처리는 하지 않았습니다."); return; }

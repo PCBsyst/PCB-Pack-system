@@ -1,4 +1,5 @@
 import PizZip from "pizzip";
+import { documentTranslationIssues, documentTranslationMessage } from "@/lib/document-translation-checks";
 import { documentChoice, documentLanguageValues } from "@/lib/document-language-values";
 import { documentTrainingSummary } from "@/lib/document-training-summary";
 import { docxOutputHeaders } from "@/lib/server/docx-response-headers";
@@ -33,6 +34,10 @@ export async function POST(request: Request) {
   const parsed = await readValidatedDocumentRequest(request, "KR");
   if (!parsed.ok) return parsed.response;
   const { context, job, language } = parsed.input;
+  if (language === "EN") {
+    const issues = documentTranslationIssues(context, [job.id], ["CERTIFICATION_DECISION_REPORT"]);
+    if (issues.length) return Response.json({ error: documentTranslationMessage(issues) }, { status: 422 });
+  }
   const localized = documentLanguageValues(context, job.id, language);
   const decision = context.decisions[job.id];
   const certificate = context.certificates[job.id];

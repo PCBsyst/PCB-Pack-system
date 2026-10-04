@@ -2,7 +2,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/run-regression-tests.mjs && next build",
+    "test": "node scripts/run-regression-tests.mjs",
     "start": "next start",
     "lint": "eslint ."
   },

@@ -29,6 +29,13 @@ fail = true;
 const count = downloads.length;
 await assert.rejects(functions.downloadApplicationReviewDocx(context, job, "EN"), /모의 생성 실패/);
 assert.equal(downloads.length, count);
+fail = false;
+for (const name of names.slice(1)) {
+  await assert.rejects(functions[name](context, job, "KR", () => false), /업무 입력이나 화면이 변경/);
+}
+assert.equal(downloads.length, count);
+await functions.downloadApplicationReviewDocx(context, job, "KR", () => true);
+assert.equal(downloads.length, count + 1);
 const ui = fs.readFileSync(new URL("../components/application-detail.tsx", import.meta.url), "utf8");
 assert.ok(ui.includes("({ KR: true, EN: false })"), "기본 패키지는 국문 우선이며 영문은 선택 가능합니다.");
 const deliveryRoute = fs.readFileSync(new URL("../app/api/documents/delivery-confirmation/route.ts", import.meta.url), "utf8");

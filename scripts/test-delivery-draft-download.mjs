@@ -25,6 +25,9 @@ marked = true; valid = false; await assert.rejects(download(context, job), /무�
 valid = true; ok = false; await assert.rejects(download(context, job), /모의 생성 실패/);
 assert.equal(saved.length, 1);
 const ui = fs.readFileSync(new URL("../components/application-detail.tsx", import.meta.url), "utf8");
+ok = true;
+await assert.rejects(download(context, job, () => false), /업무 입력이나 화면이 변경/);
+assert.equal(saved.length, 1);
 assert.ok(ui.includes("downloadDeliveryConfirmationDraftDocx(packageContext, job)"));
 const registry = fs.readFileSync(new URL("../lib/document-template-registry.ts", import.meta.url), "utf8");
 assert.match(registry.split(/\r?\n/).find((line) => line.includes('id: "delivery-confirmation-kr"')), /available: false/);

@@ -98,37 +98,41 @@ export function downloadBlob(fileName: string, blob: Blob) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 export function downloadWord(fileName: string, html: string) { downloadBlob(fileName, new Blob(["\ufeff", html], { type: "application/msword;charset=utf-8" })); }
-export async function downloadCorporateDocumentDocx(context: PackageContext, job: Job, documentType: "APPLICATION_REVIEW" | "CERTIFICATION_DECISION_REPORT" | "DELIVERY_CONFIRMATION", language: DocumentLanguage) {
+export async function downloadCorporateDocumentDocx(context: PackageContext, job: Job, documentType: "APPLICATION_REVIEW" | "CERTIFICATION_DECISION_REPORT" | "DELIVERY_CONFIRMATION", language: DocumentLanguage, isCurrent?: () => boolean) {
   const routes = { APPLICATION_REVIEW: "application-review", CERTIFICATION_DECISION_REPORT: "decision-report", DELIVERY_CONFIRMATION: "delivery-confirmation" };
   return withDownloadSingleFlight(`document:${context.application.id}:${job.id}:${documentType}:${language}`, async () => {
     const response = await fetch(`/api/documents/${routes[documentType]}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context, job, language }) });
     if (!response.ok) throw new Error(await documentErrorMessage(response));
     const disposition = response.headers.get("Content-Disposition") ?? "";
     const fileName = disposition.match(/filename="([^"]+)"/)?.[1] ?? `${job.jobNo}_${documentType}_${language}.docx`;
-    downloadBlob(fileName, await verifiedDocxBlob(response));
+    const blob = await verifiedDocxBlob(response);
+    if (isCurrent && !isCurrent()) throw new Error("생성 중 업무 입력이나 화면이 변경되었습니다. 현재 입력을 저장한 후 다시 생성해 주세요.");
+    downloadBlob(fileName, blob);
   });
 }
-export function downloadDecisionReportDocx(context: PackageContext, job: Job, language: DocumentLanguage = "KR") {
-  return downloadCorporateDocumentDocx(context, job, "CERTIFICATION_DECISION_REPORT", language);
+export function downloadDecisionReportDocx(context: PackageContext, job: Job, language: DocumentLanguage = "KR", isCurrent?: () => boolean) {
+  return downloadCorporateDocumentDocx(context, job, "CERTIFICATION_DECISION_REPORT", language, isCurrent);
 }
-export function downloadDeliveryConfirmationDocx(context: PackageContext, job: Job, language: DocumentLanguage = "KR") {
-  return downloadCorporateDocumentDocx(context, job, "DELIVERY_CONFIRMATION", language);
+export function downloadDeliveryConfirmationDocx(context: PackageContext, job: Job, language: DocumentLanguage = "KR", isCurrent?: () => boolean) {
+  return downloadCorporateDocumentDocx(context, job, "DELIVERY_CONFIRMATION", language, isCurrent);
 }
-export function downloadDeliveryConfirmationDraftDocx(context: PackageContext, job: Job) {
+export function downloadDeliveryConfirmationDraftDocx(context: PackageContext, job: Job, isCurrent?: () => boolean) {
   return withDownloadSingleFlight(`draft:${context.application.id}:${job.id}:DELIVERY_CONFIRMATION:KR`, async () => {
     const response = await fetch("/api/documents/delivery-confirmation-draft", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context, job, language: "KR" }) });
     if (!response.ok) throw new Error(await documentErrorMessage(response));
     if (response.headers.get("X-Document-Status") !== "DRAFT") throw new Error("검토용 초안 표시를 확인하지 못했습니다.");
-    downloadBlob(`${job.jobNo}_Document_Delivery_Confirmation_DRAFT_KR.docx`, await verifiedDocxBlob(response));
+    const blob = await verifiedDocxBlob(response);
+    if (isCurrent && !isCurrent()) throw new Error("생성 중 업무 입력이나 화면이 변경되었습니다. 현재 입력을 저장한 후 다시 생성해 주세요.");
+    downloadBlob(`${job.jobNo}_Document_Delivery_Confirmation_DRAFT_KR.docx`, blob);
   });
 }
-export function downloadApplicationReviewDocx(context: PackageContext, job: Job, language: DocumentLanguage = "KR") {
-  return downloadCorporateDocumentDocx(context, job, "APPLICATION_REVIEW", language);
+export function downloadApplicationReviewDocx(context: PackageContext, job: Job, language: DocumentLanguage = "KR", isCurrent?: () => boolean) {
+  return downloadCorporateDocumentDocx(context, job, "APPLICATION_REVIEW", language, isCurrent);
 }
-export async function downloadCorporatePackageZip(context: PackageContext, jobs: Job[], languages: DocumentLanguage[]) {
-  return withDownloadSingleFlight(`package:${context.application.id}`, () => downloadCorporatePackageZipImpl(context, jobs, languages));
+export async function downloadCorporatePackageZip(context: PackageContext, jobs: Job[], languages: DocumentLanguage[], isCurrent?: () => boolean) {
+  return withDownloadSingleFlight(`package:${context.application.id}`, () => downloadCorporatePackageZipImpl(context, jobs, languages, isCurrent));
 }
-async function downloadCorporatePackageZipImpl(context: PackageContext, jobs: Job[], languages: DocumentLanguage[]) {
+async function downloadCorporatePackageZipImpl(context: PackageContext, jobs: Job[], languages: DocumentLanguage[], isCurrent?: () => boolean) {
   const response = await fetch("/api/documents/package", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context, jobs, languages }) });
   if (!response.ok) {
     throw new Error(await documentErrorMessage(response, "기업 양식 ZIP 생성에 실패했습니다."));
@@ -144,6 +148,7 @@ async function downloadCorporatePackageZipImpl(context: PackageContext, jobs: Jo
     const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
     if (hash !== receipt.sha256) throw new Error("서버 생성 파일과 수신한 ZIP이 일치하지 않습니다.");
   }
+  if (isCurrent && !isCurrent()) throw new Error("생성 중 업무 입력이나 화면이 변경되었습니다. 현재 입력을 저장한 후 다시 생성해 주세요.");
   downloadBlob(fileName, blob);
   window.dispatchEvent(new Event("package-generation-recorded"));
   return receipt;

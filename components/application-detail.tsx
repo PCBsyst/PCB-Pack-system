@@ -3,7 +3,7 @@ import { packageDateDifferences } from "@/lib/package-date-consistency";
 import { certificateDateIssues } from "@/lib/package-request-validation";
 import { workspaceSaveStatus } from "@/lib/workspace-save-status";
 import { createWorkspaceSaveQueue } from "@/lib/workspace-save-queue";
-import { downloadDeliveryConfirmationDraftDocx } from "@/lib/prototype-package";
+import { downloadDeliveryConfirmationDraftDocx as downloadDeliveryConfirmationDraftFile } from "@/lib/prototype-package";
 
 import Link from "next/link";
 import { corporateTemplateRegistry } from "@/lib/document-template-registry";
@@ -22,7 +22,7 @@ import { ApplicationStatusBadge } from "@/components/application-status-badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, controlClass, textareaClass } from "@/components/form-fields";
-import { buildDocuments, deliveryDocumentRows, downloadApplicationReviewDocx, downloadCorporatePackageZip, downloadDecisionReportDocx, downloadDeliveryConfirmationDocx, printAsPdf, type AssessmentResult, type DeliveryDocumentKey, type DemoAssessment, type DemoCertificate, type DemoDecision, type DemoDeliveryDocuments, type DemoEnglishText, type DemoPanelMember, type DemoReview, type DocumentApplicability, type DocumentLanguage } from "@/lib/prototype-package";
+import { buildDocuments, deliveryDocumentRows, downloadApplicationReviewDocx as downloadApplicationReviewFile, downloadCorporatePackageZip as downloadCorporatePackageFile, downloadDecisionReportDocx as downloadDecisionReportFile, downloadDeliveryConfirmationDocx as downloadDeliveryConfirmationFile, printAsPdf, type AssessmentResult, type DeliveryDocumentKey, type DemoAssessment, type DemoCertificate, type DemoDecision, type DemoDeliveryDocuments, type DemoEnglishText, type DemoPanelMember, type DemoReview, type DocumentApplicability, type DocumentLanguage } from "@/lib/prototype-package";
 import { getCertificationNumber, getCertificationNumberPrefix } from "@/lib/certification-number";
 import { defaultApplicability, profileKey, readStoredProfiles } from "@/lib/document-requirement-rules";
 import { addKoreanBusinessDays, nextKoreanBusinessDay } from "@/lib/business-days";
@@ -285,6 +285,14 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   const packageContext = useMemo(() => ({ application, candidate, jobs: linkedJobs, reviewRequirements: demo.reviewRequirements, review: demo.review, invoiceNo: demo.invoiceNo, invoiceAmount: demo.invoiceAmount, invoiceIssuedAt: demo.invoiceIssuedAt, paidAmount: demo.paidAmount, paymentConfirmedAt: demo.paymentConfirmedAt, assessment: demo.assessment, panelMembers: demo.panelMembers, decisions: demo.decisions, certificates: demo.certificates, deliveryDocuments: demo.deliveryDocuments, examSchedules: demo.examSchedules, decisionDate: demo.decisionDate, finalApprover: demo.finalApprover, finalApprovalDate: demo.finalApprovalDate, englishText: demo.englishText }), [application, candidate, linkedJobs, demo]);
   const latestPackageContext = useRef(packageContext);
   useEffect(() => { latestPackageContext.current = packageContext; }, [packageContext]);
+  const downloadMounted = useRef(true);
+  useEffect(() => { downloadMounted.current = true; return () => { downloadMounted.current = false; }; }, []);
+  const currentDownloadGuard = (snapshot: Parameters<typeof downloadApplicationReviewFile>[0]) => () => downloadMounted.current && canAttachPackageGeneration(snapshot, latestPackageContext.current);
+  const downloadApplicationReviewDocx = (...args: Parameters<typeof downloadApplicationReviewFile>) => downloadApplicationReviewFile(args[0], args[1], args[2], currentDownloadGuard(args[0]));
+  const downloadDecisionReportDocx = (...args: Parameters<typeof downloadDecisionReportFile>) => downloadDecisionReportFile(args[0], args[1], args[2], currentDownloadGuard(args[0]));
+  const downloadDeliveryConfirmationDocx = (...args: Parameters<typeof downloadDeliveryConfirmationFile>) => downloadDeliveryConfirmationFile(args[0], args[1], args[2], currentDownloadGuard(args[0]));
+  const downloadDeliveryConfirmationDraftDocx = (...args: Parameters<typeof downloadDeliveryConfirmationDraftFile>) => downloadDeliveryConfirmationDraftFile(args[0], args[1], currentDownloadGuard(args[0]));
+  const downloadCorporatePackageZip = (...args: Parameters<typeof downloadCorporatePackageFile>) => downloadCorporatePackageFile(args[0], args[1], args[2], currentDownloadGuard(args[0]));
   const currentIndex = stageOrder.indexOf(demo.stage);
   const saveDraft = async () => {
     if (!canEdit) { setNotice("다른 직원이 편집 중이므로 현재 화면은 조회 전용입니다."); return; }

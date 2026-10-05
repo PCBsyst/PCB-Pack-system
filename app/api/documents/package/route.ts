@@ -32,7 +32,11 @@ const generators: Record<CorporateDocumentType, (request: Request) => Promise<Re
 };
 
 export async function POST(request: Request) {
-  return privateDocumentResponse(await createDocumentResponse(request));
+  try {
+    return privateDocumentResponse(await createDocumentResponse(request));
+  } catch {
+    return privateDocumentResponse(Response.json({ error: "패키지 처리 중 오류가 발생했습니다. 생성이력을 확인한 후 다시 시도해 주세요." }, { status: 503 }));
+  }
 }
 
 async function createDocumentResponse(request: Request) {

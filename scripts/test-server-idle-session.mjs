@@ -1,0 +1,28 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import ts from "typescript";
+const read=(file)=>fs.readFileSync(new URL(file,import.meta.url),"utf8");
+const compile=(text)=>ts.transpileModule(text,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+const moduleUrl=(text)=>`data:text/javascript;base64,${Buffer.from(text).toString("base64")}`;
+const {parseServerIdleStatus,readServerIdleSession}=await import(moduleUrl(compile(read("../lib/server-idle-session.ts"))));
+const now="2026-10-05T00:00:00Z", expires="2026-10-05T01:00:00Z";
+assert.equal(parseServerIdleStatus({valid:true,serverNow:now,expiresAt:expires}).mode,"ready");
+for(const data of [null,{},[],{valid:"true"},{valid:true,serverNow:now,expiresAt:now},{valid:true,serverNow:now,expiresAt:"2026-10-05T02:00:00Z"},{valid:true,serverNow:"invalid",expiresAt:expires}])assert.equal(parseServerIdleStatus(data).mode,"unavailable");
+assert.equal(parseServerIdleStatus({valid:false}).mode,"invalid");
+let rpcName="";
+const client={rpc:async(name)=>{rpcName=name;return {data:{valid:true,serverNow:now,expiresAt:expires},error:null};}};
+await readServerIdleSession(client);assert.equal(rpcName,"get_staff_idle_status");
+await readServerIdleSession(client,true);assert.equal(rpcName,"touch_staff_session_activity");
+assert.equal((await readServerIdleSession({rpc:async()=>({data:null,error:{code:"PGRST202",message:"get_staff_idle_status missing"}})})).mode,"legacy");
+assert.equal((await readServerIdleSession({rpc:async()=>({data:null,error:{code:"PGRST202",message:"other missing"}})})).mode,"unavailable");
+assert.equal((await readServerIdleSession({rpc:async()=>{throw Error("network");}})).mode,"unavailable");
+const route=compile(read("../app/api/session/activity/route.ts")).replace(/^import .*;\r?$/gm,"").replace(/export /g,"");
+let denial=null, mode={mode:"ready",serverNow:now,expiresAt:expires}, calls=[];
+const api=new Function("requireApiStaff","createClient","readServerIdleSession","privateDocumentResponse",`${route};return {GET,POST};`)(async()=>denial,async()=>client,async(_client,activity)=>{calls.push(activity);return mode;},response=>{response.headers.set("Cache-Control","private, no-store");return response;});
+const request=(method,origin)=>new Request("https://example.com/api/session/activity",{method,headers:origin?{origin}: {}});
+assert.equal((await api.GET(request("GET"))).status,200);assert.deepEqual(calls,[false]);
+assert.equal((await api.POST(request("POST","https://example.com"))).status,200);assert.deepEqual(calls,[false,true]);
+for(const origin of [null,"https://other.com"]){assert.equal((await api.POST(request("POST",origin))).status,403);}assert.equal(calls.length,2);
+for(const [value,status] of [[{mode:"invalid"},401],[{mode:"unavailable"},503],[{mode:"legacy"},200]]){mode=value;const response=await api.GET(request("GET"));assert.equal(response.status,status);assert.match(response.headers.get("Cache-Control"),/no-store/);}
+denial=Response.json({error:"inactive"},{status:403});const count=calls.length;assert.equal((await api.GET(request("GET"))).status,403);assert.equal(calls.length,count);
+console.log("서버 미사용 세션: 응답 검증·조회/활동 RPC 분리·동일 출처·권한/만료/장애 거절·SQL 미적용 구분 통과 (인증/DB 모의)");

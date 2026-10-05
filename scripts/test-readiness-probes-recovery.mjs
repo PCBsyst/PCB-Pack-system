@@ -6,7 +6,8 @@ const url = (code) => `data:text/javascript;base64,${Buffer.from(code).toString(
 const compile = (code) => ts.transpileModule(code, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const module = compile(read("../lib/operations-readiness.ts")).replace("@/lib/mfa-requirement", url(compile(read("../lib/mfa-requirement.ts")))).replace("@/lib/operation-mode", url(compile(read("../lib/operation-mode.ts"))));
 const linked = module.replace("@/lib/staff-session", url(compile(read("../lib/staff-session.ts"))));
-const { probeOperationsReadiness, databaseReadinessChecks, policyReadinessChecks } = await import(url(linked));
+const idleLinked = linked.replace("@/lib/server-idle-session", url(compile(read("../lib/server-idle-session.ts"))));
+const { probeOperationsReadiness, databaseReadinessChecks, policyReadinessChecks } = await import(url(idleLinked));
 const calls = [];
 let failTable = "", failPolicy = "";
 const client = {
@@ -14,9 +15,9 @@ const client = {
   async rpc(name) { calls.push({ rpc: name }); return name === failPolicy ? { data: null, error: { code: "PGRST202", message: name } } : { error: null, data: name === "has_live_staff_session" ? true : name === "get_mfa_policy" ? { required: false, updatedAt: "2026-10-05T01:00:00Z" } : { active: true, paused: ["DOCUMENT_GENERATION"], endsOn: "2026-10-10", updatedAt: "2026-10-05T01:00:00Z" } }; },
 };
 let results = await probeOperationsReadiness(client);
-assert.equal(results.length, 13);
+assert.equal(results.length, 14);
 assert.ok(calls.filter((call) => call.table).every((call) => call.count === 0));
-assert.deepEqual(calls.filter((call) => call.rpc).map((call) => call.rpc).sort(), ["get_mfa_policy", "get_operation_mode", "has_live_staff_session"]);
+assert.deepEqual(calls.filter((call) => call.rpc).map((call) => call.rpc).sort(), ["get_mfa_policy", "get_operation_mode", "get_staff_idle_status", "has_live_staff_session"]);
 assert.match(results.find((item) => item.id === "mfaPolicy").detail, /OFF/);
 assert.match(results.find((item) => item.id === "operationMode").detail, /중지 1개/);
 failTable = "application_workspaces"; failPolicy = "get_mfa_policy";

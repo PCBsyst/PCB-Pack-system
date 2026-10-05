@@ -1,4 +1,4 @@
-param([switch]$FullWorkflow,[switch]$Permissions,[switch]$Sessions)
+param([switch]$FullWorkflow,[switch]$Permissions,[switch]$Sessions,[switch]$Idle)
 $ErrorActionPreference='Stop'
 $taskDocker=Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Programs/DockerDesktop/resources/bin/docker.exe'
 $taskContainer='pcb-area-test-'+[Guid]::NewGuid().ToString('N').Substring(0,12)
@@ -6,6 +6,7 @@ $taskSecret=[Guid]::NewGuid().ToString('N')
 $taskPriorPassword=[Environment]::GetEnvironmentVariable('POSTGRES_PASSWORD','Process')
 $taskCreated=$false
 try {
+ if($Idle){$Sessions=$true}
  if($Sessions){
   $Permissions=$true
   & $taskDocker image inspect public.ecr.aws/supabase/postgres:17.11.0.002 2>$null | Out-Null
@@ -35,6 +36,11 @@ try {
    $taskPermissionSql+="`n"+(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/sessions-auth.sql') -Raw)
    $taskPermissionSql+="`n"+$taskSessionMigration+"`n"+$taskSessionMigration
    $taskPermissionSql+="`n"+(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/sessions-checks.sql') -Raw)
+   if($Idle){
+    $taskIdleMigration=Get-Content -LiteralPath (Join-Path $PSScriptRoot '../supabase/migrations/202610050032_server_idle_sessions.sql') -Raw
+    $taskPermissionSql+="`n"+$taskIdleMigration+"`n"+$taskIdleMigration
+    $taskPermissionSql+="`n"+(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/idle-session-checks.sql') -Raw)
+   }
   }
   $taskPermissionSql+="`n"+(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'sql/operational-inventory.sql') -Raw)
   $taskPermissionSql | & $taskDocker exec -i $taskContainer psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1

@@ -6,7 +6,8 @@ const moduleUrl = (code) => `data:text/javascript;base64,${Buffer.from(code).toS
 const compile = (text) => ts.transpileModule(text, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const compiled = compile(source).replace("@/lib/mfa-requirement", moduleUrl(compile(fs.readFileSync(new URL("../lib/mfa-requirement.ts", import.meta.url), "utf8")))).replace("@/lib/operation-mode", moduleUrl(compile(fs.readFileSync(new URL("../lib/operation-mode.ts", import.meta.url), "utf8"))));
 const sessionLinked = compiled.replace("@/lib/staff-session", moduleUrl(compile(fs.readFileSync(new URL("../lib/staff-session.ts", import.meta.url), "utf8"))));
-const { classifyReadinessError: classify, readinessSummary, databaseReadinessChecks, manualReadinessChecks } = await import(moduleUrl(sessionLinked));
+const idleLinked = sessionLinked.replace("@/lib/server-idle-session", moduleUrl(compile(fs.readFileSync(new URL("../lib/server-idle-session.ts", import.meta.url), "utf8"))));
+const { classifyReadinessError: classify, readinessSummary, databaseReadinessChecks, manualReadinessChecks } = await import(moduleUrl(idleLinked));
 assert.equal(classify(null), "READABLE");
 for (const code of ["42P01", "42703", "PGRST205", "PGRST204"]) assert.equal(classify({ code }), "PENDING");
 assert.equal(classify({ code: "42501" }), "ERROR");

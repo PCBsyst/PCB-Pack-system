@@ -55,6 +55,6 @@ export function OperationsReadiness() {
     })}</div>
     <h4 className="mt-5 border-t pt-4 text-sm font-semibold">별도 구축·실행 검증이 남은 항목</h4>
     <div className="mt-3 grid gap-3 md:grid-cols-2">{manualReadinessChecks.map((item) => <div key={item.label} className="rounded-lg border bg-slate-50 p-3"><p className="text-sm font-medium">{item.label} · 미검증</p><p className="mt-2 text-xs leading-5 text-slate-600">{item.detail}</p></div>)}</div>
-    <p className="mt-4 text-xs text-slate-500">SQL 019~031 적용 여부는 별도 확인이 필요합니다. 이 화면은 구조·MFA·운영 모드·현재 세션 읽기만 수행합니다. 번호 분리 제약·이관 함수 내용·RLS 정책은 이 결과만으로 확인되지 않습니다. SQL 실행·고객 정보 수정·자동백업은 수행하지 않습니다.</p>
+    <p className="mt-4 text-xs text-slate-500">SQL 019~032 적용 여부는 별도 확인이 필요합니다. 이 화면은 구조·MFA·운영 모드·현재 세션·미사용 기한 읽기만 수행합니다. 번호 분리 제약·이관 함수 내용·RLS 정책은 이 결과만으로 확인되지 않습니다. SQL 실행·고객 정보 수정·자동백업은 수행하지 않습니다.</p>
   </section>;
 }

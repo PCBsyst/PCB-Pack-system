@@ -11,7 +11,9 @@ with objects(label,kind,name) as (values
  ('026 MFA 설정','function','public.get_mfa_policy()'),
  ('027 운영 모드','function','public.get_operation_mode()'),
  ('028 번호 분리','function','public.allocate_management_numbers_for_area(text,integer,integer)'),
- ('031 종료 세션 확인','function','public.has_live_staff_session()')
+ ('031 종료 세션 확인','function','public.has_live_staff_session()'),
+ ('032 미사용 기한','function','public.get_staff_idle_status()'),
+ ('032 활동 기록','function','public.touch_staff_session_activity()')
 )
 select label,case when kind='table' then to_regclass(name) is not null else to_regprocedure(name) is not null end as object_present
 from objects order by label;
@@ -20,7 +22,8 @@ with markers(label,signature,marker) as (values
  ('029 상태 변환','public.import_legacy_certification_row(jsonb)','::public.application_status'),
  ('030 동시 이관','public.import_legacy_certification_row(jsonb)','legacy-import-identity'),
  ('030 배치 보호','public.import_legacy_certification_row_v3(uuid,integer,jsonb)','Import source row already recorded'),
- ('031 RLS 세션 연결','public.has_staff_mfa_session()','has_live_staff_session')
+ ('031 RLS 세션 연결','public.has_staff_mfa_session()','has_live_staff_session'),
+ ('032 미사용 연결','public.has_live_staff_session()','has_staff_idle_session')
 )
 select label,case when to_regprocedure(signature) is null then false else strpos(pg_get_functiondef(to_regprocedure(signature)),marker)>0 end as code_marker_present
 from markers order by label;

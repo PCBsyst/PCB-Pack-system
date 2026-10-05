@@ -24,11 +24,18 @@ try {
   $taskFixture=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/legacy-workflow.sql') -Raw
   $taskOriginal=Get-Content -LiteralPath (Join-Path $PSScriptRoot '../supabase/migrations/202610030023_customer_reason_and_evidence_protection.sql') -Raw
   $taskChecks=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/legacy-workflow-checks.sql') -Raw
-  $taskFixture+="`n"+$taskOriginal
+  $taskBatch=Get-Content -LiteralPath (Join-Path $PSScriptRoot '../supabase/migrations/202609300013_legacy_import_audit.sql') -Raw
+  $taskVerify=Get-Content -LiteralPath (Join-Path $PSScriptRoot '../supabase/migrations/202609300014_verify_legacy_import_batches.sql') -Raw
+  $taskFixture+="`n"+$taskOriginal+"`n"+$taskBatch+"`n"+$taskVerify
  }
  $taskFix=''
  if($FullWorkflow){$taskFix=Get-Content -LiteralPath (Join-Path $PSScriptRoot '../supabase/migrations/202610050029_import_status_casts.sql') -Raw}
  $taskSql=$taskFixture+"`n"+$taskMigration+"`n"+$taskMigration+"`n"+$taskFix+"`n"+$taskFix+"`n"+$taskChecks
+ if($FullWorkflow){
+  $taskConcurrentFix=Get-Content -LiteralPath (Join-Path $PSScriptRoot '../supabase/migrations/202610050030_import_concurrency_audit.sql') -Raw
+  $taskAuditChecks=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/legacy-audit-checks.sql') -Raw
+  $taskSql+="`n"+$taskConcurrentFix+"`n"+$taskConcurrentFix+"`n"+$taskAuditChecks
+ }
  $taskSql | & $taskDocker exec -i $taskContainer psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1
  if($LASTEXITCODE -ne 0){throw '관리번호 SQL 검증 실패'}
  if($FullWorkflow){
@@ -39,15 +46,18 @@ try {
     $taskInfo=[Diagnostics.ProcessStartInfo]::new()
     $taskInfo.FileName=$taskDocker;$taskInfo.UseShellExecute=$false;$taskInfo.CreateNoWindow=$true
     $taskInfo.RedirectStandardOutput=$true;$taskInfo.RedirectStandardError=$true
-    foreach($arg in @('exec',$taskContainer,'psql','-U','supabase_admin','-d','postgres','-v','ON_ERROR_STOP=1','-c',"insert into public.concurrent_allocations values('$taskArea',public.allocate_management_numbers_for_area('$taskArea',1));")){$taskInfo.ArgumentList.Add($arg)}
+    $taskQuery="insert into public.concurrent_allocations values('$taskArea',public.allocate_management_numbers_for_area('$taskArea',1)); select public.import_legacy_certification_row('{`"candidateName`":`"동시 이관 후보자`",`"candidateEmail`":`"parallel@example.invalid`",`"businessArea`":`"$taskArea`",`"jobNo`":`"PARALLEL-$i`",`"standard`":`"TEST`",`"grade`":`"TEST`",`"receivedAt`":`"2026-01-01`"}');"
+    # Match production's independent reservation RPC; release area locks before importing.
+    $taskQuery='begin; '+$taskQuery.Replace('; select public.import','; commit; select public.import')
+    foreach($arg in @('exec',$taskContainer,'psql','-U','supabase_admin','-d','postgres','-v','ON_ERROR_STOP=1','-c',$taskQuery)){$taskInfo.ArgumentList.Add($arg)}
     $taskProcess=[Diagnostics.Process]::new();$taskProcess.StartInfo=$taskInfo;[void]$taskProcess.Start()
     $taskProcesses+=@{process=$taskProcess;output=$taskProcess.StandardOutput.ReadToEndAsync();error=$taskProcess.StandardError.ReadToEndAsync()}
    }
    foreach($entry in $taskProcesses){if(-not $entry.process.WaitForExit(30000)){throw '동시 검사 시간 초과'};if($entry.process.ExitCode -ne 0){throw ('동시 검증 실패: '+$entry.error.GetAwaiter().GetResult())}}
-   "do `$`$begin if (select count(*) from public.concurrent_allocations)<>12 or exists(select area from public.concurrent_allocations group by area having count(*)<>6 or max(number)-min(number)<>5) then raise exception 'Concurrent allocation mismatch';end if;end;`$`$;" | & $taskDocker exec -i $taskContainer psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1
+   "do `$`$begin if (select count(*) from public.concurrent_allocations)<>12 or exists(select area from public.concurrent_allocations group by area having count(*)<>6) then raise exception 'Concurrent allocation mismatch';end if; if (select count(*) from public.candidates where email='parallel@example.invalid')<>1 or (select count(distinct candidate_id) from public.jobs where job_no like 'PARALLEL-%')<>1 or (select count(*) from public.jobs where job_no like 'PARALLEL-%')<>12 then raise exception 'Concurrent candidate duplication';end if;end;`$`$;" | & $taskDocker exec -i $taskContainer psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1
    if($LASTEXITCODE -ne 0){throw '동시 번호 할당 결과 오류'}
   } finally {foreach($entry in $taskProcesses){if(-not $entry.process.HasExited){$entry.process.Kill();$entry.process.WaitForExit()};$entry.process.Dispose()}}
-  Write-Output '실제 SQL 023/028/029 이관 함수 및 12개 동시 번호 할당 검사 통과. 인증/RLS/전체 운영 스키마와 동시 동일인 이관은 별도입니다.'
+  Write-Output '실제 이관 함수·배치 감사기록·12개 동시 번호 할당 및 동일 후보자 이관 검사 통과. 실제 인증/RLS/전체 운영 스키마 검증은 별도입니다.'
  }
  Write-Output '관리번호 SQL 가상 DB 검사 통과: 분야 분리·중복 차단·예약 유지·재실행·권한 검사. 운영 DB 및 전체 이관 흐름 검증은 별도입니다.'
 } finally {

@@ -16,3 +16,5 @@ create table public.certification_records(id uuid primary key default gen_random
 create table public.number_allocations(allocation_key text primary key,last_value integer);
 create table public.audit_logs(id integer,detail text);
 create table public.concurrent_allocations(area text,number integer,unique(area,number));
+create table public.profiles(id uuid primary key,display_name text);
+insert into public.profiles values('11111111-1111-1111-1111-111111111111','가상 관리자');

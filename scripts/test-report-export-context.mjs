@@ -18,10 +18,11 @@ const monthly = fs.readFileSync(new URL("../components/monthly-operations-report
 const exportBody = compile(monthly.slice(monthly.indexOf("  const exportCsv ="), monthly.indexOf("  const printReport =")));
 let output;
 const row = { receivedAt: "2026-09-01", issueDate: "2026-10-02", businessArea: "K_BEAUTY", candidateName: "가상후보", partner: filters.partner, applicationType: "RENEWAL", jobNo: "SMP260001", standard: "SMP", grade: "전문가", certificationNo: "TEST", certificationState: "SUSPENDED" };
-const run = (loading, error) => new Function("loading", "error", "filtered", "areaLabel", "reportApplicationTypeLabel", "certificationLabel", "reportExportMetadata", "reportFilters", "month", "dateBasis", "downloadCsv", `${exportBody};return exportCsv;`)(loading, error, [row], (value) => reportGroupLabel(value, "businessArea"), reportApplicationTypeLabel, helpers.reportStateLabel, reportExportMetadata, filters, "2026-10", "ISSUED", (rows) => { output = rows; })();
+const run = (loading, error, confirm = true) => new Function("loading", "error", "filtered", "areaLabel", "reportApplicationTypeLabel", "certificationLabel", "reportExportMetadata", "reportFilters", "month", "dateBasis", "downloadCsv", "window", `${exportBody};return exportCsv;`)(loading, error, [row], (value) => reportGroupLabel(value, "businessArea"), reportApplicationTypeLabel, helpers.reportStateLabel, reportExportMetadata, filters, "2026-10", "ISSUED", (rows) => { output = rows; }, { confirm: () => confirm })();
 run(false, ""); assert.ok(output.some((item) => item[0] === "현재 인증상태 필터" && item[1] === "인증 정지"));
 assert.equal(output.at(-1)[5], "갱신"); assert.equal(output.at(-1)[2], "K-Beauty");
 output = undefined; run(true, ""); assert.equal(output, undefined); run(false, "error"); assert.equal(output, undefined);
+run(false, "", false); assert.equal(output, undefined, "상세 CSV 확인 취소 시 파일 미생성");
 assert.match(monthly, /setCertificationState\("전체"\)/); assert.match(monthly, /filters=\{reportFilters\}/);
 for (const file of ["report-business-analytics", "report-certification-events"]) {
   const component = fs.readFileSync(new URL(`../components/${file}.tsx`, import.meta.url), "utf8");

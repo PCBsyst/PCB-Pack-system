@@ -9,6 +9,7 @@ import { hasEnvVars } from "@/lib/utils";
 import { ReportBusinessAnalytics } from "@/components/report-business-analytics";
 import { matchesReportFilters, matchesReportMonth } from "@/lib/report-filters";
 import { reportApplicationTypeLabel, reportExportMetadata, serializeReportCsv } from "@/lib/report-export";
+import { buildMonthlyReportPrintHtml } from "@/lib/monthly-report-print";
 
 type CandidateRelation = { id: string; name: string };
 type CertificationRelation = { certification_no: string; issue_date: string; state: string; history_state: string };
@@ -35,6 +36,8 @@ export function MonthlyOperationsReport() {
   const [loading, setLoading] = useState(Boolean(hasEnvVars));
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
+  const [includePrintDetails, setIncludePrintDetails] = useState(false);
+  const [exportNotice, setExportNotice] = useState("");
 
   useEffect(() => {
     setRows([]); setError(""); setLoading(Boolean(hasEnvVars));
@@ -74,14 +77,31 @@ export function MonthlyOperationsReport() {
   const reset = () => { setMonth(currentMonth); setDateBasis("RECEIVED"); setArea("전체"); setStandard("전체"); setPartner("전체"); setGrade("전체"); setApplicationType("전체"); setCertificationState("전체"); };
   const exportCsv = () => {
     if (loading || error || !filtered.length) return;
+    if (!window.confirm(`후보자명·파트너사·인증번호 등이 포함된 ${filtered.length}개 Job의 상세 CSV를 내려받습니다. 파일을 안전하게 보관하고 권한 없는 사람에게 공유하지 마세요. 계속하시겠습니까?`)) return;
     const header = ["접수일", "인증발행일", "분야", "후보자", "파트너사", "신청구분", "Job No.", "표준", "등급", "인증번호", "현재 인증상태"];
     const body = filtered.map((row) => [row.receivedAt, row.issueDate, areaLabel(row.businessArea), row.candidateName, row.partner, reportApplicationTypeLabel(row.applicationType), row.jobNo, row.standard, row.grade, row.certificationNo, certificationLabel(row.certificationState)]);
     const metadata = reportExportMetadata("월간 업무보고", month, dateBasis === "RECEIVED" ? "접수일" : "인증발행일", reportFilters);
     downloadCsv([...metadata, [], header, ...body], `월간업무보고_${month}_${dateBasis === "RECEIVED" ? "접수" : "발행"}.csv`);
   };
-  const printReport = () => { const popup = window.open("", "_blank"); if (!popup) return; const escape = (value: unknown) => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;"); popup.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>월간 업무보고</title><style>@page{size:A4 landscape;margin:12mm}body{font-family:"Malgun Gothic",sans-serif;color:#172033}h1{font-size:20px}p{font-size:11px}.cards{display:flex;gap:8px;margin:14px 0}.card{border:1px solid #aaa;padding:10px;min-width:110px}.card b{font-size:18px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #777;padding:6px;text-align:left}th{background:#eee}</style></head><body><h1>${escape(month)} 월간 업무보고</h1><p>기준: ${dateBasis === "RECEIVED" ? "접수일" : "인증발행일"} · 출력일 ${escape(new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }))}</p><div class="cards"><div class="card">전체<br><b>${summary.total}</b>건</div><div class="card">인증발행<br><b>${summary.issued}</b>건</div><div class="card">인증유효<br><b>${summary.active}</b>건</div><div class="card">정지<br><b>${summary.suspended}</b>건</div><div class="card">철회<br><b>${summary.withdrawn}</b>건</div></div><table><thead><tr><th>분야</th><th>표준</th><th>대상</th><th>인증발행</th><th>유효</th><th>정지</th><th>철회</th></tr></thead><tbody>${grouped.map((item) => `<tr><td>${escape(areaLabel(item.area))}</td><td>${escape(item.standard)}</td><td>${item.received}</td><td>${item.issued}</td><td>${item.active}</td><td>${item.suspended}</td><td>${item.withdrawn}</td></tr>`).join("")}</tbody></table><script>window.onload=()=>window.print();<\/script></body></html>`); popup.document.close(); };
+  const exportGroupedCsv = () => {
+    if (loading || error || !filtered.length) return;
+    const metadata = reportExportMetadata("월간 업무보고 표준별 집계", month, dateBasis === "RECEIVED" ? "접수일" : "인증발행일", reportFilters);
+    const body = grouped.map((row) => [areaLabel(row.area), row.standard, row.received, row.issued, row.active, row.suspended, row.withdrawn]);
+    downloadCsv([...metadata, ["포함 범위", "개별 후보자명·Job 번호·인증번호 제외 (파트너 필터 등 조회 조건은 포함)"], [], ["분야", "표준", "대상 Job", "인증발행", "유지", "정지", "철회"], ...body], `월간업무집계_${month}.csv`);
+  };
+  const printReport = () => {
+    setExportNotice("");
+    if (loading || error || !filtered.length) return;
+    if (includePrintDetails && !window.confirm("후보자명·파트너사·인증번호를 포함해 출력합니다. 출력물을 안전하게 보관하시겠습니까?")) return;
+    const html = buildMonthlyReportPrintHtml({ month, metadata: reportExportMetadata("월간 업무보고", month, dateBasis === "RECEIVED" ? "접수일" : "인증발행일", reportFilters), summary, groups: grouped, details: includePrintDetails ? filtered : undefined });
+    const popup = window.open("", "_blank");
+    if (!popup) { setExportNotice("인쇄 창이 차단됐습니다. 이 사이트의 팝업을 허용한 뒤 다시 시도해 주세요."); return; }
+    try { popup.document.write(html); popup.document.close(); }
+    catch { popup.close(); setExportNotice("인쇄 화면을 열지 못했습니다. 다시 시도해 주세요."); }
+  };
 
   return <div className="space-y-4">
+    <section className="rounded-lg border bg-card p-4 text-sm"><p>상세 CSV와 상세 출력에는 고객정보가 포함됩니다. 개별 고객 목록이 필요하지 않으면 표준별 집계 CSV 또는 기본 집계 인쇄를 이용하세요. 브라우저에서 생성하는 보고서의 다운로드 이력은 아직 서버 접근이력에 기록되지 않습니다.</p><div className="mt-3 flex flex-wrap items-center gap-3"><Button type="button" variant="outline" disabled={loading || Boolean(error) || !filtered.length} onClick={exportGroupedCsv}><Download />표준별 집계 CSV</Button><label className="flex items-center gap-2"><input type="checkbox" checked={includePrintDetails} onChange={(event) => setIncludePrintDetails(event.target.checked)}/>인쇄에 고객 상세 포함 (기본 제외)</label></div>{exportNotice && <p role="status" className="mt-2 text-amber-700">{exportNotice}</p>}</section>
     <div className="flex justify-end"><Button type="button" variant="outline" disabled={loading || !hasEnvVars} onClick={() => { setRows([]); setError(""); setLoading(true); setRevision((value) => value + 1); }}><RotateCcw />업무보고 자료 다시 조회</Button></div>
     <section className="rounded-lg border bg-white p-4 shadow-sm"><h2 className="mb-3 text-sm font-semibold">보고서 조회 조건</h2><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <input type="month" className={inputClass} value={month} onChange={(event) => setMonth(event.target.value)} />

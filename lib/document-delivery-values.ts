@@ -19,16 +19,16 @@ export function documentDeliveryValues(context: PackageContext, jobId: string, l
     paymentConfirmedAt: context.paymentConfirmedAt || "-",
   };
   const labels = english
-    ? ["Received", "Reviewed", "Verified", "Panel decision", "Final approval", "Draft issued", "Certificate issued"]
-    : ["신청 접수일", "서류 검토일", "검증일", "심의일", "최종 승인일", "초안 발행일", "인증 발행일"];
-  const chronology = [dateValues.receivedAt, dateValues.reviewedAt, dateValues.verifiedAt, dateValues.decisionDate, dateValues.finalApprovalDate, dateValues.draftIssuedAt, dateValues.issueDate]
+    ? ["Received", "Reviewed", "Verified", "Panel decision", "Final approval", "Draft issued", "Certificate issued", "Certificate expiry"]
+    : ["신청 접수일", "서류 검토일", "검증일", "심의일", "최종 승인일", "초안 발행일", "인증 발행일", "인증 만료일"];
+  const chronology = [dateValues.receivedAt, dateValues.reviewedAt, dateValues.verifiedAt, dateValues.decisionDate, dateValues.finalApprovalDate, dateValues.draftIssuedAt, dateValues.issueDate, dateValues.expiryDate]
     .map((value, index) => `${labels[index]}: ${value}`).join(" / ");
   return {
     ...dateValues,
     chronology,
-    invoiceNote: context.invoiceNo
-      ? english ? `Invoice: ${context.invoiceNo} / Issued: ${dateValues.invoiceIssuedAt} / Paid: ${dateValues.paymentConfirmedAt}`
-        : `인보이스: ${context.invoiceNo} / 발행일: ${dateValues.invoiceIssuedAt} / 입금일: ${dateValues.paymentConfirmedAt}` : "",
+    invoiceNote: context.invoiceNo || context.invoiceIssuedAt || context.paymentConfirmedAt
+      ? english ? `Invoice: ${context.invoiceNo || "-"} / Issued: ${dateValues.invoiceIssuedAt} / Paid: ${dateValues.paymentConfirmedAt}`
+        : `인보이스: ${context.invoiceNo || "-"} / 발행일: ${dateValues.invoiceIssuedAt} / 입금일: ${dateValues.paymentConfirmedAt}` : "",
     dispatchNote: certificate?.originalSentAt || certificate?.trackingNumber
       ? english ? `Original dispatched: ${dateValues.originalSentAt} / Tracking No.: ${dateValues.trackingNumber}`
         : `원본 송부일: ${dateValues.originalSentAt} / 운송장 번호: ${dateValues.trackingNumber}` : "",

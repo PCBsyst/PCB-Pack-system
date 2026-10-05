@@ -71,7 +71,7 @@ for (const [route, template] of [
       assert.ok(xml.includes(language === "KR" ? "국문심의" : "Panel approved"));
       assert.ok(xml.includes(language === "KR" ? "국문최종승인" : "Final approval confirmed"), "기본 양식에도 최종 승인 의견이 들어가야 합니다.");
     }
-    if (route === "delivery-confirmation") for (const date of ["2026-09-02", "2026-09-04", "2026-09-08", "2026-09-09"]) assert.ok(xml.includes(date));
+    if (route === "delivery-confirmation") for (const date of ["2026-09-02", "2026-09-04", "2026-09-08", "2026-09-09", "2029-09-08"]) assert.ok(xml.includes(date));
   }
   // 권한·저장값 대조·양식·접근이력 검사에 실패하면 파일을 반환하지 않습니다.
   for (const [dependency, stub, status] of [
@@ -118,7 +118,7 @@ const verifyCode = compile("../lib/document-download.ts").replace("@/lib/templat
 const { verifiedDocxBlob } = await import(moduleUrl(verifyCode));
 const draftBlob = await verifiedDocxBlob(draftResponse);
 const draftBody = new PizZip(await draftBlob.arrayBuffer()).file("word/document.xml").asText();
-for (const value of ["검토용 초안", "출력 배치 미검증", "정식 패키지 완료에 포함되지 않음", "가상후보", "가상 기록", "2026-09-02", "2026-09-04", "2026-09-09", "시험통보서"]) assert.ok(draftBody.includes(value), value);
+for (const value of ["검토용 초안", "출력 배치 미검증", "정식 패키지 완료에 포함되지 않음", "가상후보", "가상 기록", "2026-09-02", "2026-09-04", "2026-09-09", "2029-09-08", "시험통보서"]) assert.ok(draftBody.includes(value), value);
 assert.ok(!draftBody.includes("{{"));
 assert.equal((await draftPOST(request("EN"))).status, 400);
 for (const [dependency, stub, status] of [

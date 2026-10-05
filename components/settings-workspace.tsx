@@ -1,5 +1,6 @@
 "use client";
 import { MfaPolicySettings } from "@/components/mfa-policy-settings";
+import { OperationModeSettings } from "@/components/operation-mode-settings";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, Building2, CalendarDays, FileArchive, Monitor, ShieldCheck, UserCog, UsersRound } from "lucide-react";
@@ -51,6 +52,7 @@ export function SettingsWorkspace() {
     </div>
     <div hidden={category !== "documents"} role="tabpanel" id="settings-panel-documents" aria-labelledby="settings-tab-documents"><DocumentTemplateManager/></div>
     <div hidden={category !== "security"} role="tabpanel" id="settings-panel-security" aria-labelledby="settings-tab-security" className="space-y-4">
+      <OperationModeSettings />
       <FeatureControlSettings />
       <MfaPolicySettings />
       {category === "security" && <OperationsReadiness />}

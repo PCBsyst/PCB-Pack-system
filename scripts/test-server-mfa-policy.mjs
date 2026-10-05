@@ -16,7 +16,7 @@ for (const file of ['../lib/supabase/proxy.ts','../lib/supabase/access.ts','../l
   assert.match(fs.readFileSync(new URL(file,import.meta.url),'utf8'), /await checkServerMfa/);
 }
 for (const file of ['../app/api/staff/invite/route.ts','../app/api/staff/identity/route.ts']) {
-  assert.match(fs.readFileSync(new URL(file,import.meta.url),'utf8'), /await requireApiStaff\(\)/);
+  assert.match(fs.readFileSync(new URL(file,import.meta.url),'utf8'), /await requireApiStaff\(/);
 }
 assert.doesNotMatch(fs.readFileSync(new URL('../app/auth/mfa/page.tsx',import.meta.url),'utf8'), /AppShell/);
 const helperSource = fs.readFileSync(new URL('../lib/server/mfa-access.ts',import.meta.url),'utf8');

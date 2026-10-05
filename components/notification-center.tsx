@@ -5,6 +5,8 @@ import { AlertTriangle, Bell, CheckCircle2, Clock3, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
+import { useOperationMode } from "@/components/use-operation-mode";
+import { isOperationPaused } from "@/lib/operation-mode";
 import { missingWorkflowItems } from "@/lib/workflow-completeness";
 import type { PrototypeApplicationRecord, PrototypeWorkflowSnapshot } from "@/lib/prototype-storage";
 
@@ -33,13 +35,15 @@ const stageLabels: Record<string, string> = {
 };
 
 export function NotificationCenter() {
+  const operationMode = useOperationMode();
+  const paused = isOperationPaused(operationMode, "NOTIFICATIONS");
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [dismissed, setDismissed] = useState<string[]>([]);
 
   useEffect(() => {
     try { setDismissed(JSON.parse(window.localStorage.getItem("dismissed-notifications") ?? "[]")); } catch { setDismissed([]); }
-    if (!hasEnvVars) return;
+    if (!hasEnvVars || paused) return;
     const supabase = createClient();
     void supabase.from("applications").select("id, application_no, received_at, created_at, status, business_area, accreditation_scheme, accreditation_track, accreditation_hidden, application_type, management_no_from, partner_name_snapshot, candidates(name), jobs(id, job_no, management_no, standard, grade), application_workspaces(state)").order("created_at", { ascending: false }).limit(30).then(({ data }) => {
       if (!data) return;
@@ -56,7 +60,7 @@ export function NotificationCenter() {
         });
       }));
     });
-  }, []);
+  }, [paused]);
 
   const visible = useMemo(() => items.filter((item) => !item.completed || !dismissed.includes(item.id)), [dismissed, items]);
   const activeCount = items.filter((item) => !item.completed).length;
@@ -66,6 +70,7 @@ export function NotificationCenter() {
     window.localStorage.setItem("dismissed-notifications", JSON.stringify(next));
   };
 
+  if (paused) return <span className="text-xs text-muted-foreground">업무 알림 중지</span>;
   return <div className="relative">
     <button className="relative rounded-md p-2 text-slate-500 hover:bg-slate-100" aria-label={`알림 ${activeCount}건`} onClick={() => setOpen((value) => !value)}>
       <Bell className="h-5 w-5" />

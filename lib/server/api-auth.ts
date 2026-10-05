@@ -5,9 +5,10 @@ import { createClient } from "@/lib/supabase/server";
 import { currentAuthEnvironment } from "@/lib/supabase/auth-environment";
 import { evaluateFeatureControls, type FeatureControl, type OptionalFeature } from "@/lib/feature-controls";
 import { checkServerMfa } from "@/lib/server/mfa-access";
+import { readOperationMode, isOperationPaused, type OperationOption } from "@/lib/operation-mode";
 
 /** API routes remain usable in prototype mode, but require an active staff session in Supabase mode. */
-export async function requireApiStaff(requiredFeatures: OptionalFeature[] = []) {
+export async function requireApiStaff(requiredFeatures: OptionalFeature[] = [], operationFeature?: OperationOption) {
   const environment = currentAuthEnvironment();
   if (environment.blocked) return NextResponse.json({ error: "인증 서버 설정이 필요합니다." }, { status: 503 });
   if (environment.localPrototype) return null;
@@ -25,6 +26,11 @@ export async function requireApiStaff(requiredFeatures: OptionalFeature[] = []) 
     const policy = evaluateFeatureControls(requiredFeatures, data as FeatureControl[] | null, error);
     if (policy === "unavailable") return NextResponse.json({ error: "기능 설정을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요." }, { status: 503 });
     if (policy === "disabled") return NextResponse.json({ error: "최고관리자가 이 기능을 일시 중지했습니다. 기존 업무기록은 유지됩니다." }, { status: 403 });
+  }
+  if (requiredFeatures.length || operationFeature) {
+    const mode = await readOperationMode(supabase);
+    if (mode.mode === "unavailable") return NextResponse.json({ error: "운영 모드 설정을 확인하지 못했습니다. 다시 시도해 주세요." }, { status: 503, headers: { "Cache-Control": "no-store" } });
+    if ([...requiredFeatures, ...(operationFeature ? [operationFeature] : [])].some(key => isOperationPaused(mode, key))) return NextResponse.json({ error: "이관·테스트 운영 모드에서 이 기능을 일시 중지했습니다. 최고관리자에게 문의해 주세요." }, { status: 403, headers: { "Cache-Control": "no-store" } });
   }
   return null;
 }

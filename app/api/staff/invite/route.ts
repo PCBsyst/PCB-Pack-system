@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireApiStaff } from "@/lib/server/api-auth";
 
 export async function POST(request: Request) {
-  const authError = await requireApiStaff();
+  const authError = await requireApiStaff([], "INVITATION_EMAIL");
   if (authError) return authError;
   const origin = request.headers.get("origin");
   const siteUrl = process.env.APP_SITE_URL;

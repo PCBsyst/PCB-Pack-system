@@ -44,6 +44,9 @@ export function LegacyDataImport() {
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<ImportRow[]>([]);
   const [parseError, setParseError] = useState("");
+  const [previewOnly, setPreviewOnly] = useState(false);
+  const [readingFile, setReadingFile] = useState(false);
+  const readingRef = useRef(false);
   const [filter, setFilter] = useState<"ALL" | "VALID" | "ERROR" | "WARNING">("ALL");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [imported, setImported] = useState<Set<number>>(new Set());
@@ -60,18 +63,22 @@ export function LegacyDataImport() {
 
   const loadFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file) return;
+    if (!file || importing || readingRef.current) return;
+    readingRef.current = true; setReadingFile(true);
+    setPreviewOnly(false);
     setParseError("");
     try {
+      if (file.size > 5_000_000) throw new Error("5MB 이하의 CSV를 사용해 주세요. 큰 자료는 파일을 나누어 검증하세요.");
       const text = await file.text();
       const delimiter = detectDelimiter(text);
       const parsed = parseDelimited(text, delimiter).filter((line) => line.some((cell) => cell.trim()));
       if (parsed.length < 2) throw new Error("제목 행과 최소 1개의 자료 행이 필요합니다.");
+      if (parsed.length > 5001) throw new Error("한 번에 최대 5,000행까지 검증할 수 있습니다.");
       const sourceHeaders = parsed[0].map((value) => value.trim().replace(/^\uFEFF/, ""));
       const mapping = buildHeaderMapping(sourceHeaders);
       const missing = requiredFields.filter((key) => mapping[key] === undefined);
       if (missing.length) throw new Error(`필수 열을 찾지 못했습니다: ${missing.map((key) => displayLabels[key]).join(", ")}`);
-      const normalized = parsed.slice(1).map((line, index) => normalizeRow(line, index + 2, mapping));
+      const normalized = parsed.slice(1).map((line, index) => { const row = normalizeRow(line, index + 2, mapping); if (line.length !== sourceHeaders.length) row.errors.push("제목과 자료의 열 개수가 다름"); return row; });
       applyDuplicateChecks(normalized);
       if (hasEnvVars) {
         setVerifyingDatabase(true);
@@ -80,7 +87,7 @@ export function LegacyDataImport() {
       setFileName(file.name);
       setHeaders(sourceHeaders);
       setRows(normalized);
-      setSelected(new Set(normalized.filter((row) => !row.errors.length).map((row) => row.sourceRow)));
+      setSelected(new Set(normalized.filter((row) => !row.errors.length && !row.warnings.length).map((row) => row.sourceRow)));
       setImported(new Set());
       setImportResult(null);
       setFilter("ALL");
@@ -91,12 +98,30 @@ export function LegacyDataImport() {
       setParseError(error instanceof Error ? error.message : "파일을 읽지 못했습니다.");
     } finally {
       setVerifyingDatabase(false);
+      readingRef.current = false; setReadingFile(false);
     }
   };
 
   const reset = () => {
+    if (importing || readingRef.current) return;
+    setPreviewOnly(false);
     setRows([]); setHeaders([]); setFileName(""); setParseError(""); setFilter("ALL"); setSelected(new Set()); setImported(new Set()); setImportResult(null);
     if (inputRef.current) inputRef.current.value = "";
+  };
+
+  const loadValidationSample = () => {
+    if (importing || readingRef.current) return;
+    const sampleHeaders = ["후보자명", "표준", "등급", "접수일", "Job No.", "발행분야", "인정구분", "생년월일", "인증번호", "인증발행일", "만료일"];
+    const mapping = buildHeaderMapping(sampleHeaders);
+    const sampleRows = [
+      ["샘플 정상", "ISO 9001", "심사원", "2026-10-01", "QMS260901", "ISO", "인정", "1990-01-01", "26130901", "2026-10-02", "2029-10-01"],
+      ["샘플 중복 A", "ISO 14001", "심사원", "2026-10-01", "EMS260902", "ISO", "인정", "1990-01-02", "", "", ""],
+      ["샘플 중복 B", "ISO 14001", "심사원", "2026-10-01", "EMS260902", "ISO", "인정", "1990-01-03", "", "", ""],
+      ["샘플 날짜 오류", "ISO 45001", "심사원", "2026-02-30", "OHSMS260903", "ISO", "비인정", "1990-01-04", "", "", ""],
+      ["샘플 식별 확인", "스킨케어", "전문가", "2026-10-01", "TEST-BEAUTY-01", "K_BEAUTY", "비인정", "", "", "", ""],
+      ["샘플 필수 누락", "", "심사원", "2026-10-01", "QMS260904", "ISO", "인정", "1990-01-05", "", "", ""],
+    ].map((line,index)=>normalizeRow(line,index+2,mapping));
+    applyDuplicateChecks(sampleRows); setPreviewOnly(true); setRows(sampleRows); setHeaders(sampleHeaders); setFileName("검증용 가상 샘플 · DB 등록 불가"); setSelected(new Set()); setImported(new Set()); setImportResult(null); setParseError(""); setFilter("ALL");
   };
 
   const downloadTemplate = () => {
@@ -111,9 +136,11 @@ export function LegacyDataImport() {
 
   const toggleRow = (sourceRow: number) => setSelected((current) => { const next = new Set(current); if (next.has(sourceRow)) next.delete(sourceRow); else next.add(sourceRow); return next; });
   const selectableRows = rows.filter((row) => !row.errors.length && !imported.has(row.sourceRow));
-  const toggleAll = () => setSelected((current) => current.size === selectableRows.length ? new Set() : new Set(selectableRows.map((row) => row.sourceRow)));
+  const autoSelectableRows = selectableRows.filter(row => !row.warnings.length);
+  const toggleAll = () => setSelected((current) => autoSelectableRows.length && autoSelectableRows.every(row => current.has(row.sourceRow)) ? new Set() : new Set(autoSelectableRows.map((row) => row.sourceRow)));
   const importSelected = async () => {
-    if (!hasEnvVars || !selected.size || importing) return;
+    if (!hasEnvVars || !selected.size || importing || previewOnly || readingRef.current) return;
+    if (!window.confirm(`선택한 ${selected.size}행을 실제 DB에 등록할까요? 확인 필요 행은 원본과 대조한 뒤 선택해야 합니다. 기존 기록은 자동 병합하지 않습니다.`)) return;
     setImporting(true); setImportResult(null);
     const supabase = createClient(); let success = 0; const failed: { row: number; message: string }[] = []; const succeededRows: number[] = [];
     const { data: batchData, error: batchError } = await supabase.rpc("start_legacy_import_batch", { p_file_name: fileName, p_total_rows: selected.size });
@@ -136,12 +163,13 @@ export function LegacyDataImport() {
   };
 
   return <div className="space-y-4">
+    <div className="rounded-lg border bg-card p-4 text-sm" role="status">{previewOnly ? "검증용 미리보기입니다. DB 조회·등록은 실행하지 않으며 실제 기존 데이터와의 중복 검증을 뜻하지 않습니다." : "확인 필요 행은 자동 선택하지 않습니다. 원본과 대조한 뒤 해당 행을 직접 선택하세요. 파일 선택은 조회·검증만 하며 DB 등록은 별도 확인 후 실행합니다."}</div>
     <section className="rounded-lg border bg-white p-5 shadow-sm">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div><h2 className="font-semibold text-slate-900">1. CSV 파일 준비</h2><p className="mt-1 text-sm text-slate-500">구글 시트에서 파일 → 다운로드 → 쉼표로 구분된 값(.csv)을 선택하세요. 원본 시트는 변경되지 않습니다.</p></div>
-        <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={downloadTemplate}><Download />입력 양식</Button><Button onClick={() => inputRef.current?.click()} disabled={verifyingDatabase}>{verifyingDatabase ? <Loader2 className="animate-spin" /> : <Upload />}{verifyingDatabase ? "DB 중복 확인 중" : "CSV 선택"}</Button><input ref={inputRef} type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values" className="hidden" onChange={loadFile} /></div>
+        <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={downloadTemplate}><Download />입력 양식</Button><Button onClick={() => inputRef.current?.click()} disabled={readingFile || verifyingDatabase || importing}>{verifyingDatabase ? <Loader2 className="animate-spin" /> : <Upload />}{verifyingDatabase ? "DB 중복 확인 중" : "CSV 선택"}</Button><Button variant="outline" disabled={readingFile || importing} onClick={loadValidationSample}>검증용 샘플 보기</Button><input ref={inputRef} type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values" className="hidden" disabled={readingFile || importing} onChange={loadFile} /></div>
       </div>
-      {fileName && <div className="mt-4 flex items-center justify-between rounded-md border bg-slate-50 px-4 py-3 text-sm"><span className="flex items-center gap-2 font-medium"><FileSpreadsheet className="h-4 w-4 text-emerald-700" />{fileName}</span><Button size="sm" variant="ghost" onClick={reset}><RotateCcw />다시 선택</Button></div>}
+      {fileName && <div className="mt-4 flex items-center justify-between rounded-md border bg-slate-50 px-4 py-3 text-sm"><span className="flex items-center gap-2 font-medium"><FileSpreadsheet className="h-4 w-4 text-emerald-700" />{fileName}</span><Button size="sm" variant="ghost" onClick={reset} disabled={readingFile || importing}><RotateCcw />다시 선택</Button></div>}
       {parseError && <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800"><p className="font-semibold">파일을 검증할 수 없습니다.</p><p className="mt-1">{parseError}</p></div>}
     </section>
 
@@ -154,10 +182,10 @@ export function LegacyDataImport() {
       </div>
 
       <section className="overflow-hidden rounded-lg border bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><div><h2 className="font-semibold text-slate-900">2. 검증 및 등록 대상 선택</h2><p className="mt-1 text-xs text-slate-500">인식한 원본 열 {headers.length}개 · 현재 표시 {visibleRows.length}건 · 선택 {selected.size}건 · 등록 완료 {imported.size}건</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={downloadIssues} disabled={!counts.error && !counts.warning}><Download />오류 목록</Button><Button size="sm" onClick={importSelected} disabled={!hasEnvVars || !selected.size || importing}>{importing ? <Loader2 className="animate-spin" /> : <Database />}{importing ? "등록 중" : `${selected.size}건 DB 등록`}</Button></div></div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><div><h2 className="font-semibold text-slate-900">2. 검증 및 등록 대상 선택</h2><p className="mt-1 text-xs text-slate-500">인식한 원본 열 {headers.length}개 · 현재 표시 {visibleRows.length}건 · 선택 {selected.size}건 · 등록 완료 {imported.size}건</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={downloadIssues} disabled={!counts.error && !counts.warning}><Download />오류 목록</Button><Button size="sm" onClick={importSelected} disabled={!hasEnvVars || !selected.size || importing || readingFile || previewOnly}>{importing ? <Loader2 className="animate-spin" /> : <Database />}{importing ? "등록 중" : `${selected.size}건 DB 등록`}</Button></div></div>
         {!hasEnvVars && <div className="border-b bg-amber-50 px-4 py-3 text-sm text-amber-900">Supabase가 연결된 배포 환경에서만 DB 등록을 실행할 수 있습니다.</div>}
         {importResult && <div className={`border-b px-4 py-3 text-sm ${importResult.failed.length ? "bg-amber-50 text-amber-900" : "bg-emerald-50 text-emerald-900"}`}><p className="font-semibold">등록 성공 {importResult.success}건 · 실패 {importResult.failed.length}건</p>{importResult.failed.length > 0 && <p className="mt-1 text-xs">{importResult.failed.map((item) => `${item.row}행: ${item.message}`).join(" / ")}</p>}</div>}
-        <div className="max-w-full overflow-x-auto"><table className="w-full min-w-[1900px] text-left text-xs"><thead className="bg-slate-100 text-slate-600"><tr><th className="border-b px-3 py-3"><input type="checkbox" aria-label="정상 행 전체 선택" checked={selectableRows.length > 0 && selected.size === selectableRows.length} onChange={toggleAll} /></th>{["원본 행", "검증", "후보자명", "생년월일", "이메일", "분야", "인정구분", "관리 No.", "Job No.", "인증번호", "표준", "등급", "신청구분", "접수일", "발행일", "만료일", "파트너사", "오류·확인사항"].map((heading) => <th key={heading} className="whitespace-nowrap border-b px-3 py-3 font-semibold">{heading}</th>)}</tr></thead>
+        <div className="max-w-full overflow-x-auto"><table className="w-full min-w-[1900px] text-left text-xs"><thead className="bg-slate-100 text-slate-600"><tr><th className="border-b px-3 py-3"><input type="checkbox" aria-label="확인사항 없는 정상 행 전체 선택" disabled={importing || previewOnly} checked={autoSelectableRows.length > 0 && autoSelectableRows.every(row => selected.has(row.sourceRow))} onChange={toggleAll} /></th>{["원본 행", "검증", "후보자명", "생년월일", "이메일", "분야", "인정구분", "관리 No.", "Job No.", "인증번호", "표준", "등급", "신청구분", "접수일", "발행일", "만료일", "파트너사", "오류·확인사항"].map((heading) => <th key={heading} className="whitespace-nowrap border-b px-3 py-3 font-semibold">{heading}</th>)}</tr></thead>
           <tbody className="divide-y">{visibleRows.map((row) => <tr key={row.sourceRow} className={row.errors.length ? "bg-red-50/40" : row.warnings.length ? "bg-amber-50/40" : "hover:bg-blue-50/40"}>
             <td className="px-3 py-3"><input type="checkbox" aria-label={`${row.sourceRow}행 선택`} disabled={row.errors.length > 0 || importing || imported.has(row.sourceRow)} checked={selected.has(row.sourceRow)} onChange={() => toggleRow(row.sourceRow)} /></td><td className="px-3 py-3 text-slate-500">{row.sourceRow}</td><td className="whitespace-nowrap px-3 py-3"><ValidationBadge row={row} imported={imported.has(row.sourceRow)} /></td><td className="whitespace-nowrap px-3 py-3 font-semibold">{row.candidateName || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.candidateBirthDate || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.candidateEmail || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.businessArea || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.accreditationTrack || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.managementNo || "자동"}</td><td className="whitespace-nowrap px-3 py-3">{row.jobNo || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.certificationNo || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.standard || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.grade || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.applicationType || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.receivedAt || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.issueDate || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.expiryDate || "-"}</td><td className="whitespace-nowrap px-3 py-3">{row.partnerName || "-"}</td><td className="min-w-80 px-3 py-3"><p className="text-red-700">{row.errors.join(" · ")}</p><p className="text-amber-800">{row.warnings.join(" · ")}</p></td>
           </tr>)}</tbody></table></div>
@@ -171,7 +199,9 @@ function normalizeHeader(value: string) { return value.toLowerCase().replace(/[.
 function buildHeaderMapping(headers: string[]) {
   const normalized = headers.map(normalizeHeader);
   return canonicalKeys.reduce<Partial<Record<CanonicalKey, number>>>((result, key) => {
-    const index = normalized.findIndex((header) => fieldAliases[key].some((alias) => header === normalizeHeader(alias)));
+    const matches = normalized.map((header,index)=>fieldAliases[key].some(alias=>header===normalizeHeader(alias))?index:-1).filter(index=>index>=0);
+    if (matches.length > 1) throw new Error(`${displayLabels[key]}에 해당하는 열이 여러 개입니다. 열을 구분한 후 다시 선택해 주세요.`);
+    const index = matches[0] ?? -1;
     if (index >= 0) result[key] = index;
     return result;
   }, {});
@@ -224,7 +254,7 @@ async function applyDatabaseDuplicateChecks(rows: ImportRow[]) {
     if (row.certificationNo && existingCertifications.has(row.certificationNo)) row.errors.push("인증번호 DB 기존자료와 중복");
   });
 }
-function isValidDate(value: string) { const normalized = normalizeDate(value); return /^\d{4}-\d{2}-\d{2}$/.test(normalized) && !Number.isNaN(new Date(`${normalized}T00:00:00`).getTime()); }
+function isValidDate(value: string) { const normalized = normalizeDate(value); const timestamp = Date.parse(`${normalized}T00:00:00Z`); return /^\d{4}-\d{2}-\d{2}$/.test(normalized) && Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0,10) === normalized; }
 function normalizeDate(value: string) {
   const compact = value.trim().replace(/[./]/g, "-");
   const match = compact.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
@@ -234,6 +264,7 @@ function detectDelimiter(text: string) { const line = text.split(/\r?\n/, 1)[0] 
 function parseDelimited(text: string, delimiter: string) {
   const rows: string[][] = []; let row: string[] = []; let cell = ""; let quoted = false;
   for (let index = 0; index < text.length; index += 1) { const char = text[index]; const next = text[index + 1]; if (char === '"' && quoted && next === '"') { cell += '"'; index += 1; } else if (char === '"') quoted = !quoted; else if (char === delimiter && !quoted) { row.push(cell); cell = ""; } else if ((char === "\n" || char === "\r") && !quoted) { if (char === "\r" && next === "\n") index += 1; row.push(cell); rows.push(row); row = []; cell = ""; } else cell += char; }
+  if (quoted) throw new Error("닫히지 않은 따옴표가 있습니다. CSV 원본 형식을 확인해 주세요.");
   if (cell.length || row.length) { row.push(cell); rows.push(row); }
   return rows;
 }

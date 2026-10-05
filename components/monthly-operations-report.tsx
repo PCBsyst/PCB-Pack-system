@@ -106,6 +106,23 @@ export function MonthlyOperationsReport() {
     const body = grouped.map((row) => [areaLabel(row.area), row.standard, row.received, row.issued, row.active, row.suspended, row.withdrawn]);
     downloadCsv([...metadata, ["포함 범위", "개별 후보자명·Job 번호·인증번호 제외 (파트너 필터 등 조회 조건은 포함)"], [], ["분야", "표준", "대상 Job", "인증발행", "유지", "정지", "철회"], ...body], `월간업무집계_${month}.csv`);
   };
+  const exportSummaryXlsx = async () => {
+    if (exporting.current || loading || error || !filtered.length) return;
+    exporting.current = true; setExportBusy(true); setExportNotice("");
+    const snapshot = exportSnapshot.current;
+    try {
+      const metadata = reportExportMetadata("월간 업무보고 집계", month, dateBasis === "RECEIVED" ? "접수일" : "인증발행일", reportFilters);
+      const { buildMonthlySummaryXlsx } = await import("@/lib/monthly-report-xlsx");
+      if (!mounted.current || snapshot !== exportSnapshot.current) throw new Error("생성 중 화면 또는 조회 조건이 바뀌었습니다. 현재 조건으로 다시 요청해 주세요.");
+      const blob = buildMonthlySummaryXlsx(metadata, filtered);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a"); anchor.href = url; anchor.download = `월간업무집계_${month}.xlsx`;
+      try { anchor.click(); } finally { window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
+      setExportNotice("Excel 집계 다운로드를 요청했습니다. 고객 상세 원문은 제외되며 조회 조건은 포함됩니다. 서버 접근이력에 기록되지 않고 PC 저장 완료를 뜻하지는 않습니다.");
+    } catch (cause) {
+      if (mounted.current) setExportNotice(cause instanceof Error ? cause.message : "Excel 집계를 생성하지 못했습니다.");
+    } finally { exporting.current = false; if (mounted.current) setExportBusy(false); }
+  };
   const printReport = () => {
     setExportNotice("");
     if (loading || error || !filtered.length) return;
@@ -118,6 +135,7 @@ export function MonthlyOperationsReport() {
   };
 
   return <div className="space-y-4">
+    <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4"><div><h2 className="font-semibold">Excel 집계 보고서</h2><p className="mt-1 text-xs text-muted-foreground">조회 조건·전체 요약·표준별·등급별·유형별 현황을 5개 시트로 저장합니다. Job 수와 현재 상태 기준이며 고객 상세 및 수익은 제외합니다.</p></div><Button type="button" variant="outline" disabled={exportBusy || loading || Boolean(error) || !filtered.length} onClick={exportSummaryXlsx}><Download />집계 Excel (.xlsx)</Button></section>
     <section className="rounded-lg border bg-card p-4 text-sm"><p>상세 CSV와 상세 출력에는 고객정보가 포함됩니다. 상세 CSV는 서버 자료로 생성하고 신청별 응답 준비 이력을 기록합니다. 집계 CSV·인쇄는 서버 접근이력에 기록되지 않습니다. 고객 목록이 필요하지 않으면 집계 CSV 또는 기본 집계 인쇄를 이용하세요.</p><div className="mt-3 flex flex-wrap items-center gap-3"><Button type="button" variant="outline" disabled={loading || Boolean(error) || !filtered.length} onClick={exportGroupedCsv}><Download />표준별 집계 CSV</Button><label className="flex items-center gap-2"><input type="checkbox" checked={includePrintDetails} onChange={(event) => setIncludePrintDetails(event.target.checked)}/>인쇄에 고객 상세 포함 (기본 제외)</label></div>{exportBusy && <p role="status" className="mt-2">서버 보고서 생성·접근이력·파일 무결성을 확인 중입니다.</p>}{exportNotice && <p role="status" className="mt-2 text-amber-700">{exportNotice}</p>}</section>
     <div className="flex justify-end"><Button type="button" variant="outline" disabled={loading || !hasEnvVars} onClick={() => { setRows([]); setError(""); setLoading(true); setRevision((value) => value + 1); }}><RotateCcw />업무보고 자료 다시 조회</Button></div>
     <section className="rounded-lg border bg-white p-4 shadow-sm"><h2 className="mb-3 text-sm font-semibold">보고서 조회 조건</h2><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

@@ -1,4 +1,4 @@
-export type AnalyticsJob = { jobId: string; candidateId: string; businessArea: string; standard: string; grade: string; applicationType: string; receivedAt: string; certificationState: string };
+export type AnalyticsJob = { jobId: string; candidateId: string; businessArea: string; standard: string; grade: string; applicationType: string; receivedAt: string; issueDate?: string; certificationState: string };
 export type RevenueInvoice = { id: string; amount: number; paid_amount: number | null; issued_at: string; paid_at: string | null; invoice_jobs: { job_id: string }[] };
 export type CertificationEvent = { id: string; job_id: string; action_type: string; effective_date: string };
 export function certificationEventCounts(events: CertificationEvent[], jobs: AnalyticsJob[], period: string) {

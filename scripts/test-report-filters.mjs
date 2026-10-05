@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import ts from 'typescript';
 const source = fs.readFileSync(new URL('../lib/report-filters.ts', import.meta.url), 'utf8');
 const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
-const { matchesReportFilters } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const { matchesReportFilters, matchesReportMonth } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 const row = { businessArea: 'ISO', standard: 'ISO 9001', partner: '파트너A', grade: 'A', applicationType: 'RENEWAL' };
 const all = { area: '전체', standard: '전체', partner: '전체', grade: '전체', applicationType: '전체' };
 assert.equal(matchesReportFilters(row, all), true);
@@ -12,4 +12,17 @@ for (const [filter, field] of [['area','businessArea'], ['standard','standard'],
   assert.equal(matchesReportFilters(row, { ...all, [filter]: '다른 조건' }), false);
 }
 assert.equal(matchesReportFilters(row, { area: 'ISO', standard: 'ISO 9001', partner: '파트너A', grade: 'A', applicationType: 'RENEWAL' }), true);
-console.log('Report filters: 12 cases passed');
+const dates = { receivedAt: '2026-09-01', issueDate: '2026-10-02' };
+assert.equal(matchesReportMonth(dates, '2026-09', 'RECEIVED'), true);
+assert.equal(matchesReportMonth(dates, '2026-10', 'RECEIVED'), false);
+assert.equal(matchesReportMonth(dates, '2026-10', 'ISSUED'), true);
+assert.equal(matchesReportMonth(dates, '2026-09', 'ISSUED'), false);
+assert.equal(matchesReportMonth({ receivedAt: dates.receivedAt }, '2026-10', 'ISSUED'), false);
+for (const month of ['', '2026', '2026-1', '2026-00', '2026-13']) assert.equal(matchesReportMonth(dates, month, 'RECEIVED'), false);
+const monthly = fs.readFileSync(new URL('../components/monthly-operations-report.tsx', import.meta.url), 'utf8');
+const analytics = fs.readFileSync(new URL('../components/report-business-analytics.tsx', import.meta.url), 'utf8');
+assert.match(monthly, /matchesReportMonth\(row, month, dateBasis\)/);
+assert.match(monthly, /dateBasis=\{dateBasis\}/);
+assert.match(analytics, /matchesReportMonth\(job, period, dateBasis\)/);
+assert.match(analytics, /고객 집계 기준/);
+console.log('보고서 필터: 분야·표준·파트너·등급·유형 및 접수/발행월 공통 집계·CSV 기준 표시 검사 통과');

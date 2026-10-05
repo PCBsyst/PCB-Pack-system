@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
 import { ReportBusinessAnalytics } from "@/components/report-business-analytics";
-import { matchesReportFilters } from "@/lib/report-filters";
+import { matchesReportFilters, matchesReportMonth } from "@/lib/report-filters";
 
 type CandidateRelation = { id: string; name: string };
 type CertificationRelation = { certification_no: string; issue_date: string; state: string; history_state: string };
@@ -58,10 +58,7 @@ export function MonthlyOperationsReport() {
 
   const options = useMemo(() => ({ standards: [...new Set(rows.map((row) => row.standard))].sort(), partners: [...new Set(rows.map((row) => row.partner))].sort(), grades: [...new Set(rows.map((row) => row.grade))].sort(), types: [...new Set(rows.map((row) => row.applicationType))].sort() }), [rows]);
   const dimensionRows = useMemo(() => rows.filter((row) => matchesReportFilters(row, { area, standard, partner, grade, applicationType })), [rows, area, standard, partner, grade, applicationType]);
-  const filtered = useMemo(() => dimensionRows.filter((row) => {
-    const basisDate = dateBasis === "RECEIVED" ? row.receivedAt : row.issueDate;
-    return basisDate.startsWith(month);
-  }), [dateBasis, month, dimensionRows]);
+  const filtered = useMemo(() => dimensionRows.filter((row) => matchesReportMonth(row, month, dateBasis)), [dateBasis, month, dimensionRows]);
   const summary = useMemo(() => ({ total: filtered.length, issued: filtered.filter((row) => row.certificationNo).length, active: filtered.filter((row) => row.certificationState === "ACTIVE").length, suspended: filtered.filter((row) => row.certificationState === "SUSPENDED").length, withdrawn: filtered.filter((row) => row.certificationState === "WITHDRAWN").length }), [filtered]);
   const grouped = useMemo(() => {
     const groups = new Map<string, { area: string; standard: string; received: number; issued: number; active: number; suspended: number; withdrawn: number }>();
@@ -84,7 +81,7 @@ export function MonthlyOperationsReport() {
       <label className="text-xs text-slate-500">신청유형<select className={inputClass} value={applicationType} onChange={(event) => setApplicationType(event.target.value)}><option>전체</option>{options.types.map((value) => <option key={value} value={value}>{({ INITIAL: "최초", RENEWAL: "갱신", GRADE_CHANGE: "등급 변경", TRANSFER: "전환" } as Record<string, string>)[value] ?? value}</option>)}</select></label>
       <Button variant="outline" onClick={reset}><RotateCcw />초기화</Button>
     </div></section>
-    {loading ? <p role="status" className="rounded-lg border bg-white p-5 text-sm text-slate-500">분석 대상 자료를 조회하고 있습니다.</p> : error ? <p role="alert" className="rounded-lg border bg-red-50 p-5 text-sm text-red-800">분석 자료 조회에 실패했습니다. 고객 수·수익·상태변동을 0으로 간주하지 않습니다.</p> : <ReportBusinessAnalytics period={month} jobs={dimensionRows}/>}
+    {loading ? <p role="status" className="rounded-lg border bg-white p-5 text-sm text-slate-500">분석 대상 자료를 조회하고 있습니다.</p> : error ? <p role="alert" className="rounded-lg border bg-red-50 p-5 text-sm text-red-800">분석 자료 조회에 실패했습니다. 고객 수·수익·상태변동을 0으로 간주하지 않습니다.</p> : <ReportBusinessAnalytics period={month} jobs={dimensionRows} dateBasis={dateBasis}/>}
     {!loading && !error && <><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5"><Metric label="대상 Job" value={summary.total} /><Metric label="인증발행" value={summary.issued} tone="blue" /><Metric label="인증유효" value={summary.active} tone="green" /><Metric label="인증정지" value={summary.suspended} tone="amber" /><Metric label="인증철회" value={summary.withdrawn} tone="red" /></div></>}
     <section className="overflow-hidden rounded-lg border bg-white shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><div><h2 className="font-semibold">표준별 집계</h2><p className="mt-1 text-xs text-slate-500">{month} · {dateBasis === "RECEIVED" ? "접수일" : "인증발행일"} 기준</p></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={exportCsv} disabled={!filtered.length}><Download />Excel용 CSV</Button><Button size="sm" variant="outline" onClick={printReport} disabled={!filtered.length}><Printer />인쇄·PDF</Button></div></div>
       {loading ? <div className="flex min-h-48 items-center justify-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />자료를 집계하는 중입니다.</div> : error ? <div className="m-4 rounded border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div> : !grouped.length ? <div className="min-h-48 p-12 text-center text-sm text-slate-500">선택한 조건에 해당하는 자료가 없습니다.</div> : <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-slate-100 text-slate-600"><tr>{["분야", "표준", "대상 Job", "인증발행", "인증유효", "인증정지", "인증철회"].map((heading) => <th key={heading} className="border-b px-4 py-3 font-semibold">{heading}</th>)}</tr></thead><tbody className="divide-y">{grouped.map((item) => <tr key={`${item.area}-${item.standard}`}><td className="px-4 py-3">{areaLabel(item.area)}</td><td className="px-4 py-3 font-semibold">{item.standard}</td><td className="px-4 py-3">{item.received}</td><td className="px-4 py-3">{item.issued}</td><td className="px-4 py-3 text-emerald-700">{item.active}</td><td className="px-4 py-3 text-amber-700">{item.suspended}</td><td className="px-4 py-3 text-red-700">{item.withdrawn}</td></tr>)}</tbody></table></div>}

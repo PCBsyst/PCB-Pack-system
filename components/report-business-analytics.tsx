@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
 import { ReportCertificationEvents } from "@/components/report-certification-events";
-import { customerCounts, revenueForJobs, type AnalyticsJob, type RevenueInvoice } from "@/lib/report-analytics";
+import { customerCounts, revenueForJobs, isReportPeriod, matchesReportPeriod, type AnalyticsJob, type RevenueInvoice } from "@/lib/report-analytics";
 import { matchesReportMonth } from "@/lib/report-filters";
 
 const money = (value: number) => Math.round(value).toLocaleString("ko-KR");
@@ -11,6 +11,7 @@ const areaLabel = (value: string) => value === "K_BEAUTY" ? "K-Beauty" : value;
 const typeLabel = (value: string) => ({ INITIAL: "최초", RENEWAL: "갱신", GRADE_CHANGE: "등급 변경", TRANSFER: "전환" } as Record<string,string>)[value] ?? value;
 export function ReportBusinessAnalytics({ jobs, period, dateBasis = "RECEIVED" }: { jobs: AnalyticsJob[]; period: string; dateBasis?: "RECEIVED" | "ISSUED" }) {
   const customerBasisLabel = dateBasis === "ISSUED" ? "발행" : "접수";
+  const validMonth = period.length === 7 && isReportPeriod(period);
   const [invoices, setInvoices] = useState<RevenueInvoice[]>([]);
   const [financeState, setFinanceState] = useState("loading");
   const [financeRevision, setFinanceRevision] = useState(0);
@@ -50,16 +51,18 @@ export function ReportBusinessAnalytics({ jobs, period, dateBasis = "RECEIVED" }
   }, [jobs, invoices, dimension, period, dateBasis]);
   const trends = useMemo(() => {
     const year = Number(period.slice(0, 4));
-    if (!Number.isInteger(year) || year < 1900) return [];
+    if (!validMonth || !Number.isInteger(year) || year < 1900) return [];
     const periods = trendUnit === "month" ? Array.from({ length: 12 }, (_, index) => `${year}-${String(index + 1).padStart(2, "0")}`) : Array.from({ length: 5 }, (_, index) => String(year - 4 + index));
-    return periods.map((key) => ({ period: key, ...customerCounts(jobs.filter((job) => job.receivedAt.startsWith(key))) }));
-  }, [jobs, period, trendUnit]);
+    return periods.map((key) => ({ period: key, ...customerCounts(jobs.filter((job) => matchesReportPeriod(job.receivedAt, key))) }));
+  }, [jobs, period, trendUnit, validMonth]);
   function exportSummary() {
+    if (!validMonth) return;
     const rows = [["기준월", period, "고객 집계 기준", customerBasisLabel], ["구분", `${customerBasisLabel} 고객 수`, `${customerBasisLabel} Job`, "유지", "정지", "철회", "청구액(KRW, 균등배분)", "입금액(KRW, 균등배분)"], ...groups.map((group) => [group.name, group.total, group.jobs, group.active, group.suspended, group.withdrawn, financeState === "ready" ? group.billed : "미확인", financeState === "ready" ? group.received : "미확인"]), [], ["접수 기간", "고객 수", "현재 유지", "현재 정지", "현재 철회"], ...trends.map((row) => [row.period, row.total, row.active, row.suspended, row.withdrawn])];
     const quote = (value: unknown) => { const text = String(value ?? ""); return `"${(/^[=+\-@\t\r]/.test(text) ? "'" : "") + text.replaceAll('"', '""')}"`; };
     const url = URL.createObjectURL(new Blob(["\ufeff", rows.map((row) => row.map(quote).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" }));
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = `고객수익추이_${period}.csv`; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+  if (!validMonth) return <section role="status" className="rounded-xl border bg-card p-5 text-sm">보고서를 조회할 월을 선택해 주세요. 기간을 선택하기 전에는 수익 집계와 다운로드를 제공하지 않습니다.</section>;
   return <section className="space-y-4 rounded-xl border bg-white p-5">
     <p className="text-sm font-medium">고객 집계: {period || "기간 미선택"} · {customerBasisLabel}일 기준. 수익은 청구·입금 발생월, 아래 고객 추이는 접수 기간 기준입니다.</p>
     <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-semibold">고객·수익 분석</h2><button className="rounded border px-3 py-2 text-sm" onClick={exportSummary}>분석 CSV 다운로드</button></div>

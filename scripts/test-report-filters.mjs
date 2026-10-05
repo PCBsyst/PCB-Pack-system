@@ -6,6 +6,10 @@ const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind
 const { matchesReportFilters, matchesReportMonth } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 const row = { businessArea: 'ISO', standard: 'ISO 9001', partner: '파트너A', grade: 'A', applicationType: 'RENEWAL' };
 const all = { area: '전체', standard: '전체', partner: '전체', grade: '전체', applicationType: '전체' };
+assert.equal(matchesReportFilters({ ...row, certificationState: 'SUSPENDED' }, { ...all, certificationState: 'SUSPENDED' }), true);
+assert.equal(matchesReportFilters({ ...row, certificationState: 'ACTIVE' }, { ...all, certificationState: 'SUSPENDED' }), false);
+assert.equal(matchesReportFilters(row, { ...all, certificationState: '전체' }), true);
+assert.equal(matchesReportFilters(row, { ...all, certificationState: 'ACTIVE' }), false);
 assert.equal(matchesReportFilters(row, all), true);
 for (const [filter, field] of [['area','businessArea'], ['standard','standard'], ['partner','partner'], ['grade','grade'], ['applicationType','applicationType']]) {
   assert.equal(matchesReportFilters(row, { ...all, [filter]: row[field] }), true);

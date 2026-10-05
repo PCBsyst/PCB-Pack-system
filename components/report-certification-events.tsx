@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
 import { certificationEventCounts, isCertificationEventRecord, type AnalyticsJob, type CertificationEvent } from "@/lib/report-analytics";
+import type { ReportFilters } from "@/lib/report-filters";
+import { reportExportMetadata, serializeReportCsv } from "@/lib/report-export";
 
-export function ReportCertificationEvents({ jobs, periods }: { jobs: AnalyticsJob[]; periods: string[] }) {
+export function ReportCertificationEvents({ jobs, periods, filters }: { jobs: AnalyticsJob[]; periods: string[]; filters?: ReportFilters }) {
   const [events, setEvents] = useState<CertificationEvent[]>([]);
   const [state, setState] = useState("loading");
   const [revision, setRevision] = useState(0);
@@ -30,8 +32,9 @@ export function ReportCertificationEvents({ jobs, periods }: { jobs: AnalyticsJo
   const rows = periods.map((period) => ({ period, ...certificationEventCounts(events, jobs, period) }));
   function download() {
     if (state !== "ready" || !periods.length) return;
-    const data = [["상태 적용 기간", "정지 고객 수", "정지 처리 건수", "철회 고객 수", "철회 처리 건수"], ...rows.map((row) => [row.period, row.suspended.customers, row.suspended.events, row.withdrawn.customers, row.withdrawn.events])];
-    const csv = data.map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\r\n");
+    const metadata = reportExportMetadata("인증상태 변동", `${periods[0]} ~ ${periods.at(-1)}`, "상태 적용일", filters);
+    const data = [...metadata, ["해석", "현재 필터에 해당하는 Job의 적용일별 변동, 과거 월말 유지 고객 수 아님"], [], ["상태 적용 기간", "정지 고객 수", "정지 처리 건수", "철회 고객 수", "철회 처리 건수"], ...rows.map((row) => [row.period, row.suspended.customers, row.suspended.events, row.withdrawn.customers, row.withdrawn.events])];
+    const csv = serializeReportCsv(data);
     const url = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" }));
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = `인증상태변동_${periods[0] ?? "현황"}.csv`; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }

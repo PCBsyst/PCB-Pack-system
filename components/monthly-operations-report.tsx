@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
 import { ReportBusinessAnalytics } from "@/components/report-business-analytics";
 import { matchesReportFilters, matchesReportMonth } from "@/lib/report-filters";
+import { reportApplicationTypeLabel, reportExportMetadata, serializeReportCsv } from "@/lib/report-export";
 
 type CandidateRelation = { id: string; name: string };
 type CertificationRelation = { certification_no: string; issue_date: string; state: string; history_state: string };
@@ -30,6 +31,7 @@ export function MonthlyOperationsReport() {
   const [partner, setPartner] = useState("전체");
   const [grade, setGrade] = useState("전체");
   const [applicationType, setApplicationType] = useState("전체");
+  const [certificationState, setCertificationState] = useState("전체");
   const [loading, setLoading] = useState(Boolean(hasEnvVars));
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
@@ -59,7 +61,8 @@ export function MonthlyOperationsReport() {
   }, [revision]);
 
   const options = useMemo(() => ({ standards: [...new Set(rows.map((row) => row.standard))].sort(), partners: [...new Set(rows.map((row) => row.partner))].sort(), grades: [...new Set(rows.map((row) => row.grade))].sort(), types: [...new Set(rows.map((row) => row.applicationType))].sort() }), [rows]);
-  const dimensionRows = useMemo(() => rows.filter((row) => matchesReportFilters(row, { area, standard, partner, grade, applicationType })), [rows, area, standard, partner, grade, applicationType]);
+  const reportFilters = { area, standard, partner, grade, applicationType, certificationState };
+  const dimensionRows = useMemo(() => rows.filter((row) => matchesReportFilters(row, { area, standard, partner, grade, applicationType, certificationState })), [rows, area, standard, partner, grade, applicationType, certificationState]);
   const filtered = useMemo(() => dimensionRows.filter((row) => matchesReportMonth(row, month, dateBasis)), [dateBasis, month, dimensionRows]);
   const summary = useMemo(() => ({ total: filtered.length, issued: filtered.filter((row) => row.certificationNo).length, active: filtered.filter((row) => row.certificationState === "ACTIVE").length, suspended: filtered.filter((row) => row.certificationState === "SUSPENDED").length, withdrawn: filtered.filter((row) => row.certificationState === "WITHDRAWN").length }), [filtered]);
   const grouped = useMemo(() => {
@@ -68,8 +71,14 @@ export function MonthlyOperationsReport() {
     return [...groups.values()].sort((a, b) => a.area.localeCompare(b.area) || a.standard.localeCompare(b.standard));
   }, [filtered]);
 
-  const reset = () => { setMonth(currentMonth); setDateBasis("RECEIVED"); setArea("전체"); setStandard("전체"); setPartner("전체"); setGrade("전체"); setApplicationType("전체"); };
-  const exportCsv = () => { const header = ["접수일", "인증발행일", "분야", "후보자", "파트너사", "신청구분", "Job No.", "표준", "등급", "인증번호", "인증상태"]; const body = filtered.map((row) => [row.receivedAt, row.issueDate, areaLabel(row.businessArea), row.candidateName, row.partner, row.applicationType, row.jobNo, row.standard, row.grade, row.certificationNo, certificationLabel(row.certificationState)]); downloadCsv([header, ...body], `월간업무보고_${month}_${dateBasis === "RECEIVED" ? "접수" : "발행"}.csv`); };
+  const reset = () => { setMonth(currentMonth); setDateBasis("RECEIVED"); setArea("전체"); setStandard("전체"); setPartner("전체"); setGrade("전체"); setApplicationType("전체"); setCertificationState("전체"); };
+  const exportCsv = () => {
+    if (loading || error || !filtered.length) return;
+    const header = ["접수일", "인증발행일", "분야", "후보자", "파트너사", "신청구분", "Job No.", "표준", "등급", "인증번호", "현재 인증상태"];
+    const body = filtered.map((row) => [row.receivedAt, row.issueDate, areaLabel(row.businessArea), row.candidateName, row.partner, reportApplicationTypeLabel(row.applicationType), row.jobNo, row.standard, row.grade, row.certificationNo, certificationLabel(row.certificationState)]);
+    const metadata = reportExportMetadata("월간 업무보고", month, dateBasis === "RECEIVED" ? "접수일" : "인증발행일", reportFilters);
+    downloadCsv([...metadata, [], header, ...body], `월간업무보고_${month}_${dateBasis === "RECEIVED" ? "접수" : "발행"}.csv`);
+  };
   const printReport = () => { const popup = window.open("", "_blank"); if (!popup) return; const escape = (value: unknown) => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;"); popup.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>월간 업무보고</title><style>@page{size:A4 landscape;margin:12mm}body{font-family:"Malgun Gothic",sans-serif;color:#172033}h1{font-size:20px}p{font-size:11px}.cards{display:flex;gap:8px;margin:14px 0}.card{border:1px solid #aaa;padding:10px;min-width:110px}.card b{font-size:18px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #777;padding:6px;text-align:left}th{background:#eee}</style></head><body><h1>${escape(month)} 월간 업무보고</h1><p>기준: ${dateBasis === "RECEIVED" ? "접수일" : "인증발행일"} · 출력일 ${escape(new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }))}</p><div class="cards"><div class="card">전체<br><b>${summary.total}</b>건</div><div class="card">인증발행<br><b>${summary.issued}</b>건</div><div class="card">인증유효<br><b>${summary.active}</b>건</div><div class="card">정지<br><b>${summary.suspended}</b>건</div><div class="card">철회<br><b>${summary.withdrawn}</b>건</div></div><table><thead><tr><th>분야</th><th>표준</th><th>대상</th><th>인증발행</th><th>유효</th><th>정지</th><th>철회</th></tr></thead><tbody>${grouped.map((item) => `<tr><td>${escape(areaLabel(item.area))}</td><td>${escape(item.standard)}</td><td>${item.received}</td><td>${item.issued}</td><td>${item.active}</td><td>${item.suspended}</td><td>${item.withdrawn}</td></tr>`).join("")}</tbody></table><script>window.onload=()=>window.print();<\/script></body></html>`); popup.document.close(); };
 
   return <div className="space-y-4">
@@ -83,8 +92,10 @@ export function MonthlyOperationsReport() {
       <label className="text-xs text-slate-500">등급<select className={inputClass} value={grade} onChange={(event) => setGrade(event.target.value)}><option>전체</option>{options.grades.map((value) => <option key={value}>{value}</option>)}</select></label>
       <label className="text-xs text-slate-500">신청유형<select className={inputClass} value={applicationType} onChange={(event) => setApplicationType(event.target.value)}><option>전체</option>{options.types.map((value) => <option key={value} value={value}>{({ INITIAL: "최초", RENEWAL: "갱신", GRADE_CHANGE: "등급 변경", TRANSFER: "전환" } as Record<string, string>)[value] ?? value}</option>)}</select></label>
       <Button variant="outline" onClick={reset}><RotateCcw />초기화</Button>
+      <label className="text-xs text-slate-500">현재 인증상태<select className={inputClass} value={certificationState} onChange={(event) => setCertificationState(event.target.value)}><option>전체</option>{[...new Set(rows.map((row) => row.certificationState))].sort().map((value) => <option key={value} value={value}>{certificationLabel(value)}</option>)}</select></label>
     </div></section>
-    {loading ? <p role="status" className="rounded-lg border bg-white p-5 text-sm text-slate-500">분석 대상 자료를 조회하고 있습니다.</p> : error ? <p role="alert" className="rounded-lg border bg-red-50 p-5 text-sm text-red-800">분석 자료 조회에 실패했습니다. 고객 수·수익·상태변동을 0으로 간주하지 않습니다.</p> : <ReportBusinessAnalytics period={month} jobs={dimensionRows} dateBasis={dateBasis}/>}
+    <p className="text-xs text-muted-foreground">인증상태 필터는 현재 상태를 기준으로 합니다. 선택한 Job의 과거 상태변동도 함께 조회되며, 과거 월말 상태를 의미하지는 않습니다.</p>
+    {loading ? <p role="status" className="rounded-lg border bg-white p-5 text-sm text-slate-500">분석 대상 자료를 조회하고 있습니다.</p> : error ? <p role="alert" className="rounded-lg border bg-red-50 p-5 text-sm text-red-800">분석 자료 조회에 실패했습니다. 고객 수·수익·상태변동을 0으로 간주하지 않습니다.</p> : <ReportBusinessAnalytics period={month} jobs={dimensionRows} dateBasis={dateBasis} filters={reportFilters}/>}
     {!loading && !error && <><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5"><Metric label="대상 Job" value={summary.total} /><Metric label="인증발행" value={summary.issued} tone="blue" /><Metric label="인증유효" value={summary.active} tone="green" /><Metric label="인증정지" value={summary.suspended} tone="amber" /><Metric label="인증철회" value={summary.withdrawn} tone="red" /></div></>}
     <section className="overflow-hidden rounded-lg border bg-white shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><div><h2 className="font-semibold">표준별 집계</h2><p className="mt-1 text-xs text-slate-500">{month} · {dateBasis === "RECEIVED" ? "접수일" : "인증발행일"} 기준</p></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={exportCsv} disabled={!filtered.length}><Download />Excel용 CSV</Button><Button size="sm" variant="outline" onClick={printReport} disabled={!filtered.length}><Printer />인쇄·PDF</Button></div></div>
       {loading ? <div className="flex min-h-48 items-center justify-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />자료를 집계하는 중입니다.</div> : error ? <div className="m-4 rounded border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div> : !grouped.length ? <div className="min-h-48 p-12 text-center text-sm text-slate-500">선택한 조건에 해당하는 자료가 없습니다.</div> : <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-slate-100 text-slate-600"><tr>{["분야", "표준", "대상 Job", "인증발행", "인증유효", "인증정지", "인증철회"].map((heading) => <th key={heading} className="border-b px-4 py-3 font-semibold">{heading}</th>)}</tr></thead><tbody className="divide-y">{grouped.map((item) => <tr key={`${item.area}-${item.standard}`}><td className="px-4 py-3">{areaLabel(item.area)}</td><td className="px-4 py-3 font-semibold">{item.standard}</td><td className="px-4 py-3">{item.received}</td><td className="px-4 py-3">{item.issued}</td><td className="px-4 py-3 text-emerald-700">{item.active}</td><td className="px-4 py-3 text-amber-700">{item.suspended}</td><td className="px-4 py-3 text-red-700">{item.withdrawn}</td></tr>)}</tbody></table></div>}
@@ -96,4 +107,4 @@ export function MonthlyOperationsReport() {
 function areaLabel(value: string) { return value === "K_BEAUTY" ? "K-Beauty" : "ISO"; }
 function certificationLabel(value: string) { return ({ ACTIVE: "인증 완료", SUSPENDED: "인증 정지", WITHDRAWN: "인증 철회", NONE: "미발행" } as Record<string, string>)[value] ?? value; }
 function Metric({ label, value, tone = "slate" }: { label: string; value: number; tone?: "slate" | "blue" | "green" | "amber" | "red" }) { const tones = { slate: "border-slate-200 bg-white", blue: "border-blue-200 bg-blue-50", green: "border-emerald-200 bg-emerald-50", amber: "border-amber-200 bg-amber-50", red: "border-red-200 bg-red-50" }; return <div className={`rounded-lg border p-4 shadow-sm ${tones[tone]}`}><p className="text-xs font-medium text-slate-600">{label}</p><p className="mt-1 text-2xl font-bold text-slate-950">{value}<span className="ml-1 text-sm font-medium">건</span></p></div>; }
-function downloadCsv(rows: unknown[][], fileName: string) { const quote = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`; const csv = rows.map((row) => row.map(quote).join(",")).join("\r\n"); const url = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = fileName; anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
+function downloadCsv(rows: unknown[][], fileName: string) { const csv = serializeReportCsv(rows); const url = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = fileName; anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); }

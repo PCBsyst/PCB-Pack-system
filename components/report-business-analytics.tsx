@@ -5,11 +5,13 @@ import { hasEnvVars } from "@/lib/utils";
 import { ReportCertificationEvents } from "@/components/report-certification-events";
 import { customerCounts, revenueForJobs, isReportPeriod, matchesReportPeriod, type AnalyticsJob, type RevenueInvoice } from "@/lib/report-analytics";
 import { matchesReportMonth } from "@/lib/report-filters";
+import type { ReportFilters } from "@/lib/report-filters";
+import { reportExportMetadata, reportGroupLabel, serializeReportCsv } from "@/lib/report-export";
 
 const money = (value: number) => Math.round(value).toLocaleString("ko-KR");
 const areaLabel = (value: string) => value === "K_BEAUTY" ? "K-Beauty" : value;
 const typeLabel = (value: string) => ({ INITIAL: "최초", RENEWAL: "갱신", GRADE_CHANGE: "등급 변경", TRANSFER: "전환" } as Record<string,string>)[value] ?? value;
-export function ReportBusinessAnalytics({ jobs, period, dateBasis = "RECEIVED" }: { jobs: AnalyticsJob[]; period: string; dateBasis?: "RECEIVED" | "ISSUED" }) {
+export function ReportBusinessAnalytics({ jobs, period, dateBasis = "RECEIVED", filters }: { jobs: AnalyticsJob[]; period: string; dateBasis?: "RECEIVED" | "ISSUED"; filters?: ReportFilters }) {
   const customerBasisLabel = dateBasis === "ISSUED" ? "발행" : "접수";
   const validMonth = period.length === 7 && isReportPeriod(period);
   const [invoices, setInvoices] = useState<RevenueInvoice[]>([]);
@@ -57,9 +59,14 @@ export function ReportBusinessAnalytics({ jobs, period, dateBasis = "RECEIVED" }
   }, [jobs, period, trendUnit, validMonth]);
   function exportSummary() {
     if (!validMonth) return;
-    const rows = [["기준월", period, "고객 집계 기준", customerBasisLabel], ["구분", `${customerBasisLabel} 고객 수`, `${customerBasisLabel} Job`, "유지", "정지", "철회", "청구액(KRW, 균등배분)", "입금액(KRW, 균등배분)"], ...groups.map((group) => [group.name, group.total, group.jobs, group.active, group.suspended, group.withdrawn, financeState === "ready" ? group.billed : "미확인", financeState === "ready" ? group.received : "미확인"]), [], ["접수 기간", "고객 수", "현재 유지", "현재 정지", "현재 철회"], ...trends.map((row) => [row.period, row.total, row.active, row.suspended, row.withdrawn])];
-    const quote = (value: unknown) => { const text = String(value ?? ""); return `"${(/^[=+\-@\t\r]/.test(text) ? "'" : "") + text.replaceAll('"', '""')}"`; };
-    const url = URL.createObjectURL(new Blob(["\ufeff", rows.map((row) => row.map(quote).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" }));
+    const metadata = reportExportMetadata("고객·수익 분석", period, `${customerBasisLabel}일`, filters);
+    const rows = [...metadata, ["고객 집계 기준", customerBasisLabel], ["집계 구분", ({ businessArea: "분야", standard: "표준·세부 분야", grade: "등급", applicationType: "신청 유형" })[dimension]],
+      ["수익 기준", "청구·입금 발생월, 통합 인보이스는 전체 연결 Job에 균등 배분한 참고값"],
+      ["추이 기준", "접수 기간별 고객의 현재 인증상태 (과거 월말 상태 아님)"], [],
+      ["구분", `${customerBasisLabel} 고객 수`, `${customerBasisLabel} Job`, "유지", "정지", "철회", "청구액(KRW, 균등배분)", "입금액(KRW, 균등배분)"],
+      ...groups.map((group) => [reportGroupLabel(group.name, dimension), group.total, group.jobs, group.active, group.suspended, group.withdrawn, financeState === "ready" ? group.billed : "미확인", financeState === "ready" ? group.received : "미확인"]), [],
+      ["접수 기간", "고객 수", "현재 유지", "현재 정지", "현재 철회"], ...trends.map((row) => [row.period, row.total, row.active, row.suspended, row.withdrawn])];
+    const url = URL.createObjectURL(new Blob(["\ufeff", serializeReportCsv(rows)], { type: "text/csv;charset=utf-8" }));
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = `고객수익추이_${period}.csv`; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   if (!validMonth) return <section role="status" className="rounded-xl border bg-card p-5 text-sm">보고서를 조회할 월을 선택해 주세요. 기간을 선택하기 전에는 수익 집계와 다운로드를 제공하지 않습니다.</section>;
@@ -73,6 +80,6 @@ export function ReportBusinessAnalytics({ jobs, period, dateBasis = "RECEIVED" }
     <div className="flex flex-wrap items-center gap-3"><h3 className="font-semibold">월·연간 고객 추이</h3><select className="rounded border bg-white p-2 text-sm" value={trendUnit} onChange={(e) => setTrendUnit(e.target.value as typeof trendUnit)}><option value="month">선택 연도 월별</option><option value="year">최근 5년 연별</option></select></div>
     <p className="text-xs text-slate-500">각 기간에 접수한 고객의 현재 인증상태를 비교합니다. 해당 월말·연말 당시 상태나 정지·철회 발생 건수는 아닙니다. 과거 상태 추이는 상태변경 이력 모델을 보강한 뒤 제공해야 합니다.</p>
     <div className="overflow-x-auto"><table className="w-full min-w-[540px] text-left text-sm"><thead className="bg-slate-50"><tr>{["접수 기간", "고객 수", "현재 유지", "현재 정지", "현재 철회"].map((label) => <th className="p-3" key={label}>{label}</th>)}</tr></thead><tbody>{trends.map((row) => <tr className="border-b" key={row.period}><td className="p-3">{row.period}</td>{[row.total, row.active, row.suspended, row.withdrawn].map((value, index) => <td className="p-3" key={index}>{value}</td>)}</tr>)}</tbody></table></div>
-    <ReportCertificationEvents jobs={jobs} periods={trends.map((row) => row.period)}/>
+    <ReportCertificationEvents jobs={jobs} periods={trends.map((row) => row.period)} filters={filters}/>
   </section>;
 }

@@ -1,4 +1,5 @@
 "use client";
+import { normalizeManagementArea, managementNumberKey, readManagementNumberPolicy } from "@/lib/management-number-policy";
 
 import { ChangeEvent, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Database, Download, FileSpreadsheet, Loader2, RotateCcw, Upload } from "lucide-react";
@@ -215,11 +216,14 @@ function normalizeRow(line: string[], sourceRow: number, mapping: Partial<Record
   if (row.issueDate && row.expiryDate && normalizeDate(row.expiryDate) < normalizeDate(row.issueDate)) errors.push("만료일이 발행일보다 빠름");
   if (!row.receivedAt) errors.push("접수일 누락");
   if (!row.jobNo) errors.push("Job No. 누락");
-  if (row.managementNo && !/^\d+$/.test(row.managementNo)) errors.push("관리 No. 숫자 형식 오류");
+  if (row.managementNo && (!/^\d+$/.test(row.managementNo) || Number(row.managementNo) > 2147483647)) errors.push("관리 No. 숫자 형식 오류");
+  else if (row.managementNo) row.managementNo = String(Number(row.managementNo));
   if (row.certificationNo && !row.issueDate) errors.push("인증번호가 있으나 발행일 누락");
   if (row.certificationNo && !row.expiryDate) errors.push("인증번호가 있으나 만료일 누락");
   if (!row.certificationNo && row.issueDate) warnings.push("발행일은 있으나 인증번호 없음");
-  if (!row.businessArea) warnings.push("발행분야 확인 필요");
+  const area = normalizeManagementArea(row.businessArea);
+  if (!area) errors.push("발행분야는 ISO 또는 K뷰티로 명시해야 합니다");
+  else row.businessArea = area;
   if (!row.candidateBirthDate && !row.candidateEmail) warnings.push("후보자 식별정보 부족: 동일인의 다른 Job과 자동 연결되지 않음");
   if (row.candidateEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.candidateEmail)) errors.push("이메일 형식 오류");
   (["candidateBirthDate", "receivedAt", "issueDate", "expiryDate"] as CanonicalKey[]).forEach((key) => { if (row[key] && isValidDate(row[key])) row[key] = normalizeDate(row[key]); });
@@ -232,25 +236,32 @@ function applyDuplicateChecks(rows: ImportRow[]) {
     rows.forEach((row) => { if (row[key] && (counts.get(row[key]) ?? 0) > 1) row.errors.push(`${label} 파일 내 중복`); });
   };
   check("jobNo", "Job No."); check("certificationNo", "인증번호");
+  const counts = new Map<string, number>();
+  rows.forEach(row => { const area=normalizeManagementArea(row.businessArea); if(area && row.managementNo) {const key=managementNumberKey(area,row.managementNo);counts.set(key,(counts.get(key)??0)+1);} });
+  rows.forEach(row => { const area=normalizeManagementArea(row.businessArea); if(area && row.managementNo && (counts.get(managementNumberKey(area,row.managementNo))??0)>1) row.errors.push("동일 분야 관리 No. 파일 내 중복"); });
 }
 async function applyDatabaseDuplicateChecks(rows: ImportRow[]) {
   const supabase = createClient();
+  const policy = await readManagementNumberPolicy(supabase);
+  if (policy === "unavailable") throw new Error("관리번호 정책을 확인할 수 없습니다. 등록을 중단합니다.");
   const jobNumbers = [...new Set(rows.map((row) => row.jobNo).filter(Boolean))];
   const certificationNumbers = [...new Set(rows.map((row) => row.certificationNo).filter(Boolean))];
   const managementNumbers = [...new Set(rows.map((row) => row.managementNo).filter(Boolean).map(Number))];
   const [jobsByNumber, jobsByManagement, certifications] = await Promise.all([
     jobNumbers.length ? supabase.from("jobs").select("job_no").in("job_no", jobNumbers) : Promise.resolve({ data: [], error: null }),
-    managementNumbers.length ? supabase.from("jobs").select("management_no").in("management_no", managementNumbers) : Promise.resolve({ data: [], error: null }),
+    managementNumbers.length ? supabase.from("jobs").select("business_area,management_no").in("management_no", managementNumbers) : Promise.resolve({ data: [], error: null }),
     certificationNumbers.length ? supabase.from("certification_records").select("certification_no").in("certification_no", certificationNumbers) : Promise.resolve({ data: [], error: null }),
   ]);
   const queryError = jobsByNumber.error ?? jobsByManagement.error ?? certifications.error;
   if (queryError) throw new Error(`DB 중복 확인 실패: ${queryError.message}`);
   const existingJobs = new Set((jobsByNumber.data ?? []).map((item) => item.job_no));
-  const existingManagement = new Set((jobsByManagement.data ?? []).map((item) => String(item.management_no)));
+  const existingManagement = new Set((jobsByManagement.data ?? []).map((item) => policy === "separated" ? `${item.business_area}:${Number(item.management_no)}` : String(item.management_no)));
   const existingCertifications = new Set((certifications.data ?? []).map((item) => item.certification_no));
   rows.forEach((row) => {
     if (row.jobNo && existingJobs.has(row.jobNo)) row.errors.push("Job No. DB 기존자료와 중복");
-    if (row.managementNo && existingManagement.has(row.managementNo)) row.errors.push("관리 No. DB 기존자료와 중복");
+    const area=normalizeManagementArea(row.businessArea);
+    if (row.managementNo && area && existingManagement.has(policy === "separated" ? managementNumberKey(area,row.managementNo) : row.managementNo)) row.errors.push("관리 No. DB 기존자료와 중복");
+    if (policy === "legacy" && row.managementNo && rows.some(other => other !== row && other.managementNo === row.managementNo && other.businessArea !== row.businessArea)) row.errors.push("분야별 관리번호 분리를 위해 DB 변경 028 적용 필요");
     if (row.certificationNo && existingCertifications.has(row.certificationNo)) row.errors.push("인증번호 DB 기존자료와 중복");
   });
 }

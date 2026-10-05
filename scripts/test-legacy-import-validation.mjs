@@ -5,7 +5,14 @@ const source=fs.readFileSync(new URL('../components/legacy-data-import.tsx',impo
 const ast=ts.createSourceFile('import.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
 const compile=code=>ts.transpileModule(code,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
 const declarations=ast.statements.filter(node=>ts.isTypeAliasDeclaration(node)||ts.isVariableStatement(node)&&!node.getText(ast).includes('useState')||ts.isFunctionDeclaration(node)&&!['LegacyDataImport','ValidationBadge','Summary'].includes(node.name?.text)).map(node=>node.getText(ast));
-const api=new Function('createClient',compile(declarations.join('\n'))+'return {normalizeRow,buildHeaderMapping,isValidDate,parseDelimited,applyDuplicateChecks};')(()=>{throw Error('DB must not run')});
+const policySource=fs.readFileSync(new URL('../lib/management-number-policy.ts',import.meta.url),'utf8').replace(/export /g,'');
+const api=new Function('createClient',compile(policySource+'\n'+declarations.join('\n'))+'return {normalizeRow,buildHeaderMapping,isValidDate,parseDelimited,applyDuplicateChecks,normalizeManagementArea,managementNumberKey,readManagementNumberPolicy,allocateAreaManagementNumbers};')(()=>{throw Error('DB must not run')});
+assert.equal(api.normalizeManagementArea('K-beauty'),'K_BEAUTY');assert.equal(api.normalizeManagementArea('기타'),null);
+assert.equal(api.managementNumberKey('ISO','0005'),'ISO:5');
+assert.equal(await api.readManagementNumberPolicy({rpc:async()=>({data:null,error:{code:'PGRST202',message:'get_management_number_policy missing'}})}),'legacy');
+assert.equal(await api.readManagementNumberPolicy({rpc:async()=>({data:null,error:{code:'42501',message:'denied'}})}),'unavailable');
+let calls=0;const allocation=await api.allocateAreaManagementNumbers({rpc:async()=>{calls++;return {data:null,error:{code:'42501',message:'denied'}}}},'ISO',1);assert.equal(calls,1);assert.equal(allocation.legacy,false);
+const scoped=[{businessArea:'ISO',managementNo:'5',errors:[]},{businessArea:'K_BEAUTY',managementNo:'5',errors:[]}];api.applyDuplicateChecks(scoped);assert.equal(scoped[0].errors.length,0);scoped.push({businessArea:'ISO',managementNo:'5',errors:[]});api.applyDuplicateChecks(scoped);assert.ok(scoped[0].errors.length);assert.equal(scoped[1].errors.length,0);
 for(const date of ['2026-02-30','2026-02-29','2026-04-31','2026-13-01','2026-00-01','2026-01-00'])assert.equal(api.isValidDate(date),false,date);
 for(const date of ['2024-02-29','2026-2-28','2026.10.3','2026/10/03'])assert.equal(api.isValidDate(date),true,date);
 assert.deepEqual(api.parseDelimited('a,b\r\n"x,y","a""b"\r\n',','),[['a','b'],['x,y','a"b']]);

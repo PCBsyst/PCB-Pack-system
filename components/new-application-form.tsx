@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, CheckCircle2, FolderPlus, Plus, Save, Trash2 } from "lucide-react";
 import { jobs } from "@/data/mock-data";
+import { applications as sampleApplications } from "@/data/workflow-data";
+import { allocateAreaManagementNumbers } from "@/lib/management-number-policy";
 import { getJobNumber } from "@/lib/job-number";
 import { getNumberingRule, getNumberingRules, type NumberingScheme } from "@/lib/numbering-rules";
 import type { BusinessArea } from "@/types/certification";
@@ -54,7 +56,7 @@ export function NewApplicationForm() {
   const existingJobNumbers = useMemo(() => [...jobs, ...storedApplications.map((record) => ({ jobNo: record.jobNo }))], [storedApplications]);
   const jobNo = useMemo(() => getJobNumber(businessArea, scheme, accreditationTrack, activeStandard, receivedAt, existingJobNumbers), [businessArea, scheme, accreditationTrack, activeStandard, receivedAt, existingJobNumbers]);
   const sequence = selectedRule && jobNo ? jobNo.replace(selectedRule.jobPrefix, "").slice(2) : "";
-  const managementNo = Math.max(1294, ...storedApplications.map((record) => record.managementNo)) + 1;
+  const managementNo = Math.max(0, ...jobs.filter(record => record.businessArea === businessArea).map(record => record.managementNo ?? 0), ...sampleApplications.filter(record => record.businessArea === businessArea).map(record => record.managementNoTo), ...storedApplications.filter(record => record.businessArea === businessArea).map(record => record.managementNo)) + 1;
   const jobEntries = useMemo(() => {
     const assigned: Array<JobDraft & { managementNo: number; jobNo: string }> = [];
     for (const [index, draft] of jobDrafts.entries()) {
@@ -137,12 +139,12 @@ export function NewApplicationForm() {
         const supabase = createClient();
         const { data: userData } = await supabase.auth.getUser();
         const ownerId = primaryOwnerId || userData.user?.id;
-        const [{ data: allocatedApplicationNo, error: applicationNoError }, { data: allocatedManagementStart, error: managementNoError }] = await Promise.all([
+        const [{ data: allocatedApplicationNo, error: applicationNoError }, { data: allocatedManagementStart, error: managementNoError, legacy: legacyManagement }] = await Promise.all([
           supabase.rpc("allocate_application_number", { p_business_area: businessArea, p_received_at: receivedAt }),
-          supabase.rpc("allocate_management_numbers", { p_count: records.length }),
+          allocateAreaManagementNumbers(supabase, businessArea, records.length),
         ]);
         if (applicationNoError || !allocatedApplicationNo) throw applicationNoError ?? new Error("신청번호를 확보하지 못했습니다.");
-        if (managementNoError || !allocatedManagementStart) throw managementNoError ?? new Error("관리번호를 확보하지 못했습니다.");
+        if (managementNoError || typeof allocatedManagementStart !== "number" || !Number.isInteger(allocatedManagementStart) || allocatedManagementStart < 1 || allocatedManagementStart + records.length - 1 > 2147483647) throw managementNoError ?? new Error("관리번호를 확보하지 못했습니다.");
         for (let index = 0; index < records.length; index += 1) records[index] = { ...records[index], applicationNo: String(allocatedApplicationNo), managementNo: Number(allocatedManagementStart) + index };
         for (let index = 0; index < records.length; index += 1) {
           const rule = getNumberingRule(businessArea, scheme, accreditationTrack, records[index].standard);
@@ -175,7 +177,7 @@ export function NewApplicationForm() {
         }
         setStoredApplications((current) => [...records, ...current]);
         setStoredCount((count) => count + 1);
-        setNotice(`${records[0].applicationNo} 신청과 Job ${records.length}건이 등록되었습니다. 관리 No. ${records[0].managementNo}${records.length > 1 ? `~${records.at(-1)?.managementNo}` : ""} · 최종 Job No.: ${records.map((record) => record.jobNo).join(", ")}`);
+        setNotice(`${records[0].applicationNo} 신청과 Job ${records.length}건이 등록되었습니다. 관리 No. ${records[0].managementNo}${records.length > 1 ? `~${records.at(-1)?.managementNo}` : ""} · 최종 Job No.: ${records.map((record) => record.jobNo).join(", ")}${legacyManagement ? " · DB 변경 028 미적용: 기존 공통 관리번호를 사용했습니다." : ""}`);
         return;
       } catch (error) {
         setNotice(`DB 등록에 실패했습니다: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);

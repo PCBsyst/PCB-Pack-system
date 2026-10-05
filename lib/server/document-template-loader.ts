@@ -3,6 +3,9 @@ import "server-only";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import PizZip from "pizzip";
+import { missingDocumentTemplateFields } from "@/lib/document-template-fields";
+import { documentTemplateRegistrationIssue } from "@/lib/document-template-registration";
 import { corporateTemplateRegistry } from "@/lib/document-template-registry";
 import type { TemplateProvenance } from "@/lib/template-provenance";
 import type { CorporateDocumentType, CorporateTemplateLanguage } from "@/lib/document-template-registry";
@@ -16,7 +19,11 @@ export function templateLoadErrorResponse() {
   return Response.json({ error: "등록 양식 상태를 확인하지 못해 문서 생성을 중단했습니다. 양식 등록 및 저장소 상태를 확인해 주세요." }, { status: 503, headers: { "Cache-Control": "private, no-store" } });
 }
 
-function describeTemplate(bytes: Uint8Array, source: TemplateProvenance["source"], version: string): TemplateSource {
+function describeTemplate(bytes: Uint8Array, source: TemplateProvenance["source"], version: string, documentType: CorporateDocumentType): TemplateSource {
+  const zip = new PizZip(bytes);
+  if (documentTemplateRegistrationIssue(zip, missingDocumentTemplateFields(zip, documentType))) {
+    throw new Error("Formal template validation failed");
+  }
   return { bytes, source, version, sha256: createHash("sha256").update(bytes).digest("hex") };
 }
 
@@ -43,14 +50,14 @@ export async function loadDocumentTemplate(
         if (error || !file) throw new Error("Registered template download unavailable");
         const bytes = new Uint8Array(await file.arrayBuffer());
         if (!bytes.length) throw new Error("Registered template empty");
-        return describeTemplate(bytes, "DATABASE", data.version || "개정번호 미기재");
+        return describeTemplate(bytes, "DATABASE", data.version || "개정번호 미기재", documentType);
       }
   }
 
   if (!fallbackFileName) throw new Error(`등록된 ${documentType} ${language} 양식이 없습니다.`);
   const bytes = new Uint8Array(await readFile(path.join(process.cwd(), "templates", fallbackFileName)));
   const version = corporateTemplateRegistry.find((item) => item.documentType === documentType && item.language === language)?.version;
-  return describeTemplate(bytes, "BUILT_IN", version || "개정번호 미기재");
+  return describeTemplate(bytes, "BUILT_IN", version || "개정번호 미기재", documentType);
 }
 
 export async function getActiveDocumentTemplateKeys() {

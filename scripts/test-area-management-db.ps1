@@ -25,6 +25,7 @@ try {
    $taskPermissionSql+="`n"+(Get-Content -LiteralPath (Join-Path $PSScriptRoot "../supabase/migrations/$file") -Raw)
   }
   $taskPermissionSql+="`n"+(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/permissions-checks.sql') -Raw)
+  $taskPermissionSql+="`n"+(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'sql/operational-inventory.sql') -Raw)
   $taskPermissionSql | & $taskDocker exec -i $taskContainer psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1
   if($LASTEXITCODE -ne 0){throw '권한별 가상 DB 검사 실패'}
   Write-Output '실제 DB 역할/RLS 권한 검사 통과. 로그인·서명 JWT·서비스 API와 전체 스키마 검증은 별도입니다.'

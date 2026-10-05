@@ -1,6 +1,15 @@
 export type AnalyticsJob = { jobId: string; candidateId: string; businessArea: string; standard: string; grade: string; applicationType: string; receivedAt: string; issueDate?: string; certificationState: string };
 export type RevenueInvoice = { id: string; amount: number; paid_amount: number | null; issued_at: string; paid_at: string | null; invoice_jobs: { job_id: string }[] };
 export type CertificationEvent = { id: string; job_id: string; action_type: string; effective_date: string };
+export function isCertificationEventRecord(value: unknown): value is CertificationEvent {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Record<string, unknown>;
+  if (typeof row.id !== "string" || !row.id.trim() || typeof row.job_id !== "string" || !row.job_id.trim()
+    || !["SUSPENDED", "WITHDRAWN"].includes(String(row.action_type))
+    || typeof row.effective_date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(row.effective_date)) return false;
+  const date = new Date(`${row.effective_date}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === row.effective_date;
+}
 export function isReportPeriod(period: string) {
   return /^\d{4}(?:-(?:0[1-9]|1[0-2]))?$/.test(period);
 }

@@ -12,7 +12,7 @@ const job = { id: "j1", jobNo: "QMS260099", standard: "ISO 9001", currentGrade: 
 const context = {
   application: { receivedAt: "2026-09-01", applicationType: "최초", primaryOwner: "가상 담당자" },
   candidate: { name: "가상후보", nameEn: "Sample Candidate", birthDate: "1990-01-01", nationality: "KR", address: "가상 주소", email: "sample@example.com", phone: "000-0000-0000" },
-  jobs: [job], reviewRequirements: { 교육요건: "충족" }, review: { result: "적합", comment: "국문검토 & 확인", verificationComment: "국문검증", reviewer: "검토자", reviewedAt: "2026-09-02", verifier: "검증자", verifiedAt: "2026-09-03", verificationResult: "확인" },
+  jobs: [job], reviewRequirements: { 교육요건: "충족" }, review: { result: "적합", comment: "국문검토 & 확인\r\n두 번째 검토 의견 <시험>", verificationComment: "국문검증", reviewer: "검토자", reviewedAt: "2026-09-02", verifier: "검증자", verifiedAt: "2026-09-03", verificationResult: "확인" },
   panelMembers: [{ name: "위원1", selected: true, decision: "승인", comment: "국문심의" }, { name: "위원2", selected: true, decision: "승인", comment: "국문심의2" }, { name: "제외위원", selected: false, decision: "", comment: "미선택의견" }],
   decisions: { j1: { result: "승인", comment: "국문최종승인" } }, decisionDate: "2026-09-04", finalApprover: "대표자", finalApprovalDate: "2026-09-07",
   assessment: { j1: Object.fromEntries(["지식 시험", "인성 시험", "교육 요구사항", "학력 요구사항", "심사이력"].map((key) => [key, "적합"])) },
@@ -65,6 +65,10 @@ for (const [route, template] of [
     assert.ok(xml.includes(language === "KR" ? "가상후보" : "Sample Candidate"));
     assert.ok(xml.includes("가상기관 &amp; 교육"));
     assert.ok(!xml.includes("{{"));
+    assert.ok(![...xml.matchAll(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g)].some(match => /[\r\n]/.test(match[1])), "여러 줄 값은 Word 줄바꿈 요소로 출력");
+    if (language === "KR" && route !== "delivery-confirmation") {
+      assert.ok(xml.includes('국문검토 &amp; 확인</w:t><w:br/><w:t xml:space="preserve">두 번째 검토 의견 &lt;시험&gt;'));
+    }
     assert.ok(!xml.includes("미선택의견"));
     if (route !== "delivery-confirmation") assert.ok(xml.includes(language === "KR" ? "국문검토 &amp; 확인" : "Review &amp; evidence verified"));
     if (route === "decision-report") {
@@ -120,6 +124,7 @@ const draftBlob = await verifiedDocxBlob(draftResponse);
 const draftBody = new PizZip(await draftBlob.arrayBuffer()).file("word/document.xml").asText();
 for (const value of ["검토용 초안", "출력 배치 미검증", "정식 패키지 완료에 포함되지 않음", "가상후보", "가상 기록", "2026-09-02", "2026-09-04", "2026-09-09", "2029-09-08", "시험통보서"]) assert.ok(draftBody.includes(value), value);
 assert.ok(!draftBody.includes("{{"));
+assert.ok(![...draftBody.matchAll(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g)].some(match => /[\r\n]/.test(match[1])), "국문 초안도 Word 줄바꿈 요소로 출력");
 assert.equal((await draftPOST(request("EN"))).status, 400);
 for (const [dependency, stub, status] of [
   ["@/lib/server/api-auth", 'export async function requireApiStaff(){return Response.json({error:"권한 부족"},{status:403});}', 403],

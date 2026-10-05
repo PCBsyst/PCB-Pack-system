@@ -14,7 +14,7 @@ import { readValidatedDocumentRequest } from "@/lib/server/document-request-vali
 
 
 function xml(value: unknown) {
-  return String(value ?? "-").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
+  return String(value ?? "-").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;").replace(/\r\n|\r|\n/g, '</w:t><w:br/><w:t xml:space="preserve">');
 }
 
 function removeGradePlaceholder(content: string) {

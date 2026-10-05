@@ -1,4 +1,6 @@
 import PizZip from "pizzip";
+import { createHash } from "node:crypto";
+import { createPackageManifest, type ManifestDocument } from "@/lib/package-manifest";
 import { privateDocumentResponse } from "@/lib/private-document-response";
 import { documentTranslationIssues, documentTranslationMessage } from "@/lib/document-translation-checks";
 import { packageDocumentFailure } from "@/lib/document-errors";
@@ -58,13 +60,7 @@ async function createDocumentResponse(request: Request) {
   let fileCount = 0;
   const generatedDocuments: GeneratedPackageDocument[] = [];
   const generatedAt = new Date().toISOString();
-  const manifestLines = [
-    `신청번호: ${context.application.applicationNo}`,
-    `후보자: ${context.candidate.name}`,
-    `생성일시: ${new Date().toISOString()}`,
-    "",
-    "포함된 기업 양식",
-  ];
+  const manifestDocuments: ManifestDocument[] = [];
 
   for (const job of jobs) {
     const safeJobNo = packageSafePath(job.jobNo);
@@ -93,22 +89,15 @@ async function createDocumentResponse(request: Request) {
       try { provenance = readTemplateProvenance(response.headers); }
       catch { return Response.json({ error: "양식 생성 근거를 확인하지 못해 패키지 생성을 중단했습니다." }, { status: 503 }); }
       generatedDocuments.push({ jobId: job.id, documentType: template.documentType, language: template.language, entryName, template: provenance });
-      manifestLines.push(`- ${entryName}`);
-      manifestLines.push(`  양식 개정: ${provenance.version} / 출처: ${provenance.source === "DATABASE" ? "등록 양식" : "기본 내장 양식"} / SHA-256: ${provenance.sha256}`);
+      manifestDocuments.push({ jobId: job.id, documentType: template.documentType, language: template.language, entryName, template: provenance, sha256: createHash("sha256").update(bytes).digest("hex"), byteSize: bytes.byteLength });
     }
   }
 
   if (!fileCount) return Response.json({ error: "선택한 언어에 생성 가능한 양식이 없습니다." }, { status: 422 });
-  const complete = fileCount === jobs.length * selectedLanguages.size * 3;
-  manifestLines.push(`실제 생성 문서: ${fileCount}개 DOCX`, complete ? "선택한 언어의 3종 양식 포함" : "일부 양식 미등록: 전체 패키지 완료가 아닙니다.");
-  manifestLines.push(
-    "",
-    "안내",
-    "- 현재 등록된 실제 기업 템플릿만 포함합니다.",
-    "- 국문 문서전달확인서와 영문 서류검토서·인증결정보고서는 해당 템플릿 등록 후 추가됩니다.",
-    "- PDF 일괄 생성은 다음 단계에서 연결합니다.",
-  );
-  zip.file("package_manifest.txt", `\ufeff${manifestLines.join("\r\n")}`);
+  const manifest = createPackageManifest({ applicationNo: context.application.applicationNo, candidateName: context.candidate.name, generatedAt, languages, documents: manifestDocuments, jobs: jobs.map(job => ({ id: job.id, jobNo: job.jobNo, standard: job.standard, grade: job.currentGrade, certificateNo: context.certificates[job.id]?.certificationNo ?? "", issueDate: context.certificates[job.id]?.issueDate ?? "", expiryDate: context.certificates[job.id]?.expiryDate ?? "" })) });
+  const complete = manifest.complete;
+  zip.file("package_manifest.txt", manifest.text);
+  zip.file("package_manifest.json", JSON.stringify(manifest.manifest, null, 2));
 
   const output = zip.generate({ type: "uint8array", compression: "DEFLATE" });
   const body = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength) as ArrayBuffer;

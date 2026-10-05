@@ -37,6 +37,7 @@ const dependencies={
  '@/lib/feature-controls':url(compile(read('lib/feature-controls.ts'))),
  '@/lib/operation-mode':policyUrl,
  '@/lib/server/mfa-access':url(`import {state} from ${JSON.stringify(stateUrl)}; export async function checkServerMfa(){return state.mfa;}`),
+ '@/lib/staff-session':url('export async function readStaffSession(){return "valid";}'),
 };
 let server=compile(read('lib/server/api-auth.ts')).replace('import "server-only";','');
 for(const [key,value] of Object.entries(dependencies))server=server.replace(JSON.stringify(key),JSON.stringify(value));

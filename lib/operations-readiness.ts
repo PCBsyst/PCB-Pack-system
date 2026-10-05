@@ -16,6 +16,7 @@ export const databaseReadinessChecks = [
 export const policyReadinessChecks = [
   { id: "mfaPolicy", label: "서버 MFA 정책", migration: "026" },
   { id: "operationMode", label: "이관·테스트 운영 모드", migration: "027" },
+  { id: "session", label: "로그아웃 세션 서버 차단", migration: "031" },
 ] as const;
 
 type ProbeClient = {
@@ -32,11 +33,12 @@ export async function probeOperationsReadiness(client: ProbeClient): Promise<Rea
       return { id: item.id, status, detail: status === "READABLE" ? "테이블·열 조회 요청 성공. 실제 행 접근·저장·RLS·RPC 동작은 별도 검증입니다." : status === "PENDING" ? `SQL ${item.migration}와 실제 DB 구조를 확인하세요.` : "연결·권한·서비스 상태를 확인하세요." };
     } catch { return { id: item.id, status: "ERROR", detail: "조회 중 통신 오류가 발생했습니다. 재점검하세요." }; }
   }));
-  const [mfa, mode] = await Promise.all([readMfaPolicy(client), readOperationMode(client)]);
+  const [mfa, mode, session] = await Promise.all([readMfaPolicy(client), readOperationMode(client), readStaffSession(client)]);
   const policy = (id: string, state: "ready" | "legacy" | "unavailable", detail: string): ReadinessResult => ({ id, status: state === "ready" ? "READABLE" : state === "legacy" ? "PENDING" : "ERROR", detail: state === "ready" ? detail : state === "legacy" ? "정책 조회 함수가 없습니다. 해당 SQL 적용 상태를 확인하세요." : "정책을 확인하지 못했습니다. 정상 운영으로 간주하지 않습니다." });
   return [...tables,
     policy("mfaPolicy", mfa.mode, mfa.mode === "ready" ? `MFA ${mfa.policy.required ? "ON" : "OFF"}. 설정 조회만 확인했으며 실제 인증 차단 시험은 별도입니다.` : ""),
     policy("operationMode", mode.mode, mode.mode === "ready" ? mode.policy.active ? `테스트·이관 모드 ON · 일시 중지 ${mode.policy.paused.length}개 · 종료 예정 ${mode.policy.endsOn}. 자동 복구 보장은 아닙니다.` : "테스트·이관 모드 OFF. 기능별 개별 OFF 설정은 별도입니다." : ""),
+    { id: "session", status: session === "valid" ? "READABLE" : session === "legacy" ? "PENDING" : "ERROR", detail: session === "valid" ? "현재 서버 세션 확인 성공. 로그아웃 후 토큰 재사용·1시간 미사용 강제 차단은 별도 시험입니다." : session === "legacy" ? "SQL 031 미적용: 기존 직원·MFA 검사는 유지되지만 로그아웃 세션 서버 차단을 확인하지 못했습니다." : "세션이 종료됐거나 서버 검증에 실패했습니다. 다시 로그인해 확인하세요." },
   ];
 }
 
@@ -59,3 +61,4 @@ export function readinessSummary(results: ReadinessResult[]) {
 }
 import { readMfaPolicy } from "@/lib/mfa-requirement";
 import { readOperationMode } from "@/lib/operation-mode";
+import { readStaffSession } from "@/lib/staff-session";

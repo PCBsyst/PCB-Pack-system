@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { currentAuthEnvironment } from "@/lib/supabase/auth-environment";
 import { checkServerMfa } from "@/lib/server/mfa-access";
+import { readStaffSession } from "@/lib/staff-session";
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -69,6 +70,15 @@ export async function updateSession(request: NextRequest) {
       const url = request.nextUrl.clone();
       url.pathname = "/auth/error";
       url.search = "?error=approval-required";
+      return finish(NextResponse.redirect(url));
+    }
+    const session = await readStaffSession(supabase);
+    if (session === "unavailable") return finish(NextResponse.json({ error: "서버 세션 상태를 확인하지 못했습니다.", code: "SESSION_UNAVAILABLE" }, { status: 503 }));
+    if (session === "invalid") {
+      if (request.nextUrl.pathname.startsWith("/api/")) return finish(NextResponse.json({ error: "종료된 세션입니다. 다시 로그인해 주세요.", code: "SESSION_ENDED" }, { status: 401 }));
+      const url = request.nextUrl.clone();
+      url.pathname = "/auth/login";
+      url.search = "?reason=session-ended";
       return finish(NextResponse.redirect(url));
     }
     const mfa = await checkServerMfa(supabase, user.sub, user.aal, profile.is_owner === true);

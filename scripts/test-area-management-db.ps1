@@ -1,4 +1,4 @@
-param([switch]$FullWorkflow,[switch]$Permissions)
+param([switch]$FullWorkflow,[switch]$Permissions,[switch]$Sessions)
 $ErrorActionPreference='Stop'
 $taskDocker=Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Programs/DockerDesktop/resources/bin/docker.exe'
 $taskContainer='pcb-area-test-'+[Guid]::NewGuid().ToString('N').Substring(0,12)
@@ -6,6 +6,11 @@ $taskSecret=[Guid]::NewGuid().ToString('N')
 $taskPriorPassword=[Environment]::GetEnvironmentVariable('POSTGRES_PASSWORD','Process')
 $taskCreated=$false
 try {
+ if($Sessions){
+  $Permissions=$true
+  & $taskDocker image inspect public.ecr.aws/supabase/postgres:17.11.0.002 2>$null | Out-Null
+  if($LASTEXITCODE -ne 0){throw '기존 검사 이미지가 없어 중단합니다. 추가 다운로드/설치는 하지 않습니다.'}
+ }
  $env:POSTGRES_PASSWORD=$taskSecret
  & $taskDocker run -d --name $taskContainer --network none --tmpfs /var/lib/postgresql/data -e POSTGRES_PASSWORD public.ecr.aws/supabase/postgres:17.11.0.002 | Out-Null
  if($LASTEXITCODE -ne 0){throw '가상 DB 생성 실패'}
@@ -25,6 +30,12 @@ try {
    $taskPermissionSql+="`n"+(Get-Content -LiteralPath (Join-Path $PSScriptRoot "../supabase/migrations/$file") -Raw)
   }
   $taskPermissionSql+="`n"+(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/permissions-checks.sql') -Raw)
+  if($Sessions){
+   $taskSessionMigration=Get-Content -LiteralPath (Join-Path $PSScriptRoot '../supabase/migrations/202610050031_live_staff_sessions.sql') -Raw
+   $taskPermissionSql+="`n"+(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/sessions-auth.sql') -Raw)
+   $taskPermissionSql+="`n"+$taskSessionMigration+"`n"+$taskSessionMigration
+   $taskPermissionSql+="`n"+(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/sessions-checks.sql') -Raw)
+  }
   $taskPermissionSql+="`n"+(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'sql/operational-inventory.sql') -Raw)
   $taskPermissionSql | & $taskDocker exec -i $taskContainer psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1
   if($LASTEXITCODE -ne 0){throw '권한별 가상 DB 검사 실패'}

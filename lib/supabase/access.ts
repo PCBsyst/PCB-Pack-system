@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { currentAuthEnvironment } from "@/lib/supabase/auth-environment";
 import { createClient } from "@/lib/supabase/server";
 import { checkServerMfa } from "@/lib/server/mfa-access";
+import { readStaffSession } from "@/lib/staff-session";
 
 export type StaffContext = { id: string; email: string; displayName: string; role: "STAFF" | "ADMIN"; active: boolean; prototype: boolean };
 
@@ -27,6 +28,9 @@ async function readStaff(mfaSetupOnly: boolean): Promise<StaffContext> {
   const { data: profile, error } = await supabase.from("profiles").select("email, display_name, role, active,is_owner").eq("id", userId).single();
   if (error) redirect("/auth/error?error=verification-unavailable");
   if (!profile?.active) redirect("/auth/error?error=inactive");
+  const session = await readStaffSession(supabase);
+  if (session === "unavailable") redirect("/auth/error?error=verification-unavailable");
+  if (session === "invalid") redirect("/auth/login?reason=session-ended");
   if (!mfaSetupOnly) {
     const mfa = await checkServerMfa(supabase, userId, claimsData?.claims?.aal, profile.is_owner === true);
     if (mfa === "unavailable") redirect("/auth/error?error=verification-unavailable");

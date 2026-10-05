@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { currentAuthEnvironment } from "@/lib/supabase/auth-environment";
 import { evaluateFeatureControls, type FeatureControl, type OptionalFeature } from "@/lib/feature-controls";
 import { checkServerMfa } from "@/lib/server/mfa-access";
+import { readStaffSession } from "@/lib/staff-session";
 import { readOperationMode, isOperationPaused, type OperationOption } from "@/lib/operation-mode";
 
 /** API routes remain usable in prototype mode, but require an active staff session in Supabase mode. */
@@ -19,6 +20,9 @@ export async function requireApiStaff(requiredFeatures: OptionalFeature[] = [], 
   const { data: profile, error: profileError } = await supabase.from("profiles").select("active,is_owner").eq("id", userId).maybeSingle();
   if (profileError) return NextResponse.json({ error: "직원 권한을 확인하지 못했습니다." }, { status: 503 });
   if (!profile?.active) return NextResponse.json({ error: "활성화된 내부 직원만 사용할 수 있습니다." }, { status: 403 });
+  const session = await readStaffSession(supabase);
+  if (session === "unavailable") return NextResponse.json({ error: "서버 세션 상태를 확인하지 못했습니다.", code: "SESSION_UNAVAILABLE" }, { status: 503, headers: { "Cache-Control": "private, no-store" } });
+  if (session === "invalid") return NextResponse.json({ error: "종료된 세션입니다. 다시 로그인해 주세요.", code: "SESSION_ENDED" }, { status: 401, headers: { "Cache-Control": "private, no-store" } });
   const mfa = await checkServerMfa(supabase, userId, claimsData?.claims?.aal, profile.is_owner === true);
   if (mfa !== "allow") return NextResponse.json({ error: mfa === "unavailable" ? "2단계 인증 상태를 확인하지 못했습니다." : "내 계정 보안에서 2단계 인증을 완료해 주세요.", code: mfa === "unavailable" ? "MFA_UNAVAILABLE" : "MFA_REQUIRED" }, { status: mfa === "unavailable" ? 503 : 403, headers: { "Cache-Control": "no-store" } });
   if (requiredFeatures.length) {

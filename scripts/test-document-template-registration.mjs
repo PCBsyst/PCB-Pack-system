@@ -1,0 +1,27 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import PizZip from "pizzip";
+import ts from "typescript";
+const load = async (path) => {
+  const code = ts.transpileModule(fs.readFileSync(new URL(path, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+  return import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
+};
+const { documentTemplateRegistrationIssue: issue } = await load("../lib/document-template-registration.ts");
+const { missingDocumentTemplateFields: missing } = await load("../lib/document-template-fields.ts");
+const { prepareKoreanDeliveryTemplateDraft: prepare } = await load("../lib/korean-delivery-template-draft.ts");
+const zip = new PizZip(fs.readFileSync(new URL("../templates/FGPC-012-03-delivery-confirmation-en.docx", import.meta.url)));
+assert.equal(issue(zip, missing(zip, "DELIVERY_CONFIRMATION")), null);
+assert.match(issue(new PizZip(), []), /DOCX/);
+assert.match(issue(zip, ["candidateName"]), /candidateName/);
+zip.file("word/header99.xml", '<w:t>일반 초안 발행일</w:t><!-- 출력 배치 미검증 -->');
+assert.equal(issue(zip, []), null);
+zip.file("word/header99.xml", '<w:t>출력 배치 </w:t><w:t>미검증</w:t>');
+assert.match(issue(zip, []), /검토용 초안/);
+zip.remove("word/header99.xml");
+prepare(zip);
+assert.deepEqual(missing(zip, "DELIVERY_CONFIRMATION"), []);
+assert.match(issue(zip, []), /검토용 초안/);
+const manager = fs.readFileSync(new URL("../components/document-template-manager.tsx", import.meta.url), "utf8");
+assert.ok(manager.indexOf("const issue =") < manager.indexOf('.upload(storagePath'));
+assert.match(manager, /fieldset disabled=\{busy\}/);
+console.log("정식 양식 등록: DOCX 구조·필수항목·분리된 초안 표시 검사 및 저장 전 차단 통과");

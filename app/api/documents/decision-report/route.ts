@@ -82,8 +82,9 @@ async function createDocumentResponse(request: Request) {
   if (missingFields.length) return documentTemplateFieldsError(missingFields);
   // 기존 양식은 승인 의견 칸이 없으므로 의견 영역에 역할을 구분하여 함께 기록합니다.
   // 전용 칸을 가진 신규 양식에서는 중복 출력하지 않습니다.
-  const hasApprovalCommentField = Object.keys(zip.files).filter((name) => name.endsWith(".xml"))
-    .some((name) => /\{\{finalApprovalComment\}\}/.test((zip.file(name)?.asText() ?? "").replace(/<[^>]*>/g, "")));
+  const approvalBody = (zip.file("word/document.xml")?.asText() ?? "").replace(/<!--[\s\S]*?-->/g, "");
+  const hasApprovalCommentField = [...approvalBody.matchAll(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g)]
+    .some(match => match[1].includes("{{finalApprovalComment}}"));
   if (!hasApprovalCommentField && localized.finalApprovalComment !== "-") {
     values.decisionComment = `${localized.panelComments}\n${language === "KR" ? "대표자 최종 승인 의견" : "Final approval comment"}: ${localized.finalApprovalComment}`;
   }

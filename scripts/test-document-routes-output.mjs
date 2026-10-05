@@ -92,6 +92,17 @@ for (const [route, template] of [
     assert.ok(!response.headers.get("Content-Disposition"));
   }
   if (route === "decision-report") {
+    for (const placement of ["header", "comment"]) {
+      const misplaced = new PizZip(Buffer.from(bytes, "base64"));
+      if (placement === "header") misplaced.file("word/header-approval-test.xml", '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>{{finalApprovalComment}}</w:t></w:r></w:p></w:hdr>');
+      else misplaced.file("word/document.xml", misplaced.file("word/document.xml").asText().replace('</w:body>', '<!-- {{finalApprovalComment}} --></w:body>'));
+      const misplacedBytes = misplaced.generate({ type: "nodebuffer" }).toString("base64");
+      const misplacedRoute = await loadRoute(route, { "@/lib/server/document-template-loader": moduleUrl(`export async function loadDocumentTemplate(){return {bytes:Buffer.from('${misplacedBytes}','base64')};} export function templateLoadErrorResponse(){return new Response(null,{status:503});}`) });
+      const result = await misplacedRoute(request());assert.equal(result.status,200);
+      const body = new PizZip(await result.arrayBuffer()).file("word/document.xml").asText();
+      assert.ok(body.includes('대표자 최종 승인 의견'), `${placement}: 본문 승인 의견을 생략하지 않음`);
+      assert.ok(body.includes('국문최종승인'));
+    }
     const customized = new PizZip(Buffer.from(bytes, "base64"));
     customized.file("word/document.xml", customized.file("word/document.xml").asText().replace("</w:body>", "<w:p><w:r><w:t>{{finalApprovalComment}}</w:t></w:r></w:p></w:body>"));
     const customBytes = customized.generate({ type: "nodebuffer" }).toString("base64");
@@ -103,6 +114,34 @@ for (const [route, template] of [
       const comment = language === "KR" ? "국문최종승인" : "Final approval confirmed";
       assert.equal(content.split(comment).length - 1, 1, "승인 의견 전용 칸이 있으면 한 번만 출력");
     }
+  }
+  // Long input must survive generation in full. This does not certify printed pagination.
+  const longValue=Array.from({length:40},(_,index)=>`가상 의견 ${index+1} 교육 및 경력 확인 <검토> & 기록`).join('\r\n');
+  const longContext=structuredClone(context);
+  longContext.review.comment=longValue;
+  longContext.decisions.j1.comment=longValue;
+  longContext.panelMembers[0].comment=longValue;
+  for(const row of Object.values(longContext.deliveryDocuments.j1))row.comment=longValue;
+  const longOverrides={"@/lib/server/document-request-validation":moduleUrl(`export async function readValidatedDocumentRequest(){return {ok:true,input:{context:${JSON.stringify(longContext)},job:${JSON.stringify(job)},language:'KR'}};}`)};
+  if(route==='delivery-confirmation'){
+    // Legacy built-in form has no per-document comment slots; exercise an explicitly added slot.
+    const commentTemplate=new PizZip(Buffer.from(bytes,'base64'));
+    commentTemplate.file('word/document.xml',commentTemplate.file('word/document.xml').asText().replace('</w:body>','<w:p><w:r><w:t>{{applicationComment}}</w:t></w:r></w:p></w:body>'));
+    const commentBytes=commentTemplate.generate({type:'nodebuffer'}).toString('base64');
+    longOverrides['@/lib/server/document-template-loader']=moduleUrl(`export async function loadDocumentTemplate(){return {bytes:Buffer.from('${commentBytes}','base64')};} export function templateLoadErrorResponse(){return new Response(null,{status:503});}`);
+  }
+  const longPOST=await loadRoute(route,longOverrides);
+  const longResponse=await longPOST(request());assert.equal(longResponse.status,200);
+  const longZip=new PizZip(await longResponse.arrayBuffer());
+  const longBody=longZip.file('word/document.xml').asText();
+  {
+    for(let index=1;index<=40;index++)assert.ok(longBody.includes(`가상 의견 ${index} 교육 및 경력 확인 &lt;검토&gt; &amp; 기록`),`${route}: 긴 의견 ${index} 유지`);
+    assert.ok((longBody.match(/<w:br\/>/g)??[]).length>=39);
+  }
+  const baselineResponse=await POST(request());assert.equal(baselineResponse.status,200);
+  const baselineZip=new PizZip(await baselineResponse.arrayBuffer());
+  for(const name of Object.keys(baselineZip.files).filter(name=>/^word\/(header|footer|media\/)/.test(name)&&!baselineZip.files[name].dir)){
+    assert.ok(longZip.file(name)?.asNodeBuffer().equals(baselineZip.file(name).asNodeBuffer()),`${route}: 긴 의견에서도 기업 머릿글/바닥글/이미지 보존 ${name}`);
   }
 }
 // 검토용 전용 API도 실제 내장 파일과 생성/수신 무결성 함수를 함께 검사합니다.

@@ -63,5 +63,5 @@ export function PrototypeApplicationWorkspace({ id }: { id: string }) {
     invoiceIds: [],
   };
 
-  return <ApplicationDetail application={application} candidate={candidate} linkedJobs={[job]} invoices={[]}/>;
+  return <ApplicationDetail key={application.id} application={application} candidate={candidate} linkedJobs={[job]} invoices={[]}/>;
 }

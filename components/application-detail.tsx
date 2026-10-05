@@ -468,6 +468,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
         const readinessResponse = await fetch("/api/documents/template-readiness", { cache: "no-store" });
         if (!readinessResponse.ok) throw new Error(await documentErrorMessage(readinessResponse));
         const readiness = await readinessResponse.json();
+        if (!downloadMounted.current) return;
         if (!isTemplateReadinessRows(readiness.templates)) throw new Error("양식 준비 상태를 확인하지 못했습니다. 다시 시도해 주세요.");
         if (selected.includes("EN")) {
           const types = corporateTemplateRegistry.filter((template) => template.language === "EN" && readiness.templates.some((row: { id: string; source: string }) => row.id === template.id && row.source !== "MISSING")).map((template) => template.documentType);
@@ -480,6 +481,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
         if (!canAttachPackageGeneration(packageContext, latestPackageContext.current)) { setNotice("확인 중 업무 입력이 변경되었습니다. 입력 저장 후 다시 생성해 주세요."); return; }
         setNotice("실제 기업 양식 DOCX ZIP을 생성하고 있습니다.");
       const receipt = await downloadCorporatePackageZip(packageContext, linkedJobs, selected);
+      if (!downloadMounted.current) return;
       if (!canAttachPackageGeneration(packageContext, latestPackageContext.current)) {
         setNotice("생성 중 업무 입력이 변경되었습니다. 파일 다운로드는 요청됐지만 현재 업무를 새로 완료 처리하지 않았습니다. 입력 저장 후 다시 생성해 주세요.");
         return;
@@ -487,8 +489,8 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
       setDemo((current) => canAttachPackageGeneration(packageContext, { ...latestPackageContext.current, ...current }) ? ({ ...current, stage: receipt.complete ? "COMPLETED" : "PACKAGE_READY", generated: true, packageGeneration: receipt, dateAuditLogs: [...current.dateAuditLogs, createAuditLog("처리", "", "기록 패키지", "생성 준비", receipt.complete ? "DOCX ZIP 생성" : "일부 DOCX 생성", `실제 ${receipt.fileCount}개 DOCX 생성 응답 확인. PDF 생성·사용자 저장 완료는 별도 확인 필요.`, application.primaryOwner)] }) : current);
       setNotice(`${receipt.fileCount}개 DOCX를 포함한 ZIP을 생성하고 다운로드를 요청했습니다. ${receipt.complete ? "" : "일부 양식이 미등록되어 전체 패키지 완료로 처리하지 않았습니다. "}PDF 생성 및 PC 저장 완료를 의미하지 않습니다. ${receipt.receiptStatus === "RECORDED" ? "서버 생성기록 저장 확인." : "서버 생성기록은 DB 적용 대기 또는 로컬 미리보기입니다."} 업무단계 공유 저장은 별도로 확인해 주세요.`);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "기업 양식 ZIP 생성에 실패했습니다. 완료로 기록하지 않았습니다.");
-    } finally { generationBusy.current = false; setGenerating(false); }
+      if (downloadMounted.current) setNotice(error instanceof Error ? error.message : "기업 양식 ZIP 생성에 실패했습니다. 완료로 기록하지 않았습니다.");
+    } finally { generationBusy.current = false; if (downloadMounted.current) setGenerating(false); }
   };
   const correctionOptions = [
     { key: "review.result", label: "1차 검토결과", value: demo.review.result },

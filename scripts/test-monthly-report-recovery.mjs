@@ -3,7 +3,7 @@ import fs from "node:fs";
 import ts from "typescript";
 const source = fs.readFileSync(new URL("../components/monthly-operations-report.tsx", import.meta.url), "utf8");
 const helper = source.slice(source.indexOf("function arrayOf"), source.indexOf("export function MonthlyOperationsReport"));
-const effect = source.slice(source.indexOf("  useEffect(() => {"), source.indexOf("  const options ="));
+const effect = source.slice(source.indexOf("  useEffect(() => {\n    setRows"), source.indexOf("  const options ="));
 const code = ts.transpileModule(helper + effect, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 function fixture(query) {
   const rows = [], errors = [], loading = []; let cleanup;

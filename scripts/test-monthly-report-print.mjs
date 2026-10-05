@@ -35,5 +35,5 @@ const groupDeps = { loading: false, error: "", filtered: [detail], reportExportM
 new Function(...Object.keys(groupDeps), `${groupHandler};return exportGroupedCsv;`)(...Object.values(groupDeps))();
 assert.ok(!JSON.stringify(groupedExport).includes(detail.candidateName)); assert.ok(!JSON.stringify(groupedExport).includes(detail.jobNo));
 assert.ok(groupedExport.some((row) => row[0] === "ISO" && row[1] === "ISO 9001"));
-assert.match(source, /표준별 집계 CSV/); assert.match(source, /다운로드 이력은 아직 서버 접근이력에 기록되지/);
+assert.match(source, /표준별 집계 CSV/); assert.match(source, /집계 CSV·인쇄는 서버 접근이력에 기록되지/);
 console.log("보고서 출력 실제 함수: 조건 표시·기본 고객 상세 제외·동의 취소·팝업 차단·HTML 삽입 방지·40건 내용 보존 통과 (실제 인쇄 배치 검증 별도)");

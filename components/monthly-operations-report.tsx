@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, Loader2, Printer, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
@@ -10,6 +10,7 @@ import { ReportBusinessAnalytics } from "@/components/report-business-analytics"
 import { matchesReportFilters, matchesReportMonth } from "@/lib/report-filters";
 import { reportApplicationTypeLabel, reportExportMetadata, serializeReportCsv } from "@/lib/report-export";
 import { buildMonthlyReportPrintHtml } from "@/lib/monthly-report-print";
+import { verifiedReportCsv } from "@/lib/report-download";
 
 type CandidateRelation = { id: string; name: string };
 type CertificationRelation = { certification_no: string; issue_date: string; state: string; history_state: string };
@@ -38,6 +39,11 @@ export function MonthlyOperationsReport() {
   const [revision, setRevision] = useState(0);
   const [includePrintDetails, setIncludePrintDetails] = useState(false);
   const [exportNotice, setExportNotice] = useState("");
+  const [exportBusy, setExportBusy] = useState(false);
+  const exporting = useRef(false);
+  const mounted = useRef(true);
+  const exportSnapshot = useRef("");
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   useEffect(() => {
     setRows([]); setError(""); setLoading(Boolean(hasEnvVars));
@@ -65,6 +71,7 @@ export function MonthlyOperationsReport() {
 
   const options = useMemo(() => ({ standards: [...new Set(rows.map((row) => row.standard))].sort(), partners: [...new Set(rows.map((row) => row.partner))].sort(), grades: [...new Set(rows.map((row) => row.grade))].sort(), types: [...new Set(rows.map((row) => row.applicationType))].sort() }), [rows]);
   const reportFilters = { area, standard, partner, grade, applicationType, certificationState };
+  exportSnapshot.current = JSON.stringify({ month, dateBasis, filters: reportFilters, revision });
   const dimensionRows = useMemo(() => rows.filter((row) => matchesReportFilters(row, { area, standard, partner, grade, applicationType, certificationState })), [rows, area, standard, partner, grade, applicationType, certificationState]);
   const filtered = useMemo(() => dimensionRows.filter((row) => matchesReportMonth(row, month, dateBasis)), [dateBasis, month, dimensionRows]);
   const summary = useMemo(() => ({ total: filtered.length, issued: filtered.filter((row) => row.certificationNo).length, active: filtered.filter((row) => row.certificationState === "ACTIVE").length, suspended: filtered.filter((row) => row.certificationState === "SUSPENDED").length, withdrawn: filtered.filter((row) => row.certificationState === "WITHDRAWN").length }), [filtered]);
@@ -75,13 +82,23 @@ export function MonthlyOperationsReport() {
   }, [filtered]);
 
   const reset = () => { setMonth(currentMonth); setDateBasis("RECEIVED"); setArea("전체"); setStandard("전체"); setPartner("전체"); setGrade("전체"); setApplicationType("전체"); setCertificationState("전체"); };
-  const exportCsv = () => {
-    if (loading || error || !filtered.length) return;
+  const exportCsv = async () => {
+    if (exporting.current || loading || error || !filtered.length) return;
     if (!window.confirm(`후보자명·파트너사·인증번호 등이 포함된 ${filtered.length}개 Job의 상세 CSV를 내려받습니다. 파일을 안전하게 보관하고 권한 없는 사람에게 공유하지 마세요. 계속하시겠습니까?`)) return;
-    const header = ["접수일", "인증발행일", "분야", "후보자", "파트너사", "신청구분", "Job No.", "표준", "등급", "인증번호", "현재 인증상태"];
-    const body = filtered.map((row) => [row.receivedAt, row.issueDate, areaLabel(row.businessArea), row.candidateName, row.partner, reportApplicationTypeLabel(row.applicationType), row.jobNo, row.standard, row.grade, row.certificationNo, certificationLabel(row.certificationState)]);
-    const metadata = reportExportMetadata("월간 업무보고", month, dateBasis === "RECEIVED" ? "접수일" : "인증발행일", reportFilters);
-    downloadCsv([...metadata, [], header, ...body], `월간업무보고_${month}_${dateBasis === "RECEIVED" ? "접수" : "발행"}.csv`);
+    exporting.current = true; setExportBusy(true); setExportNotice("");
+    const snapshot = exportSnapshot.current;
+    try {
+      const response = await fetch("/api/reports/monthly-csv", { method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store", body: JSON.stringify({ month, dateBasis, filters: reportFilters }) });
+      const blob = await verifiedReportCsv(response);
+      if (!mounted.current) return;
+      if (snapshot !== exportSnapshot.current) throw new Error("생성 중 조회 조건이 바뀌어 저장을 중단했습니다. 현재 조건으로 다시 요청해 주세요.");
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a"); anchor.href = url; anchor.download = `월간업무보고_${month}_${dateBasis === "RECEIVED" ? "접수" : "발행"}.csv`;
+      try { anchor.click(); } finally { window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
+      setExportNotice("서버 자료와 파일 무결성을 확인해 다운로드를 요청했습니다. 신청별 접근이력이 기록되며 PC 저장 완료를 뜻하지는 않습니다.");
+    } catch (cause) {
+      if (mounted.current) setExportNotice(cause instanceof Error ? cause.message : "보고서를 내려받지 못했습니다.");
+    } finally { exporting.current = false; if (mounted.current) setExportBusy(false); }
   };
   const exportGroupedCsv = () => {
     if (loading || error || !filtered.length) return;
@@ -101,7 +118,7 @@ export function MonthlyOperationsReport() {
   };
 
   return <div className="space-y-4">
-    <section className="rounded-lg border bg-card p-4 text-sm"><p>상세 CSV와 상세 출력에는 고객정보가 포함됩니다. 개별 고객 목록이 필요하지 않으면 표준별 집계 CSV 또는 기본 집계 인쇄를 이용하세요. 브라우저에서 생성하는 보고서의 다운로드 이력은 아직 서버 접근이력에 기록되지 않습니다.</p><div className="mt-3 flex flex-wrap items-center gap-3"><Button type="button" variant="outline" disabled={loading || Boolean(error) || !filtered.length} onClick={exportGroupedCsv}><Download />표준별 집계 CSV</Button><label className="flex items-center gap-2"><input type="checkbox" checked={includePrintDetails} onChange={(event) => setIncludePrintDetails(event.target.checked)}/>인쇄에 고객 상세 포함 (기본 제외)</label></div>{exportNotice && <p role="status" className="mt-2 text-amber-700">{exportNotice}</p>}</section>
+    <section className="rounded-lg border bg-card p-4 text-sm"><p>상세 CSV와 상세 출력에는 고객정보가 포함됩니다. 상세 CSV는 서버 자료로 생성하고 신청별 응답 준비 이력을 기록합니다. 집계 CSV·인쇄는 서버 접근이력에 기록되지 않습니다. 고객 목록이 필요하지 않으면 집계 CSV 또는 기본 집계 인쇄를 이용하세요.</p><div className="mt-3 flex flex-wrap items-center gap-3"><Button type="button" variant="outline" disabled={loading || Boolean(error) || !filtered.length} onClick={exportGroupedCsv}><Download />표준별 집계 CSV</Button><label className="flex items-center gap-2"><input type="checkbox" checked={includePrintDetails} onChange={(event) => setIncludePrintDetails(event.target.checked)}/>인쇄에 고객 상세 포함 (기본 제외)</label></div>{exportBusy && <p role="status" className="mt-2">서버 보고서 생성·접근이력·파일 무결성을 확인 중입니다.</p>}{exportNotice && <p role="status" className="mt-2 text-amber-700">{exportNotice}</p>}</section>
     <div className="flex justify-end"><Button type="button" variant="outline" disabled={loading || !hasEnvVars} onClick={() => { setRows([]); setError(""); setLoading(true); setRevision((value) => value + 1); }}><RotateCcw />업무보고 자료 다시 조회</Button></div>
     <section className="rounded-lg border bg-white p-4 shadow-sm"><h2 className="mb-3 text-sm font-semibold">보고서 조회 조건</h2><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <input type="month" className={inputClass} value={month} onChange={(event) => setMonth(event.target.value)} />

@@ -15,14 +15,8 @@ assert.equal(reportGroupLabel("알수없음", "applicationType"), "알수없음"
 for (const dangerous of ['=SUM(1,2)', ' +SUM(1,2)', '-1+2', '@test', '\t=1', '\n=1']) assert.ok(serializeReportCsv([[dangerous]]).startsWith('"\''));
 assert.equal(serializeReportCsv([['정상,"값"', "줄1\n줄2", 0, null]]), '"정상,""값""","줄1\n줄2","0",""');
 const monthly = fs.readFileSync(new URL("../components/monthly-operations-report.tsx", import.meta.url), "utf8");
-const exportBody = compile(monthly.slice(monthly.indexOf("  const exportCsv ="), monthly.indexOf("  const printReport =")));
-let output;
-const row = { receivedAt: "2026-09-01", issueDate: "2026-10-02", businessArea: "K_BEAUTY", candidateName: "가상후보", partner: filters.partner, applicationType: "RENEWAL", jobNo: "SMP260001", standard: "SMP", grade: "전문가", certificationNo: "TEST", certificationState: "SUSPENDED" };
-const run = (loading, error, confirm = true) => new Function("loading", "error", "filtered", "areaLabel", "reportApplicationTypeLabel", "certificationLabel", "reportExportMetadata", "reportFilters", "month", "dateBasis", "downloadCsv", "window", `${exportBody};return exportCsv;`)(loading, error, [row], (value) => reportGroupLabel(value, "businessArea"), reportApplicationTypeLabel, helpers.reportStateLabel, reportExportMetadata, filters, "2026-10", "ISSUED", (rows) => { output = rows; }, { confirm: () => confirm })();
-run(false, ""); assert.ok(output.some((item) => item[0] === "현재 인증상태 필터" && item[1] === "인증 정지"));
-assert.equal(output.at(-1)[5], "갱신"); assert.equal(output.at(-1)[2], "K-Beauty");
-output = undefined; run(true, ""); assert.equal(output, undefined); run(false, "error"); assert.equal(output, undefined);
-run(false, "", false); assert.equal(output, undefined, "상세 CSV 확인 취소 시 파일 미생성");
+assert.match(monthly, /\/api\/reports\/monthly-csv/);
+assert.match(monthly, /verifiedReportCsv\(response\)/);
 assert.match(monthly, /setCertificationState\("전체"\)/); assert.match(monthly, /filters=\{reportFilters\}/);
 for (const file of ["report-business-analytics", "report-certification-events"]) {
   const component = fs.readFileSync(new URL(`../components/${file}.tsx`, import.meta.url), "utf8");
@@ -50,4 +44,4 @@ const eventDeps = { ...eventBrowser, Blob, state: "ready", periods: ["2026-10"],
 new Function(...Object.keys(eventDeps), `${eventExport};return download;`)(...Object.values(eventDeps))();
 assert.equal(eventBrowser.clicks(), 1); const eventCsv = await eventBrowser.text();
 assert.ok(eventCsv.includes('"집계 기준","상태 적용일"')); assert.ok(eventCsv.includes('"2026-10","1","2","0","0"'));
-console.log("보고서 확장: 현재 상태 필터·실제 상세 CSV 내 필터/국문 값·한국 시각·오류 시 미출력·공통 CSV 수식 보호 검사 통과");
+console.log("보고서 확장: 현재 상태 필터·실제 분석/변동 CSV 내 필터/국문 값·한국 시각·공통 CSV 수식 보호 검사 통과 (상세 CSV는 별도 서버/수신 검사)");

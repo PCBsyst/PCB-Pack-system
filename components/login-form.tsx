@@ -18,6 +18,7 @@ import { useState } from "react";
 import { hasEnvVars } from "@/lib/utils";
 import { idleStorageKey } from "@/lib/idle-session";
 import { needsMfaChallenge } from "@/lib/mfa-login-policy";
+import { readMfaPolicy } from "@/lib/mfa-requirement";
 
 export function LoginForm({
   className,
@@ -75,6 +76,9 @@ export function LoginForm({
       if (data.session) {
         try { localStorage.setItem(idleStorageKey(data.session.user.id, data.session.access_token), String(Date.now())); } catch { /* open-tab timer remains available */ }
       }
+      const policy = await readMfaPolicy(supabase);
+      if (policy.mode === "unavailable") throw new Error("로그인 보안 설정을 확인하지 못했습니다. 다시 시도해 주세요.");
+      if (policy.mode === "ready" && !policy.policy.required) { finishLogin(); return; }
       const assurance = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
       if (assurance.error) throw new Error("2단계 인증 상태를 확인하지 못했습니다. 다시 로그인해 주세요.");
       if (needsMfaChallenge(assurance.data.currentLevel, assurance.data.nextLevel)) {

@@ -20,11 +20,20 @@ for (const file of ['../app/api/staff/invite/route.ts','../app/api/staff/identit
 }
 assert.doesNotMatch(fs.readFileSync(new URL('../app/auth/mfa/page.tsx',import.meta.url),'utf8'), /AppShell/);
 const helperSource = fs.readFileSync(new URL('../lib/server/mfa-access.ts',import.meta.url),'utf8');
+const policyJs = ts.transpileModule(fs.readFileSync(new URL('../lib/mfa-requirement.ts',import.meta.url),'utf8'), { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText;
 const helperJs = ts.transpileModule(helperSource, { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText
   .replace('import "server-only";', '')
+  .replace('"@/lib/mfa-requirement"', JSON.stringify(`data:text/javascript;base64,${Buffer.from(policyJs).toString('base64')}`))
   .replace('"@/lib/server-mfa-policy"', JSON.stringify(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`));
 const { checkServerMfa } = await import(`data:text/javascript;base64,${Buffer.from(helperJs).toString('base64')}`);
-const mock = (user, error = null) => ({auth:{getUser:async()=>({data:{user},error})}});
+const mock = (user, error = null, required = undefined) => ({auth:{getUser:async()=>({data:{user},error})},rpc:async()=>required===undefined?{data:null,error:{code:'PGRST202',message:'get_mfa_policy missing'}}:{data:{required,updatedAt:'2026-10-05T00:00:00Z'},error:null}});
+assert.equal(await checkServerMfa(mock({id:'u',factors:[{status:'verified'}]},null,false),'u','aal1',true),'allow');
+assert.equal(await checkServerMfa(mock({id:'u'},null,true),'u','aal1',false),'enroll');
+assert.equal(await checkServerMfa(mock({id:'u'},null,false),'u','aal3',false),'unavailable');
+const {readMfaPolicy}=await import(`data:text/javascript;base64,${Buffer.from(policyJs).toString('base64')}`);
+for(const data of [null,{}, {required:'false',updatedAt:'2026-10-05'}, {required:false,updatedAt:'invalid'}]) assert.equal((await readMfaPolicy({rpc:async()=>({data,error:null})})).mode,'unavailable');
+for(const error of [{code:'42501'}, {code:'PGRST202',message:'other missing'}]) assert.equal((await readMfaPolicy({rpc:async()=>({data:null,error})})).mode,'unavailable');
+assert.equal((await readMfaPolicy({rpc:async()=>{throw Error('network')}})).mode,'unavailable');
 assert.equal(await checkServerMfa(mock({id:'u',factors:[{status:'verified'}]}),'u','aal1',false),'challenge');
 assert.equal(await checkServerMfa(mock({id:'u',factors:[{status:'verified'}]}),'u','aal2',true),'allow');
 assert.equal(await checkServerMfa(mock({id:'u',factors:[{status:'unverified'}]}),'u','aal1',true),'enroll');

@@ -73,6 +73,10 @@ export function LoginForm({
       });
       if (error) throw error;
       setPassword("");
+      if (!data.session?.user?.id) throw new Error("로그인 세션을 확인하지 못했습니다. 다시 로그인해 주세요.");
+      const { data: profile, error: profileError } = await supabase.from("profiles").select("active").eq("id", data.session.user.id).single();
+      if (profileError || !profile) throw new Error("직원 계정 정보를 확인하지 못했습니다. 관리자에게 문의해 주세요.");
+      if (profile.active !== true) throw new Error("승인 대기 또는 비활성 계정입니다. 최고관리자에게 계정 활성화를 요청해 주세요.");
       if (data.session) {
         try { localStorage.setItem(idleStorageKey(data.session.user.id, data.session.access_token), String(Date.now())); } catch { /* open-tab timer remains available */ }
       }

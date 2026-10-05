@@ -11,6 +11,7 @@ const originalBody = zip.file("word/document.xml").asText();
 const unchanged = new Map(Object.keys(zip.files).filter((name) => name !== "word/document.xml" && !zip.files[name].dir).map((name) => [name, zip.file(name).asUint8Array()]));
 prepare(zip);
 const body = zip.file("word/document.xml").asText();
+assert.ok(body.includes("검토용 초안 · 출력 배치 미검증"));
 assert.deepEqual(missing(zip, "DELIVERY_CONFIRMATION"), []);
 for (const field of originalBody.match(/\{\{\w+\}\}/g)) assert.ok(body.includes(field), field);
 for (const label of ["문서전달확인서", "후보자명", "교육수료증", "시험통보서", "시험답안지", "인증결정보고서"]) assert.ok(body.includes(label), label);

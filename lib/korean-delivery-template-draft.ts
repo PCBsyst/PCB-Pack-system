@@ -1,6 +1,6 @@
 import type PizZip from "pizzip";
 
-// 출력 배치 검증 전인 제작용 변환기입니다. 양식 레지스트리/API에 연결하지 않습니다.
+// 검토용 전용 경로에서만 사용합니다. 정식 양식 레지스트리에는 등록하지 않습니다.
 const labels: Record<string, string> = {
   "List of Certification Documents": "문서전달확인서",
   Name: "후보자명", Standard: "신청표준", Grade: "등급",
@@ -58,5 +58,7 @@ export function prepareKoreanDeliveryTemplateDraft(zip: PizZip): void {
     }
     return updated;
   });
+  const notice = '<w:p><w:pPr><w:keepNext/><w:spacing w:after="120"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Malgun Gothic" w:hAnsi="Malgun Gothic" w:eastAsia="Malgun Gothic"/><w:b/><w:color w:val="000000"/><w:sz w:val="22"/></w:rPr><w:t>검토용 초안 · 출력 배치 미검증 · 정식 패키지 완료에 포함되지 않음</w:t></w:r></w:p>';
+  body = body.replace(/<w:body(?:\s[^>]*)?>/, (tag) => tag + notice);
   zip.file("word/document.xml", body);
 }

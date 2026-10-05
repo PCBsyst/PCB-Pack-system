@@ -114,6 +114,14 @@ export function downloadDecisionReportDocx(context: PackageContext, job: Job, la
 export function downloadDeliveryConfirmationDocx(context: PackageContext, job: Job, language: DocumentLanguage = "KR") {
   return downloadCorporateDocumentDocx(context, job, "DELIVERY_CONFIRMATION", language);
 }
+export function downloadDeliveryConfirmationDraftDocx(context: PackageContext, job: Job) {
+  return withDownloadSingleFlight(`draft:${context.application.id}:${job.id}:DELIVERY_CONFIRMATION:KR`, async () => {
+    const response = await fetch("/api/documents/delivery-confirmation-draft", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context, job, language: "KR" }) });
+    if (!response.ok) throw new Error(await documentErrorMessage(response));
+    if (response.headers.get("X-Document-Status") !== "DRAFT") throw new Error("검토용 초안 표시를 확인하지 못했습니다.");
+    downloadBlob(`${job.jobNo}_Document_Delivery_Confirmation_DRAFT_KR.docx`, await verifiedDocxBlob(response));
+  });
+}
 export function downloadApplicationReviewDocx(context: PackageContext, job: Job, language: DocumentLanguage = "KR") {
   return downloadCorporateDocumentDocx(context, job, "APPLICATION_REVIEW", language);
 }

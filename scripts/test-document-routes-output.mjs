@@ -101,4 +101,36 @@ for (const [route, template] of [
     }
   }
 }
-console.log("세 문서 생성 API: 국영문 파일 내용·날짜·의견·XML 이스케이프 검사 통과 (인증/DB는 모의, 영문 미등록 양식의 디자인 검증 아님)");
+// 검토용 전용 API도 실제 내장 파일과 생성/수신 무결성 함수를 함께 검사합니다.
+const provenanceUrl = moduleUrl(compile("../lib/template-provenance.ts"));
+const draftDeps = {
+  "@/lib/korean-delivery-template-draft": moduleUrl(compile("../lib/korean-delivery-template-draft.ts")),
+  "@/lib/template-provenance": provenanceUrl,
+  "@/lib/server/docx-response-headers": moduleUrl(compile("../lib/server/docx-response-headers.ts").replace('import "server-only";', "")),
+};
+const draftPOST = await loadRoute("delivery-confirmation-draft", draftDeps);
+const draftResponse = await draftPOST(request("KR"));
+assert.equal(draftResponse.status, 200);
+assert.equal(draftResponse.headers.get("X-Document-Status"), "DRAFT");
+assert.match(draftResponse.headers.get("Content-Disposition"), /DRAFT_KR\.docx/);
+assert.match(draftResponse.headers.get("Cache-Control"), /private, no-store/);
+const verifyCode = compile("../lib/document-download.ts").replace("@/lib/template-provenance", provenanceUrl);
+const { verifiedDocxBlob } = await import(moduleUrl(verifyCode));
+const draftBlob = await verifiedDocxBlob(draftResponse);
+const draftBody = new PizZip(await draftBlob.arrayBuffer()).file("word/document.xml").asText();
+for (const value of ["검토용 초안", "출력 배치 미검증", "정식 패키지 완료에 포함되지 않음", "가상후보", "가상 기록", "2026-09-02", "2026-09-04", "2026-09-09", "시험통보서"]) assert.ok(draftBody.includes(value), value);
+assert.ok(!draftBody.includes("{{"));
+assert.equal((await draftPOST(request("EN"))).status, 400);
+for (const [dependency, stub, status] of [
+  ["@/lib/server/api-auth", 'export async function requireApiStaff(){return Response.json({error:"권한 부족"},{status:403});}', 403],
+  ["@/lib/server/document-request-validation", 'export async function readValidatedDocumentRequest(){return {ok:false,response:Response.json({error:"저장값 불일치"},{status:409})};}', 409],
+  ["node:fs/promises", 'export async function readFile(){return Buffer.from("invalid");}', 503],
+  ["@/lib/server/privacy-access", 'export async function recordDocumentResponse(){return Response.json({error:"이력 저장 실패"},{status:503});}', 503],
+]) {
+  const guarded = await loadRoute("delivery-confirmation-draft", { ...draftDeps, [dependency]: moduleUrl(stub) });
+  const response = await guarded(request());
+  assert.equal(response.status, status);
+  assert.ok(!response.headers.get("Content-Disposition"));
+  assert.match(response.headers.get("Cache-Control"), /private, no-store/);
+}
+console.log("세 정식 문서 및 국문 검토용 초안 API: 파일 내용·초안 표시·생성/수신 무결성·실패 시 차단 통과 (인증/DB 모의, 출력 배치 검증 별도)");

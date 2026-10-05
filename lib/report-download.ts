@@ -1,4 +1,5 @@
 import { documentErrorMessage } from "@/lib/document-errors";
+import { boundedDownloadBlob } from "@/lib/bounded-download";
 
 export async function verifiedReportCsv(response: Response): Promise<Blob> {
   const sizeText = response.headers.get("X-Report-Byte-Size") ?? "";
@@ -9,7 +10,7 @@ export async function verifiedReportCsv(response: Response): Promise<Blob> {
     || !/^\d+$/.test(sizeText) || !Number.isSafeInteger(size) || size < 3 || size > 20 * 1024 * 1024 || !/^[a-f0-9]{64}$/.test(hash)) {
     throw new Error("보고서 응답 정보를 확인하지 못해 저장을 중단했습니다.");
   }
-  const blob = await response.blob();
+  const blob = await boundedDownloadBlob(response, size, 20 * 1024 * 1024);
   const bytes = await blob.arrayBuffer();
   const first = new Uint8Array(bytes);
   if (bytes.byteLength !== size || first[0] !== 0xef || first[1] !== 0xbb || first[2] !== 0xbf) throw new Error("보고서 파일의 크기·문자 형식이 맞지 않습니다.");

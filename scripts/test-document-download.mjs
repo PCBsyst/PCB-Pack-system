@@ -4,7 +4,8 @@ import { createHash } from "node:crypto";
 import ts from "typescript";
 const compile = (file) => ts.transpileModule(fs.readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const provenanceModule = `data:text/javascript;base64,${Buffer.from(compile("../lib/template-provenance.ts")).toString("base64")}`;
-const code = compile("../lib/document-download.ts").replace("@/lib/template-provenance", provenanceModule);
+const boundedModule = `data:text/javascript;base64,${Buffer.from(compile("../lib/bounded-download.ts")).toString("base64")}`;
+const code = compile("../lib/document-download.ts").replace("@/lib/template-provenance", provenanceModule).replace("@/lib/bounded-download", boundedModule);
 const { verifiedDocxBlob: verify } = await import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
 const bytes = new Uint8Array([0x50, 0x4b, 3, 4, 1, 2, 3, 4]);
 function response(change = () => {}, data = bytes) {

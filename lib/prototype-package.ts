@@ -2,6 +2,7 @@ import type { Candidate, CertificationApplication, Job } from "@/types/certifica
 import { parsePackageGeneration } from "@/lib/package-generation";
 import { documentErrorMessage } from "@/lib/document-errors";
 import { verifiedDocxBlob } from "@/lib/document-download";
+import { verifiedPackageBlob } from "@/lib/package-download";
 import { withDownloadSingleFlight } from "@/lib/download-single-flight";
 
 export type DemoReview = { result: "적합" | "보완필요" | "부적합"; reviewer: string; reviewedAt: string; comment: string; verifier: string; verifiedAt: string; verificationResult: "확인" | "재검토요청"; verificationComment: string };
@@ -140,14 +141,7 @@ async function downloadCorporatePackageZipImpl(context: PackageContext, jobs: Jo
   const disposition = response.headers.get("Content-Disposition") ?? "";
   const fileName = disposition.match(/filename="([^"]+)"/)?.[1] ?? `${context.application.applicationNo}_Corporate_Documents.zip`;
   const receipt = parsePackageGeneration(response.headers, jobs.map((job) => job.id), languages);
-  const blob = await response.blob();
-  const signature = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
-  if (signature[0] !== 0x50 || signature[1] !== 0x4b || signature[2] !== 0x03 || signature[3] !== 0x04) throw new Error("ZIP 파일을 확인하지 못했습니다. 완료로 기록하지 않습니다.");
-  if (receipt.sha256) {
-    const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
-    const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-    if (hash !== receipt.sha256) throw new Error("서버 생성 파일과 수신한 ZIP이 일치하지 않습니다.");
-  }
+  const blob = await verifiedPackageBlob(response);
   if (isCurrent && !isCurrent()) throw new Error("생성 중 업무 입력이나 화면이 변경되었습니다. 현재 입력을 저장한 후 다시 생성해 주세요.");
   downloadBlob(fileName, blob);
   window.dispatchEvent(new Event("package-generation-recorded"));

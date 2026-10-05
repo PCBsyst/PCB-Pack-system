@@ -9,11 +9,12 @@ const compiled = ts.transpileModule(declarations, { compilerOptions: { target: t
 const context = { application: { id: "a1", applicationNo: "TEST" } }, job = { id: "j1", jobNo: "TEST" };
 const blob = new Blob([new Uint8Array([0x50, 0x4b, 0x03, 0x04])]);
 let current = true, downloads = 0, events = 0, mutateOnVerify = false;
-const functions = new Function("fetch", "withDownloadSingleFlight", "documentErrorMessage", "verifiedDocxBlob", "downloadBlob", "parsePackageGeneration", "window", `${compiled};return {${names.join(",")}};`)(
+const functions = new Function("fetch", "withDownloadSingleFlight", "documentErrorMessage", "verifiedDocxBlob", "downloadBlob", "parsePackageGeneration", "window", "verifiedPackageBlob", `${compiled};return {${names.join(",")}};`)(
   async () => ({ ok: true, headers: new Headers({ "X-Document-Status": "DRAFT" }), blob: async () => { if (mutateOnVerify) current = false; return blob; } }),
   async (_, task) => task(), async () => "실패",
   async () => { if (mutateOnVerify) current = false; return blob; },
   () => { downloads++; }, () => ({ sha256: "", complete: true }), { dispatchEvent: () => { events++; } },
+  async () => { if (mutateOnVerify) current = false; return blob; },
 );
 for (const task of [
   () => functions.downloadCorporateDocumentDocx(context, job, "APPLICATION_REVIEW", "KR", () => current),

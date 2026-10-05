@@ -1,0 +1,32 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import { createHash } from "node:crypto";
+import ts from "typescript";
+const compile = file => ts.transpileModule(fs.readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+const url = code => `data:text/javascript;base64,${Buffer.from(code).toString("base64")}`;
+const boundedUrl = url(compile("../lib/bounded-download.ts"));
+const { boundedDownloadBlob } = await import(boundedUrl);
+const { verifiedPackageBlob } = await import(url(compile("../lib/package-download.ts").replace("@/lib/bounded-download", boundedUrl)));
+const bytes = new Uint8Array([80, 75, 3, 4, 1, 2, 3, 4]);
+const headers = { "Content-Type": "application/zip", "X-Package-Byte-Size": "8", "X-Package-SHA256": createHash("sha256").update(bytes).digest("hex") };
+assert.equal((await verifiedPackageBlob(new Response(bytes, { headers }))).size, 8);
+for (const override of [{ "Content-Type": "text/html" }, { "X-Package-Byte-Size": "" }, { "X-Package-Byte-Size": "1073741824" }, { "X-Package-SHA256": "" }, { "X-Package-SHA256": "a".repeat(64) }]) {
+  await assert.rejects(() => verifiedPackageBlob(new Response(bytes, { headers: { ...headers, ...override } })));
+}
+await assert.rejects(() => verifiedPackageBlob(new Response(bytes.slice(0, 4), { headers })));
+await assert.rejects(() => verifiedPackageBlob(new Response(new Uint8Array(8), { headers })));
+let cancelled = false;
+const stream = new ReadableStream({ start(controller) { controller.enqueue(bytes); }, cancel() { cancelled = true; } });
+await assert.rejects(() => boundedDownloadBlob(new Response(stream), 4, 16), /허용 크기/);
+assert.equal(cancelled, true);
+let reads = 0;
+const tooLarge = new ReadableStream({ pull(controller) { reads++; controller.enqueue(bytes); } }, { highWaterMark: 0 });
+await assert.rejects(() => boundedDownloadBlob(new Response(tooLarge), 17, 16));
+assert.equal(reads, 0, "선언 크기가 제한을 넘으면 읽기 전에 거절");
+const broken = new ReadableStream({ start(controller) { controller.error(new Error("연결 중단")); } });
+await assert.rejects(() => boundedDownloadBlob(new Response(broken), 8, 16), /연결 중단/);
+const chunks = new ReadableStream({ start(controller) { controller.enqueue(bytes.slice(0, 3)); controller.enqueue(bytes.slice(3)); controller.close(); } });
+assert.deepEqual(new Uint8Array(await (await boundedDownloadBlob(new Response(chunks), 8, 16)).arrayBuffer()), bytes);
+const route = fs.readFileSync(new URL("../app/api/documents/package/route.ts", import.meta.url), "utf8");
+assert.ok(route.includes('"X-Package-Byte-Size": String(output.byteLength)'));
+console.log("제한 수신·ZIP 형식/해시·잘림·초과 스트림 취소·통신 중단 검사 통과 (실제 PC 저장 검증 별도)");

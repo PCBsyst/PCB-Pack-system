@@ -1,4 +1,5 @@
 import { readTemplateProvenance } from "@/lib/template-provenance";
+import { boundedDownloadBlob } from "@/lib/bounded-download";
 
 /** Check receipt bytes before triggering a browser save; not proof of PC saving. */
 export async function verifiedDocxBlob(response: Response): Promise<Blob> {
@@ -11,7 +12,7 @@ export async function verifiedDocxBlob(response: Response): Promise<Blob> {
     throw new Error("문서 응답 정보를 확인하지 못해 다운로드를 중단했습니다.");
   }
   readTemplateProvenance(response.headers);
-  const blob = await response.blob();
+  const blob = await boundedDownloadBlob(response, size, 25 * 1024 * 1024);
   const bytes = await blob.arrayBuffer();
   const signature = new Uint8Array(bytes, 0, Math.min(4, bytes.byteLength));
   if (bytes.byteLength !== size || signature[0] !== 0x50 || signature[1] !== 0x4b || signature[2] !== 0x03 || signature[3] !== 0x04) {

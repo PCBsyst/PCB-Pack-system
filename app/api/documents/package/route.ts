@@ -104,6 +104,7 @@ async function createDocumentResponse(request: Request) {
   zip.file("package_manifest.json", JSON.stringify(manifest.manifest, null, 2));
 
   const output = zip.generate({ type: "uint8array", compression: "DEFLATE" });
+  if (output.byteLength > 100 * 1024 * 1024) return Response.json({ error: "패키지가 100MB를 초과했습니다. Job 또는 언어를 나누어 생성해 주세요." }, { status: 413 });
   const body = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength) as ArrayBuffer;
   const safeApplicationNo = packageSafePath(context.application.applicationNo);
   // Recheck after the last document, before recording or returning the archive.
@@ -123,6 +124,7 @@ async function createDocumentResponse(request: Request) {
       "X-Package-Receipt-Status": receipt.status,
       "X-Package-Receipt-Id": receipt.id ?? "",
       "X-Package-SHA256": receipt.sha256,
+      "X-Package-Byte-Size": String(output.byteLength),
       "Content-Disposition": `attachment; filename="${safeApplicationNo}_Corporate_Documents.zip"`,
     },
   });

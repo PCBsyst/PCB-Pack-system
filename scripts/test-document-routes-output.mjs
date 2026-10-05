@@ -157,7 +157,7 @@ assert.equal(draftResponse.status, 200);
 assert.equal(draftResponse.headers.get("X-Document-Status"), "DRAFT");
 assert.match(draftResponse.headers.get("Content-Disposition"), /DRAFT_KR\.docx/);
 assert.match(draftResponse.headers.get("Cache-Control"), /private, no-store/);
-const verifyCode = compile("../lib/document-download.ts").replace("@/lib/template-provenance", provenanceUrl);
+const verifyCode = compile("../lib/document-download.ts").replace("@/lib/template-provenance", provenanceUrl).replace("@/lib/bounded-download", moduleUrl(compile("../lib/bounded-download.ts")));
 const { verifiedDocxBlob } = await import(moduleUrl(verifyCode));
 const draftBlob = await verifiedDocxBlob(draftResponse);
 const draftBody = new PizZip(await draftBlob.arrayBuffer()).file("word/document.xml").asText();

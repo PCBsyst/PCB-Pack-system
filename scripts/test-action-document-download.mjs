@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 const url = (code) => `data:text/javascript;base64,${Buffer.from(code).toString("base64")}`;
 const compile = (path) => ts.transpileModule(fs.readFileSync(new URL(path, import.meta.url), "utf8").replace('import "server-only";', ""), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const provenance = url(compile("../lib/template-provenance.ts"));
-const download = compile("../lib/document-download.ts").replace('"@/lib/template-provenance"', JSON.stringify(provenance));
+const download = compile("../lib/document-download.ts").replace('"@/lib/template-provenance"', JSON.stringify(provenance)).replace("@/lib/bounded-download", url(compile("../lib/bounded-download.ts")));
 const { verifiedDocxBlob } = await import(url(download));
 const fixture = { jobNo: "QMS260099", managementNo: 99, candidateName: "가상후보", candidateContact: "후보자 상세정보 참조", certificationNo: "26130099", certificationIssueDate: "2026-01-01", actionType: "SUSPENDED", standardReason: "가상 사유", detailReason: "가상 상세 & 확인", effectiveDate: "2026-09-01", actor: "가상담당자", recordedAt: "2026-09-01T01:00:00Z" };
 let route = compile("../app/api/documents/certification-action/route.ts");

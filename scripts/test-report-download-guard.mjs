@@ -5,7 +5,7 @@ import ts from "typescript";
 const compile = (file) => ts.transpileModule(fs.readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const moduleUrl = (code) => `data:text/javascript;base64,${Buffer.from(code).toString("base64")}`;
 const errorsUrl = moduleUrl(compile("../lib/document-errors.ts"));
-const { verifiedReportCsv } = await import(moduleUrl(compile("../lib/report-download.ts").replace("@/lib/document-errors", errorsUrl)));
+const { verifiedReportCsv } = await import(moduleUrl(compile("../lib/report-download.ts").replace("@/lib/document-errors", errorsUrl).replace("@/lib/bounded-download", moduleUrl(compile("../lib/bounded-download.ts")))));
 const bytes = new TextEncoder().encode('\ufeff"가상보고서"');
 const headers = { "Content-Type": "text/csv;charset=utf-8", "X-Report-SHA256": createHash("sha256").update(bytes).digest("hex"), "X-Report-Byte-Size": String(bytes.length) };
 assert.equal((await verifiedReportCsv(new Response(bytes, { headers }))).size, bytes.length);

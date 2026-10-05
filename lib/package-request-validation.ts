@@ -14,6 +14,22 @@ export function packageSafePath(value: string) {
   return value.replace(/[^A-Za-z0-9_-]/g, "_");
 }
 
+/** Optional dates remain optional; populated dates must represent real calendar days. */
+export function certificateDateIssues(value: unknown): string[] {
+  if (value === undefined) return [];
+  if (!record(value)) return ["인증정보 구성이 올바르지 않습니다."];
+  const fields = [
+    ["draftIssuedAt", "초안 발행일"], ["issueDate", "전자본 발행일"],
+    ["expiryDate", "만료일"], ["originalSentAt", "원본 송부일"],
+  ] as const;
+  const issues = fields.flatMap(([key, label]) => value[key] !== undefined && !optionalDate(value[key])
+    ? [`${label}은 실제 존재하는 날짜(YYYY-MM-DD)로 입력해 주세요.`] : []);
+  if (typeof value.issueDate === "string" && value.issueDate && optionalDate(value.issueDate)
+    && typeof value.expiryDate === "string" && value.expiryDate && optionalDate(value.expiryDate)
+    && value.expiryDate < value.issueDate) issues.push("만료일이 전자본 발행일보다 빠릅니다.");
+  return issues;
+}
+
 /** Checks request consistency only, not equivalence to authoritative DB records. */
 export function validatePackageRequest(value: unknown): string | null {
   if (!record(value) || !record(value.context)) return "패키지 신청정보가 없습니다.";
@@ -44,6 +60,8 @@ export function validatePackageRequest(value: unknown): string | null {
       return "선택한 Job이 신청정보와 일치하지 않습니다.";
     }
     const path = packageSafePath(job.jobNo).toLowerCase();
+    const certificateErrors = certificateDateIssues(context.certificates[job.id]);
+    if (certificateErrors.length) return `${job.jobNo}: ${certificateErrors.join(" ")}`;
     if (record(context.examSchedules)) {
       const schedule = context.examSchedules[job.id];
       if (!record(schedule) || !["PARTNER", "NON_PARTNER"].includes(String(schedule.providerType))

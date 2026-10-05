@@ -6,6 +6,20 @@ const { validatePackageRequest: validate } = await import(`data:text/javascript;
 const job = { id: "j1", jobNo: "QMS260001", standard: "ISO 9001", currentGrade: "심사원", candidateId: "c1", applicationId: "a1" };
 function fixture() { return { context: { application: { id: "a1", applicationNo: "APP1", candidateId: "c1", jobIds: ["j1"] }, candidate: { id: "c1", name: "가상 후보자" }, jobs: [structuredClone(job)], review: {}, certificates: {}, decisions: {}, deliveryDocuments: {}, assessment: {}, panelMembers: [] }, jobs: [structuredClone(job)], languages: ["KR", "EN"] }; }
 assert.equal(validate(fixture()), null);
+for (const [key, value] of [["issueDate", "2026-02-29"], ["expiryDate", "2026-04-31"], ["draftIssuedAt", "26-01-01"], ["originalSentAt", null]]) {
+  const request = fixture(); request.context.certificates.j1 = { [key]: value };
+  assert.ok(validate(request), `${key}: 잘못된 인증 날짜 차단`);
+}
+const reversed = fixture(); reversed.context.certificates.j1 = { issueDate: "2026-09-15", expiryDate: "2026-09-14" };
+assert.match(validate(reversed), /만료일이 전자본 발행일보다 빠릅니다/);
+for (const dates of [{ issueDate: "2028-02-29", expiryDate: "2031-02-28" }, { issueDate: "2026-09-15", expiryDate: "2026-09-15" }, { issueDate: "", expiryDate: "", draftIssuedAt: "", originalSentAt: "" }]) {
+  const request = fixture(); request.context.certificates.j1 = dates;
+  const original = JSON.stringify(request);
+  assert.equal(validate(request), null);
+  assert.equal(JSON.stringify(request), original);
+}
+const unrelated = fixture(); unrelated.context.certificates.other = { issueDate: "invalid" };
+assert.equal(validate(unrelated), null);
 assert.ok(validate(null));
 for (const change of [
   (v) => v.jobs.push(v.jobs[0]),

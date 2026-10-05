@@ -1,5 +1,6 @@
 "use client";
 import { packageDateDifferences } from "@/lib/package-date-consistency";
+import { certificateDateIssues } from "@/lib/package-request-validation";
 import { downloadDeliveryConfirmationDraftDocx } from "@/lib/prototype-package";
 
 import Link from "next/link";
@@ -582,9 +583,11 @@ function PackagePreflight({ jobs, certificates, documents }: { jobs: Job[]; cert
     const pending = issues.filter((issue) => issue.jobId === job.id);
     const certificate = certificates[job.id];
     const fields = [!certificate?.issueDate?.trim() && "전자본 발행일", !certificate?.certificationNo?.trim() && "인증번호", !certificate?.expiryDate?.trim() && "만료일"].filter(Boolean);
+    const dateIssues = certificateDateIssues(certificate);
     return <div key={job.id} className="rounded-md border p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm font-semibold">{job.jobNo} · {job.standard}</span><span className="text-xs text-muted-foreground">{pending.length || fields.length ? "입력 확인 필요" : "문서 입력 점검 통과"}</span></div>
+      <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm font-semibold">{job.jobNo} · {job.standard}</span><span className="text-xs text-muted-foreground">{pending.length || fields.length || dateIssues.length ? "입력 확인 필요" : "문서 입력 점검 통과"}</span></div>
       {fields.length > 0 && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">인증정보 누락: {fields.join(", ")} · <a className="underline underline-offset-2" href="#certificate-information">인증정보 입력 위치</a></p>}
+      {dateIssues.length > 0 && <ul className="mt-2 space-y-1 text-xs text-amber-700 dark:text-amber-300">{dateIssues.map(message => <li key={message}><a className="underline underline-offset-2" href="#certificate-information">{message} → 인증정보 확인</a></li>)}</ul>}
       {pending.length > 0 && <ul className="mt-2 space-y-1 text-xs">{pending.map((issue) => <li key={issue.key}><a className="text-amber-700 underline underline-offset-2 dark:text-amber-300" href={`#delivery-${job.id}-${issue.key}`}>{issue.label} · {issue.reason} → 입력 위치</a></li>)}</ul>}
       <p className="mt-2 text-xs text-muted-foreground">원본 추적: {certificate?.originalSentAt || "송부일 미입력"} · {certificate?.trackingNumber || "운송장 미입력"} (인증 완료 기준과 별도)</p>
     </div>;

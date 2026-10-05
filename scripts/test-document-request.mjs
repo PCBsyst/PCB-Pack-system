@@ -12,6 +12,11 @@ const context = { application: { id: "a1", applicationNo: "APP1", candidateId: "
 assert.equal(validate({ context, job }, "KR").input.language, "KR");
 assert.equal(validate({ context, job }, "EN").input.language, "EN");
 assert.equal(validate({ context, job, language: "EN" }, "KR").input.language, "EN");
+const badDates = structuredClone(context);
+badDates.certificates.j1 = { issueDate: "2026-09-15", expiryDate: "2026-09-14" };
+assert.equal(validate({ context: badDates, job }, "KR").ok, false);
+badDates.certificates.j1 = { issueDate: "2026-02-29" };
+assert.equal(validate({ context: badDates, job }, "KR").ok, false);
 for (const value of [null, [], {}, { context }, { context, job, language: "JP" }, { context, job, language: null }, { context, job: { ...job, candidateId: "other" } }, { context, job: { ...job, standard: "other" } }]) {
   assert.equal(validate(value, "KR").ok, false);
 }

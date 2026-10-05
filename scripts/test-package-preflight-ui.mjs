@@ -7,7 +7,9 @@ const ast = ts.createSourceFile("ui.tsx", source, ts.ScriptTarget.Latest, true, 
 const fn = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "PackagePreflight");
 assert.ok(fn);
 const code = ts.transpileModule(fn.getText(ast), { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2020 } }).outputText;
-const context = { React: { createElement: (tag, props, ...children) => ({ tag, props, children }) }, packageDocumentIssues: () => [], deliveryDocumentRows: [] };
+const dateCode = ts.transpileModule(fs.readFileSync(new URL("../lib/package-request-validation.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText;
+const { certificateDateIssues } = await import(`data:text/javascript;base64,${Buffer.from(dateCode).toString("base64")}`);
+const context = { React: { createElement: (tag, props, ...children) => ({ tag, props, children }) }, packageDocumentIssues: () => [], deliveryDocumentRows: [], certificateDateIssues };
 vm.createContext(context);
 vm.runInContext(code + "\nthis.render = PackagePreflight;", context);
 const text = tree => typeof tree === "string" ? tree : Array.isArray(tree) ? tree.map(text).join(" ") : tree?.children ? tree.children.map(text).join(" ") : "";
@@ -15,6 +17,10 @@ const render = certificate => context.render({ jobs: [{ id: "j1", jobNo: "TEST00
 assert.match(text(render({})), /전자본 발행일, 인증번호, 만료일/);
 assert.match(text(render({ issueDate: "2026-09-15", certificationNo: "   ", expiryDate: "2029-09-14" })), /인증정보 누락:\s+인증번호/);
 assert.match(text(render({ issueDate: "2026-09-15", certificationNo: "TEST", expiryDate: "2029-09-14" })), /문서 입력 점검 통과/);
+const reversed = text(render({ issueDate: "2026-09-15", certificationNo: "TEST", expiryDate: "2026-09-14" }));
+assert.match(reversed, /만료일이 전자본 발행일보다 빠릅니다/);
+assert.match(reversed, /입력 확인 필요/);
+assert.doesNotMatch(reversed, /문서 입력 점검 통과/);
 assert.ok(source.includes('href="#certificate-information"'));
 assert.ok(source.includes('id="certificate-information"'));
 assert.equal(source.split("<PackagePreflight jobs=").length - 1, 1);

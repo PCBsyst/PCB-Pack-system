@@ -1,3 +1,4 @@
+param([switch]$FullWorkflow)
 $ErrorActionPreference='Stop'
 $taskDocker=Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Programs/DockerDesktop/resources/bin/docker.exe'
 $taskContainer='pcb-area-test-'+[Guid]::NewGuid().ToString('N').Substring(0,12)
@@ -11,7 +12,7 @@ try {
  $taskCreated=$true
  $taskReady=$false
  for($i=0;$i -lt 30;$i++){
-  & $taskDocker exec $taskContainer pg_isready -U postgres 2>$null | Out-Null
+  & $taskDocker exec $taskContainer pg_isready -h 127.0.0.1 -U postgres 2>$null | Out-Null
   if($LASTEXITCODE -eq 0){$taskReady=$true;break}
   Start-Sleep -Seconds 1
  }
@@ -19,9 +20,35 @@ try {
  $taskMigration=Get-Content -LiteralPath (Join-Path $PSScriptRoot '../supabase/migrations/202610050028_area_management_numbers.sql') -Raw
  $taskFixture=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/area-management.sql') -Raw
  $taskChecks=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/area-management-checks.sql') -Raw
- $taskSql=$taskFixture+"`n"+$taskMigration+"`n"+$taskMigration+"`n"+$taskChecks
- $taskSql | & $taskDocker exec -i $taskContainer psql -U postgres -d postgres -v ON_ERROR_STOP=1
+ if($FullWorkflow){
+  $taskFixture=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/legacy-workflow.sql') -Raw
+  $taskOriginal=Get-Content -LiteralPath (Join-Path $PSScriptRoot '../supabase/migrations/202610030023_customer_reason_and_evidence_protection.sql') -Raw
+  $taskChecks=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/legacy-workflow-checks.sql') -Raw
+  $taskFixture+="`n"+$taskOriginal
+ }
+ $taskFix=''
+ if($FullWorkflow){$taskFix=Get-Content -LiteralPath (Join-Path $PSScriptRoot '../supabase/migrations/202610050029_import_status_casts.sql') -Raw}
+ $taskSql=$taskFixture+"`n"+$taskMigration+"`n"+$taskMigration+"`n"+$taskFix+"`n"+$taskFix+"`n"+$taskChecks
+ $taskSql | & $taskDocker exec -i $taskContainer psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1
  if($LASTEXITCODE -ne 0){throw '관리번호 SQL 검증 실패'}
+ if($FullWorkflow){
+  $taskProcesses=@()
+  try {
+   for($i=0;$i -lt 12;$i++){
+    $taskArea=if($i%2 -eq 0){'ISO'}else{'K_BEAUTY'}
+    $taskInfo=[Diagnostics.ProcessStartInfo]::new()
+    $taskInfo.FileName=$taskDocker;$taskInfo.UseShellExecute=$false;$taskInfo.CreateNoWindow=$true
+    $taskInfo.RedirectStandardOutput=$true;$taskInfo.RedirectStandardError=$true
+    foreach($arg in @('exec',$taskContainer,'psql','-U','supabase_admin','-d','postgres','-v','ON_ERROR_STOP=1','-c',"insert into public.concurrent_allocations values('$taskArea',public.allocate_management_numbers_for_area('$taskArea',1));")){$taskInfo.ArgumentList.Add($arg)}
+    $taskProcess=[Diagnostics.Process]::new();$taskProcess.StartInfo=$taskInfo;[void]$taskProcess.Start()
+    $taskProcesses+=@{process=$taskProcess;output=$taskProcess.StandardOutput.ReadToEndAsync();error=$taskProcess.StandardError.ReadToEndAsync()}
+   }
+   foreach($entry in $taskProcesses){if(-not $entry.process.WaitForExit(30000)){throw '동시 검사 시간 초과'};if($entry.process.ExitCode -ne 0){throw ('동시 검증 실패: '+$entry.error.GetAwaiter().GetResult())}}
+   "do `$`$begin if (select count(*) from public.concurrent_allocations)<>12 or exists(select area from public.concurrent_allocations group by area having count(*)<>6 or max(number)-min(number)<>5) then raise exception 'Concurrent allocation mismatch';end if;end;`$`$;" | & $taskDocker exec -i $taskContainer psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1
+   if($LASTEXITCODE -ne 0){throw '동시 번호 할당 결과 오류'}
+  } finally {foreach($entry in $taskProcesses){if(-not $entry.process.HasExited){$entry.process.Kill();$entry.process.WaitForExit()};$entry.process.Dispose()}}
+  Write-Output '실제 SQL 023/028/029 이관 함수 및 12개 동시 번호 할당 검사 통과. 인증/RLS/전체 운영 스키마와 동시 동일인 이관은 별도입니다.'
+ }
  Write-Output '관리번호 SQL 가상 DB 검사 통과: 분야 분리·중복 차단·예약 유지·재실행·권한 검사. 운영 DB 및 전체 이관 흐름 검증은 별도입니다.'
 } finally {
  [Environment]::SetEnvironmentVariable('POSTGRES_PASSWORD',$taskPriorPassword,'Process')

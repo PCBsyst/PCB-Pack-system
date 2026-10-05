@@ -4,6 +4,7 @@ import ts from "typescript";
 const source = fs.readFileSync(new URL("../components/application-detail.tsx", import.meta.url), "utf8");
 const compile = code => ts.transpileModule(code, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const { workspaceSaveStatus: status } = await import(`data:text/javascript;base64,${Buffer.from(compile(fs.readFileSync(new URL("../lib/workspace-save-status.ts", import.meta.url), "utf8"))).toString("base64")}`);
+const { createWorkspaceSaveQueue } = await import(`data:text/javascript;base64,${Buffer.from(compile(fs.readFileSync(new URL("../lib/workspace-save-queue.ts", import.meta.url), "utf8"))).toString("base64")}`);
 assert.equal(status("A", null, false, ""), "LOADING");
 assert.equal(status("A", null, true, ""), "PENDING");
 assert.equal(status("A", "A", true, ""), "SAVED");
@@ -20,7 +21,7 @@ const code = compile(`const effect = ${effect};`);
 function run(result, local = false) {
   let timer;
   const state = { snapshot: null, error: "", writes: 0 };
-  const deps = { hydrated: true, usesSupabaseWorkspace: !local, editLock: "OWNED", demo: { sample: true }, application: { id: "a" }, storageKey: "local", setPersistedSnapshot: value => state.snapshot = value, setWorkspaceSaveError: value => state.error = value, setNotice: () => {}, createClient: () => ({ from: () => ({ upsert: () => result }) }), window: { setTimeout: fn => { timer = fn; return 1; }, clearTimeout: () => {}, localStorage: { setItem: () => { state.writes++; if (result instanceof Error) throw result; } } } };
+  const deps = { hydrated: true, usesSupabaseWorkspace: !local, editLock: "OWNED", demo: { sample: true }, application: { id: "a" }, storageKey: "local", saveQueue: { current: createWorkspaceSaveQueue() }, saveAccess: { current: { key: "local", canEdit: true } }, setPersistedSnapshot: value => state.snapshot = value, setWorkspaceSaveError: value => state.error = value, setNotice: () => {}, createClient: () => ({ from: () => ({ upsert: () => result }) }), window: { setTimeout: fn => { timer = fn; return 1; }, clearTimeout: () => {}, localStorage: { setItem: () => { state.writes++; if (result instanceof Error) throw result; } } } };
   const cleanup = new Function("deps", `const {${Object.keys(deps).join(",")}} = deps; ${code}; return effect();`)(deps);
   return { state, cleanup, start: () => timer?.() };
 }

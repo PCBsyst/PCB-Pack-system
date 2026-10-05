@@ -2,6 +2,7 @@
 import { packageDateDifferences } from "@/lib/package-date-consistency";
 import { certificateDateIssues } from "@/lib/package-request-validation";
 import { workspaceSaveStatus } from "@/lib/workspace-save-status";
+import { createWorkspaceSaveQueue } from "@/lib/workspace-save-queue";
 import { downloadDeliveryConfirmationDraftDocx } from "@/lib/prototype-package";
 
 import Link from "next/link";
@@ -131,6 +132,14 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   const [editLock, setEditLock] = useState<EditLockState>(usesSupabaseWorkspace ? "CHECKING" : "LOCAL");
   const [lockOwner, setLockOwner] = useState("");
   const canEdit = hydrated && (editLock === "LOCAL" || editLock === "OWNED");
+  const saveQueue = useRef<ReturnType<typeof createWorkspaceSaveQueue> | null>(null);
+  if (!saveQueue.current) saveQueue.current = createWorkspaceSaveQueue();
+  const saveAccess = useRef({ key: storageKey, canEdit });
+  saveAccess.current = { key: storageKey, canEdit };
+  useEffect(() => {
+    saveAccess.current = { key: storageKey, canEdit };
+    return () => { if (saveAccess.current.key === storageKey) saveAccess.current.canEdit = false; };
+  }, [storageKey, canEdit]);
 
   useEffect(() => {
     if (!usesSupabaseWorkspace) { setEditLock("LOCAL"); return; }
@@ -194,9 +203,11 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
       const timeout = window.setTimeout(() => {
         void (async () => {
           try {
-            const { error } = await createClient().from("application_workspaces").upsert({ application_id: application.id, state: demo }, { onConflict: "application_id" });
-            if (error) throw error;
-            saved();
+            const written = await saveQueue.current!.enqueue(async () => {
+              const { error } = await createClient().from("application_workspaces").upsert({ application_id: application.id, state: JSON.parse(snapshot) }, { onConflict: "application_id" });
+              if (error) throw error;
+            }, () => active && saveAccess.current.key === storageKey && saveAccess.current.canEdit);
+            if (written) saved();
           } catch { failed("공유 저장에 실패했습니다. 현재 입력 저장을 눌러 다시 시도해 주세요."); }
         })();
       }, 800);
@@ -280,14 +291,19 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     const snapshot = JSON.stringify(demo);
     try {
       if (usesSupabaseWorkspace) {
-        const { error } = await createClient().from("application_workspaces").upsert({ application_id: application.id, state: demo }, { onConflict: "application_id" });
-        if (error) throw error;
+        const written = await saveQueue.current!.enqueue(async () => {
+          const { error } = await createClient().from("application_workspaces").upsert({ application_id: application.id, state: JSON.parse(snapshot) }, { onConflict: "application_id" });
+          if (error) throw error;
+        }, () => saveAccess.current.key === storageKey && saveAccess.current.canEdit);
+        if (!written) { if (saveAccess.current.key === storageKey && saveAccess.current.canEdit) setNotice("화면이나 편집 권한이 변경되어 대기 중인 저장을 취소했습니다."); return; }
       } else window.localStorage.setItem(storageKey, snapshot);
+      if (saveAccess.current.key !== storageKey || !saveAccess.current.canEdit) return;
       setPersistedSnapshot(snapshot); setWorkspaceSaveError("");
       const savedAt = new Date().toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" });
       setLastSavedAt(`${savedAt} 저장 완료`);
       setNotice(usesSupabaseWorkspace ? "공유 업무 입력값을 Supabase에 저장했습니다." : "현재 화면의 업무 입력값을 저장했습니다.");
     } catch (error) {
+      if (saveAccess.current.key !== storageKey || !saveAccess.current.canEdit) return;
       const message = `업무기록을 저장하지 못했습니다: ${error instanceof Error ? error.message : "알 수 없는 오류"}`;
       setWorkspaceSaveError(message); setNotice(message);
     }

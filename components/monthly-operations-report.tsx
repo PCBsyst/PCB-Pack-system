@@ -32,8 +32,10 @@ export function MonthlyOperationsReport() {
   const [applicationType, setApplicationType] = useState("전체");
   const [loading, setLoading] = useState(Boolean(hasEnvVars));
   const [error, setError] = useState("");
+  const [revision, setRevision] = useState(0);
 
   useEffect(() => {
+    setRows([]); setError(""); setLoading(Boolean(hasEnvVars));
     if (!hasEnvVars) { setLoading(false); return; }
     let active = true;
     void (async () => {
@@ -42,7 +44,7 @@ export function MonthlyOperationsReport() {
       for (let offset = 0; ; offset += 500) {
         const page = await client.from("applications").select("id, application_no, received_at, business_area, partner_name_snapshot, application_type, status, jobs(id, job_no, standard, grade, certification_state, candidates(id, name), certification_records(certification_no, issue_date, state, history_state))").order("id").range(offset, offset + 499);
         if (!active) return;
-        if (page.error) { setError("업무보고 자료를 조회하지 못했습니다."); setLoading(false); return; }
+        if (page.error || !Array.isArray(page.data)) { setError("업무보고 자료를 조회하지 못했습니다."); setLoading(false); return; }
         data.push(...(page.data as unknown as ApplicationQueryRow[]));
         if ((page.data?.length ?? 0) < 500) break;
       }
@@ -51,10 +53,10 @@ export function MonthlyOperationsReport() {
         const currentCertification = arrayOf(job.certification_records).filter((record) => record.history_state === "CURRENT").sort((a, b) => b.issue_date.localeCompare(a.issue_date))[0];
         return { applicationId: application.id, applicationNo: application.application_no, receivedAt: application.received_at, businessArea: application.business_area, partner: application.partner_name_snapshot, applicationType: application.application_type, applicationStatus: application.status, jobId: job.id, jobNo: job.job_no, candidateId: candidate?.id ?? job.id, candidateName: candidate?.name ?? "후보자 미확인", standard: job.standard, grade: job.grade, certificationState: currentCertification?.state ?? job.certification_state, certificationNo: currentCertification?.certification_no ?? "", issueDate: currentCertification?.issue_date ?? "" } satisfies ReportRow;
       }));
-      setRows(result); setLoading(false);
+      if (active) { setRows([...new Map(result.map((row) => [row.jobId, row])).values()]); setLoading(false); }
     })().catch(() => { if (active) { setError("업무보고 자료를 조회하지 못했습니다."); setLoading(false); } });
     return () => { active = false; };
-  }, []);
+  }, [revision]);
 
   const options = useMemo(() => ({ standards: [...new Set(rows.map((row) => row.standard))].sort(), partners: [...new Set(rows.map((row) => row.partner))].sort(), grades: [...new Set(rows.map((row) => row.grade))].sort(), types: [...new Set(rows.map((row) => row.applicationType))].sort() }), [rows]);
   const dimensionRows = useMemo(() => rows.filter((row) => matchesReportFilters(row, { area, standard, partner, grade, applicationType })), [rows, area, standard, partner, grade, applicationType]);
@@ -71,6 +73,7 @@ export function MonthlyOperationsReport() {
   const printReport = () => { const popup = window.open("", "_blank"); if (!popup) return; const escape = (value: unknown) => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;"); popup.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>월간 업무보고</title><style>@page{size:A4 landscape;margin:12mm}body{font-family:"Malgun Gothic",sans-serif;color:#172033}h1{font-size:20px}p{font-size:11px}.cards{display:flex;gap:8px;margin:14px 0}.card{border:1px solid #aaa;padding:10px;min-width:110px}.card b{font-size:18px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #777;padding:6px;text-align:left}th{background:#eee}</style></head><body><h1>${escape(month)} 월간 업무보고</h1><p>기준: ${dateBasis === "RECEIVED" ? "접수일" : "인증발행일"} · 출력일 ${escape(new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }))}</p><div class="cards"><div class="card">전체<br><b>${summary.total}</b>건</div><div class="card">인증발행<br><b>${summary.issued}</b>건</div><div class="card">인증유효<br><b>${summary.active}</b>건</div><div class="card">정지<br><b>${summary.suspended}</b>건</div><div class="card">철회<br><b>${summary.withdrawn}</b>건</div></div><table><thead><tr><th>분야</th><th>표준</th><th>대상</th><th>인증발행</th><th>유효</th><th>정지</th><th>철회</th></tr></thead><tbody>${grouped.map((item) => `<tr><td>${escape(areaLabel(item.area))}</td><td>${escape(item.standard)}</td><td>${item.received}</td><td>${item.issued}</td><td>${item.active}</td><td>${item.suspended}</td><td>${item.withdrawn}</td></tr>`).join("")}</tbody></table><script>window.onload=()=>window.print();<\/script></body></html>`); popup.document.close(); };
 
   return <div className="space-y-4">
+    <div className="flex justify-end"><Button type="button" variant="outline" disabled={loading || !hasEnvVars} onClick={() => { setRows([]); setError(""); setLoading(true); setRevision((value) => value + 1); }}><RotateCcw />업무보고 자료 다시 조회</Button></div>
     <section className="rounded-lg border bg-white p-4 shadow-sm"><h2 className="mb-3 text-sm font-semibold">보고서 조회 조건</h2><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <input type="month" className={inputClass} value={month} onChange={(event) => setMonth(event.target.value)} />
       <select className={inputClass} value={dateBasis} onChange={(event) => setDateBasis(event.target.value as "RECEIVED" | "ISSUED")}><option value="RECEIVED">접수일 기준</option><option value="ISSUED">인증발행일 기준</option></select>

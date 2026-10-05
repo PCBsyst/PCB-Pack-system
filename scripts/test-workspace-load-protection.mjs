@@ -18,6 +18,7 @@ function run(result, local = false) {
     setHydrated: (value) => { state.hydrated = value; },
     setWorkspaceLoadError: (value) => { state.error = value; },
     setLastSavedAt: (value) => { state.saved = value; },
+    setPersistedSnapshot: () => {}, setWorkspaceSaveError: () => {},
     setDemo: (value) => { state.demo = value; },
     createClient: () => ({ from: () => ({ select: () => ({ eq: () => ({ maybeSingle: () => result }) }) }) }),
     window: { localStorage: { getItem: () => "invalid JSON", setItem: () => { state.writes++; } } },

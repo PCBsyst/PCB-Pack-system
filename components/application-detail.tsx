@@ -1,6 +1,7 @@
 "use client";
 import { packageDateDifferences } from "@/lib/package-date-consistency";
 import { certificateDateIssues } from "@/lib/package-request-validation";
+import { workspaceSaveStatus } from "@/lib/workspace-save-status";
 import { downloadDeliveryConfirmationDraftDocx } from "@/lib/prototype-package";
 
 import Link from "next/link";
@@ -116,6 +117,9 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   const [workspaceLoadError, setWorkspaceLoadError] = useState("");
   const [workspaceLoadRevision, setWorkspaceLoadRevision] = useState(0);
   const [lastSavedAt, setLastSavedAt] = useState("");
+  const [persistedSnapshot, setPersistedSnapshot] = useState<string | null>(null);
+  const [workspaceSaveError, setWorkspaceSaveError] = useState("");
+  const saveStatus = workspaceSaveStatus(JSON.stringify(demo), persistedSnapshot, hydrated, workspaceSaveError);
   const [correctionTarget, setCorrectionTarget] = useState("review.result");
   const [correctionValue, setCorrectionValue] = useState("");
   const [correctionReason, setCorrectionReason] = useState("");
@@ -158,7 +162,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
 
   useEffect(() => {
     let cancelled = false;
-    setHydrated(false); setWorkspaceLoadError(""); setLastSavedAt("");
+    setHydrated(false); setWorkspaceLoadError(""); setLastSavedAt(""); setPersistedSnapshot(null); setWorkspaceSaveError("");
     if (usesSupabaseWorkspace) {
       const load = async () => {
         try {
@@ -167,7 +171,9 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
           if (error) throw new Error("업무기록 조회 실패");
           if (data && (!data.state || typeof data.state !== "object" || Array.isArray(data.state))) throw new Error("업무기록 형식 확인 필요");
           const initial = makeInitial(application, linkedJobs);
-          setDemo(data?.state ? { ...initial, ...(data.state as Partial<DemoState>) } : initial);
+          const loaded = data?.state ? { ...initial, ...(data.state as Partial<DemoState>) } : initial;
+          setDemo(loaded);
+          if (data?.state) setPersistedSnapshot(JSON.stringify(loaded));
           setLastSavedAt(data?.state ? "Supabase 저장 내용을 불러왔습니다." : "새 공유 업무기록입니다.");
           setHydrated(true);
         } catch {
@@ -178,7 +184,28 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
       return () => { cancelled = true; };
     }
     try { const stored = window.localStorage.getItem(storageKey); if (stored) { const initial = makeInitial(application, linkedJobs); const saved = JSON.parse(stored) as Partial<DemoState>; const certificates = Object.fromEntries(linkedJobs.map((job) => [job.id, { ...initial.certificates[job.id], ...saved.certificates?.[job.id] }])); const deliveryDocuments = Object.fromEntries(linkedJobs.map((job) => [job.id, { ...initial.deliveryDocuments[job.id], ...saved.deliveryDocuments?.[job.id], education: { ...initial.deliveryDocuments[job.id].education, ...saved.deliveryDocuments?.[job.id]?.education, applicability: "REQUIRED" as DocumentApplicability } }])) as DemoDeliveryDocuments; const dateAuditLogs = (saved.dateAuditLogs ?? initial.dateAuditLogs).map((log) => ({ ...log, category: log.category ?? "정정" as const })); setDemo({ ...initial, ...saved, storedDocuments: { ...initial.storedDocuments, ...saved.storedDocuments }, reviewRequirements: { ...initial.reviewRequirements, ...saved.reviewRequirements }, review: { ...initial.review, ...saved.review }, englishText: { ...initial.englishText, ...saved.englishText }, examSchedules: { ...initial.examSchedules, ...saved.examSchedules }, assessment: saved.assessment ?? initial.assessment, panelMembers: saved.panelMembers ?? initial.panelMembers, certificates, deliveryDocuments, dateAuditLogs }); setLastSavedAt("저장된 내용을 불러왔습니다."); } else { const profiles = readStoredProfiles(); if (profiles.length) setDemo((current) => ({ ...current, deliveryDocuments: Object.fromEntries(linkedJobs.map((job) => { const profile = profiles.find((item) => profileKey(item) === profileKey({ businessArea: job.businessArea ?? application.businessArea, standard: job.standard, grade: job.currentGrade })); return [job.id, Object.fromEntries(deliveryDocumentRows.map(({ key }) => [key, { ...current.deliveryDocuments[job.id][key], applicability: key === "education" ? "REQUIRED" : profile?.rules[key] ?? current.deliveryDocuments[job.id][key].applicability }]))]; })) as DemoDeliveryDocuments })); } } catch { setWorkspaceLoadError("브라우저 업무기록을 읽지 못했습니다. 원본 확인 전에는 편집·저장하지 않습니다."); return; } setHydrated(true); return () => { cancelled = true; }; }, [application, linkedJobs, storageKey, usesSupabaseWorkspace, workspaceLoadRevision]);
-  useEffect(() => { if (!hydrated || (usesSupabaseWorkspace && editLock !== "OWNED")) return; if (usesSupabaseWorkspace) { const timeout = window.setTimeout(() => { const supabase = createClient(); void supabase.from("application_workspaces").upsert({ application_id: application.id, state: demo }, { onConflict: "application_id" }).then(({ error }) => { if (error) setNotice(`공유 저장에 실패했습니다: ${error.message}`); }); }, 800); return () => window.clearTimeout(timeout); } try { window.localStorage.setItem(storageKey, JSON.stringify(demo)); } catch { setNotice("브라우저 저장공간에 기록하지 못했습니다."); } }, [application.id, demo, editLock, hydrated, storageKey, usesSupabaseWorkspace]);
+  useEffect(() => {
+    if (!hydrated || (usesSupabaseWorkspace && editLock !== "OWNED")) return;
+    let active = true;
+    const snapshot = JSON.stringify(demo);
+    const saved = () => { if (active) { setPersistedSnapshot(snapshot); setWorkspaceSaveError(""); } };
+    const failed = (message: string) => { if (active) { setWorkspaceSaveError(message); setNotice(message); } };
+    if (usesSupabaseWorkspace) {
+      const timeout = window.setTimeout(() => {
+        void (async () => {
+          try {
+            const { error } = await createClient().from("application_workspaces").upsert({ application_id: application.id, state: demo }, { onConflict: "application_id" });
+            if (error) throw error;
+            saved();
+          } catch { failed("공유 저장에 실패했습니다. 현재 입력 저장을 눌러 다시 시도해 주세요."); }
+        })();
+      }, 800);
+      return () => { active = false; window.clearTimeout(timeout); };
+    }
+    try { window.localStorage.setItem(storageKey, snapshot); saved(); }
+    catch { failed("브라우저 저장공간에 기록하지 못했습니다. 현재 입력 저장을 눌러 다시 시도해 주세요."); }
+    return () => { active = false; };
+  }, [application.id, demo, editLock, hydrated, storageKey, usesSupabaseWorkspace]);
   useEffect(() => {
     if (!hydrated || !usesSupabaseWorkspace || editLock !== "OWNED") return;
     const supabase = createClient();
@@ -248,7 +275,23 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   const latestPackageContext = useRef(packageContext);
   useEffect(() => { latestPackageContext.current = packageContext; }, [packageContext]);
   const currentIndex = stageOrder.indexOf(demo.stage);
-  const saveDraft = async () => { if (!canEdit) { setNotice("다른 직원이 편집 중이므로 현재 화면은 조회 전용입니다."); return; } try { if (usesSupabaseWorkspace) { const supabase = createClient(); const { error } = await supabase.from("application_workspaces").upsert({ application_id: application.id, state: demo }, { onConflict: "application_id" }); if (error) throw error; } else window.localStorage.setItem(storageKey, JSON.stringify(demo)); const savedAt = new Date().toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" }); setLastSavedAt(`${savedAt} 저장 완료`); setNotice(usesSupabaseWorkspace ? "공유 업무 입력값을 Supabase에 저장했습니다." : "현재 화면의 업무 입력값을 저장했습니다."); } catch (error) { setNotice(`업무기록을 저장하지 못했습니다: ${error instanceof Error ? error.message : "알 수 없는 오류"}`); } };
+  const saveDraft = async () => {
+    if (!canEdit) { setNotice("다른 직원이 편집 중이므로 현재 화면은 조회 전용입니다."); return; }
+    const snapshot = JSON.stringify(demo);
+    try {
+      if (usesSupabaseWorkspace) {
+        const { error } = await createClient().from("application_workspaces").upsert({ application_id: application.id, state: demo }, { onConflict: "application_id" });
+        if (error) throw error;
+      } else window.localStorage.setItem(storageKey, snapshot);
+      setPersistedSnapshot(snapshot); setWorkspaceSaveError("");
+      const savedAt = new Date().toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" });
+      setLastSavedAt(`${savedAt} 저장 완료`);
+      setNotice(usesSupabaseWorkspace ? "공유 업무 입력값을 Supabase에 저장했습니다." : "현재 화면의 업무 입력값을 저장했습니다.");
+    } catch (error) {
+      const message = `업무기록을 저장하지 못했습니다: ${error instanceof Error ? error.message : "알 수 없는 오류"}`;
+      setWorkspaceSaveError(message); setNotice(message);
+    }
+  };
   const move = (stage: DemoStage, tab: Tab, message: string) => { setDemo((current) => ({ ...current, stage, dateAuditLogs: [...current.dateAuditLogs, createAuditLog("처리", "", "업무 단계", stageLabels[current.stage], stageLabels[stage], message, application.primaryOwner)] })); setActive(tab); setNotice(message); };
   const reset = () => { setDemo(makeInitial(application, linkedJobs)); window.localStorage.removeItem(storageKey); setActive("서류검토"); setNotice("샘플 진행상태를 처음으로 되돌렸습니다."); };
   const allocateCertificationNo = async (job: Job) => {
@@ -524,6 +567,11 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
       <PackageGenerationHistory applicationId={application.id} />
       <PackageTemplateReadiness languages={languages} jobCount={linkedJobs.length}/>
       <PackageDateConsistency jobs={linkedJobs} context={packageContext}/>
+      <div className="mb-5 rounded-lg border bg-card p-4" role="status" aria-live="polite">
+        <p className="text-sm font-semibold">{saveStatus === "SAVED" ? "현재 업무 입력 저장 완료" : saveStatus === "ERROR" ? "현재 업무 입력 저장 실패" : saveStatus === "LOADING" ? "저장된 업무 입력 확인 중" : "변경한 업무 입력 저장 대기"}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{saveStatus === "SAVED" ? (usesSupabaseWorkspace ? "공유 업무 입력 저장이 확인되었습니다. 문서 생성 시 서버 원본을 다시 대조합니다." : "이 브라우저에 저장되었습니다. 다른 기기에 공유된 저장이 아닙니다.") : workspaceSaveError || "다운로드 전에 저장 완료를 확인해 주세요. 저장 실패 또는 대기 중에는 화면과 원본이 달라 문서 생성이 거절될 수 있습니다."}</p>
+        {saveStatus !== "SAVED" && <Button className="mt-3" size="sm" variant="outline" disabled={!canEdit} onClick={saveDraft}><Save/>현재 입력 저장</Button>}
+      </div>
       <PackagePreflight jobs={linkedJobs} certificates={demo.certificates} documents={demo.deliveryDocuments} />
       <div className="mb-5 rounded-lg border p-4"><p className="text-sm font-semibold">국문 문서전달확인서 검토용 초안</p><p className="mt-1 text-xs text-muted-foreground">출력 배치 검증 전입니다. 현재 입력을 저장한 후 내려받으세요. 정식 ZIP과 패키지 완료에는 포함되지 않습니다.</p><div className="mt-3 flex flex-wrap gap-2">{linkedJobs.map((job) => <DocumentDownloadButton key={`delivery-draft-${job.id}`} label={`${job.jobNo} · 국문 초안 DOCX`} task={() => downloadDeliveryConfirmationDraftDocx(packageContext, job)} setNotice={setNotice} successMessage="국문 검토용 초안 다운로드를 요청했습니다. 정식 패키지 완료에는 포함되지 않습니다."/>)}</div></div>
       <DeliveryDocumentChecklist jobs={linkedJobs} records={demo.deliveryDocuments} decisionDate={demo.decisionDate} certificates={demo.certificates} reasons={demo.dateOverrideReasons} auditLogs={demo.dateAuditLogs} actor={application.primaryOwner} dateRules={dateRules} setDemo={setDemo}/>

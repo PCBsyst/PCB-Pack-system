@@ -10,7 +10,8 @@ export function hasExactAffectedIds(rows: unknown, expected: string[]): boolean 
 }
 export function hasExactRecordValues(rows: unknown, expected: Record<string, unknown>[], fields: string[]): boolean {
   if (!Array.isArray(rows) || !expected.length || rows.length !== expected.length || !fields.length) return false;
-  const key = (row: unknown) => row && typeof row === "object" ? JSON.stringify(fields.map(field => (row as Record<string, unknown>)[field])) : null;
+  const normalize = (value: unknown): unknown => Array.isArray(value) ? value.map(normalize) : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([name, item]) => [name, normalize(item)])) : value;
+  const key = (row: unknown) => row && typeof row === "object" ? JSON.stringify(fields.map(field => normalize((row as Record<string, unknown>)[field]))) : null;
   const wanted = expected.map(key), actual = rows.map(key);
   return !actual.includes(null) && new Set(wanted).size === wanted.length && new Set(actual).size === actual.length && wanted.every(value => actual.includes(value));
 }

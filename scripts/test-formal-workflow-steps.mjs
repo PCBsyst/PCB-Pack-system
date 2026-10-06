@@ -3,6 +3,7 @@ import fs from "node:fs";
 import ts from "typescript";
 const compile = source => ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const checks = await import(`data:text/javascript;base64,${Buffer.from(compile(fs.readFileSync(new URL("../lib/workflow-record-checks.ts", import.meta.url), "utf8"))).toString("base64")}`);
+const dateChecks = await import(`data:text/javascript;base64,${Buffer.from(compile(fs.readFileSync(new URL("../lib/package-request-validation.ts", import.meta.url), "utf8"))).toString("base64")}`);
 for (const input of ["", "0", "-1", "NaN", "Infinity", "1e4", "1,000", "1.234", "9007199254740992"]) assert.equal(checks.workflowAmount(input), null);
 assert.equal(checks.workflowAmount("123.45"), 123.45);
 assert.equal(checks.workflowAmount(" 100 "), 100);
@@ -10,7 +11,7 @@ assert.equal(checks.hasExactAffectedIds([{ id: "a" }, { id: "b" }], ["b", "a"]),
 for (const rows of [null, [], [{ id: "a" }, { id: "a" }], [{ id: "other" }]]) assert.equal(checks.hasExactAffectedIds(rows, ["a", "b"]), false);
 const source = fs.readFileSync(new URL("../components/application-detail.tsx", import.meta.url), "utf8");
 const tree = ts.createSourceFile("application.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-const names = ["runFormalStep", "move", "finishReview", "recordInvoice", "recoverInvoiceLinks", "confirmPayment", "applySharedPayment", "finishDecision"];
+const names = ["runFormalStep", "move", "finishReview", "recordInvoice", "recoverInvoiceLinks", "confirmPayment", "applySharedPayment", "finishDecision", "finishCertification", "finishOriginalDelivery"];
 const found = [];
 function visit(node) {
   if (ts.isVariableStatement(node) && node.declarationList.declarations.some(item => names.includes(item.name.getText(tree)))) found.push(node.getText(tree));
@@ -18,17 +19,21 @@ function visit(node) {
 }
 visit(tree);
 const code = compile(found.join("\n"));
-function fixture(query, { editable = true, local = false, confirmed = true, reason = "연결 실패 복구" } = {}) {
+function fixture(query, { editable = true, local = false, confirmed = true, reason = "연결 실패 복구", previousJobId } = {}) {
   const demo = { stage: "PAYMENT_PENDING", review: { reviewer: "검토자", reviewedAt: "2026-10-01", verifier: "검증자", verifiedAt: "2026-10-02", verificationResult: "확인", result: "적합" }, invoiceNo: "sample", invoiceAmount: "100", invoiceRecipientName: "가상수신자", invoiceIssuedAt: "2026-10-01", paidAmount: "100", payerName: "가상입금자", paymentConfirmedAt: "2026-10-02", paymentConfirmedBy: "가상담당자", dateAuditLogs: [] };
   const notices = [], busy = [], stages = [], requests = [], states = [];
   const latestDemo = { current: demo }, running = { current: false }, snapshot = { current: null }, mounted = { current: true };
   const client = { auth: { getUser: async () => ({ data: { user: { id: "staff" } } }) }, from(table) {
-    const chain = { action: "select", update() { this.action = "update"; return this; }, insert() { this.action = "insert"; return this; }, upsert() { this.action = "upsert"; return this; }, in() { return this; }, eq() { return this; }, select() { return this; }, single() { return this; }, maybeSingle() { return this; }, then(resolve, reject) { requests.push({ table, action: this.action }); return Promise.resolve().then(() => query(table, this.action)).then(resolve, reject); } }; return chain;
+    const chain = { action: "select", payload: null, update(value) { this.action = "update"; this.payload = value; return this; }, insert(value) { this.action = "insert"; this.payload = value; return this; }, upsert(value) { this.action = "upsert"; this.payload = value; return this; }, in() { return this; }, eq() { return this; }, select() { return this; }, single() { return this; }, maybeSingle() { return this; }, then(resolve, reject) { requests.push({ table, action: this.action }); return Promise.resolve().then(() => query(table, this.action, this.payload)).then(resolve, reject); } }; return chain;
   } };
   const deps = { demo, latestDemo, formalRunning: running, formalSnapshot: snapshot, downloadMounted: mounted, saveAccess: { current: { canEdit: editable } }, setFormalSaving: value => busy.push(value), setNotice: value => notices.push(value), setDemo: update => { const state = update(demo); states.push(state); stages.push(state.stage); }, setActive() {}, stageLabels: { PAYMENT_PENDING: "입금대기", DECISION_PENDING: "심의대기", INVOICE_PENDING: "청구대기" }, createAuditLog: () => ({}), application: { primaryOwner: "담당자" }, usesSupabaseWorkspace: !local, linkedJobs: [{ id: "j" }], cycleIds: { j: "c" }, createClient: () => client, ...checks };
   deps.window = { confirm: () => confirmed, prompt: () => reason };
   deps.assessmentItems = ["지식"];
   deps.panelMemberIds = { "위원1": "p1", "위원2": "p2", "위원3": "p3" };
+  deps.linkedJobs[0].previousJobId = previousJobId;
+  deps.getCertificationNumberPrefix = () => "2675";
+  deps.escapeRegExp = value => value;
+  deps.certificateDateIssues = dateChecks.certificateDateIssues;
   const actions = new Function(...Object.keys(deps), `${code};return {${names.join(",")}};`)(...Object.values(deps));
   return { actions, demo, latestDemo, mounted, notices, busy, stages, states, requests, running };
 }
@@ -99,4 +104,14 @@ f = decisionFixture(async (table, action) => table === "decision_panel_entries" 
 f = decisionFixture(); f.demo.panelMembers[1].name = "위원1"; await f.actions.finishDecision(); assert.equal(f.requests.length, 0);
 f = decisionFixture(); f.demo.panelMembers[1].selected = false; await f.actions.finishDecision(); assert.equal(f.requests.length, 0);
 f = decisionFixture(async (table, action) => table === "certification_decisions" ? { data: [{ ...savedDecision, final_approver: "다른 승인자" }], error: null } : decisions(table, action)); await f.actions.finishDecision(); assert.equal(f.stages.length, 0); assert.ok(!f.requests.some(r => r.table === "decision_panel_entries"));
-console.log("업무 단계 확정: 심의위원 결정·의견·대상 대조/중복 위원/과거 위원 불일치 차단, 연결 복구·통합 입금 검사 통과 (DB/브라우저 모의, 트랜잭션 보장 별도)");
+const issuance = async (table, action, payload) => ({ data: action === "upsert" ? payload : table === "jobs" ? [{ id: "j" }] : [{ id: "c" }], error: null });
+function issuanceFixture(query = issuance, options) { const result = fixture(query, options); Object.assign(result.demo, { decisions: { j: { result: "승인" } }, certificates: { j: { certificationNo: "26750001", draftIssuedAt: "2026-10-01", issueDate: "2026-10-02", expiryDate: "2029-10-02", originalSentAt: "2026-10-05", trackingNumber: "SAMPLE-123" } }, deliveryDocuments: { j: { deliveryConfirmation: { date: "2026-10-05", comment: "송부 확인" } } } }); return result; }
+f = issuanceFixture(); await f.actions.finishCertification(); assert.deepEqual(f.stages, ["ORIGINAL_DELIVERY_PENDING"]);
+f = issuanceFixture(); await f.actions.finishOriginalDelivery(); assert.deepEqual(f.stages, ["PACKAGE_READY"]);
+for (const patch of [{ certification_no: "other" }, { valid_until: "2028-10-02" }, { cycle_id: "other" }, { revision: 1 }]) { f = issuanceFixture(async (table, action, payload) => table === "certification_records" ? { data: payload.map(row => ({ ...row, ...patch })), error: null } : issuance(table, action, payload)); await f.actions.finishCertification(); assert.equal(f.stages.length, 0); assert.ok(!f.requests.some(r => r.action === "update")); }
+for (const patch of [{ tracking_number: "other" }, { original_sent_at: "2026-10-06" }, { document_checklist: {} }, { cycle_id: "other" }]) { f = issuanceFixture(async (table, action, payload) => table === "document_deliveries" ? { data: payload.map(row => ({ ...row, ...patch })), error: null } : issuance(table, action, payload)); await f.actions.finishOriginalDelivery(); assert.equal(f.stages.length, 0); assert.ok(!f.requests.some(r => r.table === "processing_cycles")); }
+f = issuanceFixture(); f.demo.certificates.j.expiryDate = "2025-10-02"; await f.actions.finishCertification(); assert.equal(f.requests.length, 0);
+f = issuanceFixture(); f.demo.certificates.j.originalSentAt = "2026-02-30"; await f.actions.finishOriginalDelivery(); assert.equal(f.requests.length, 0);
+f = issuanceFixture(async (table, action, payload) => action === "select" && table === "certification_records" ? { data: [{ id: "old1", job_id: "old" }, { id: "old2", job_id: "old" }], error: null } : issuance(table, action, payload), { previousJobId: "old" }); await f.actions.finishCertification(); assert.equal(f.stages.length, 0); assert.ok(!f.requests.some(r => r.action === "upsert"));
+assert.equal(checks.hasExactRecordValues([{ id: "a", content: { b: 2, a: { d: 4, c: 3 } } }], [{ id: "a", content: { a: { c: 3, d: 4 }, b: 2 } }], ["id", "content"]), true);
+console.log("업무 단계 확정: 발행/송부 실제 저장값·날짜·중복 기존 이력 검증, 심의·연결 복구·통합 입금 검사 통과 (DB/브라우저 모의, 인증번호 규칙은 별도 검사)");

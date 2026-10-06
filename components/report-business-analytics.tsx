@@ -37,6 +37,7 @@ export function ReportBusinessAnalytics({ jobs, period, dateBasis = "RECEIVED", 
         if (error) { setFinanceState("error"); return; }
         expected = verifyReportPage({ data, error, count }, expected);
         if (!Array.isArray(data) || data.some((row) => !row || typeof row.id !== "string" || !Array.isArray(row.invoice_jobs)
+          || row.invoice_jobs.some((link: { job_id?: unknown } | null) => !link || typeof link.job_id !== "string" || !link.job_id.trim())
           || row.amount === null || row.amount === undefined || String(row.amount).trim() === ""
           || !Number.isFinite(Number(row.amount)) || Number(row.amount) < 0
           || (row.paid_amount !== null && (!Number.isFinite(Number(row.paid_amount)) || Number(row.paid_amount) < 0)))) {

@@ -21,6 +21,9 @@ for (const data of [null, [{ ...valid, amount: null }], [{ ...valid, amount: "ba
   result = await run([{ data, error: null }]); assert.equal(result.states.at(-1), "error"); assert.deepEqual(result.invoices.at(-1), []);
 }
 result = await run([{ data: null, error: { message: "network" } }]); assert.equal(result.states.at(-1), "error");
+for (const invoice_jobs of [[null], [{}], [{ job_id: "" }], [{ job_id: "  " }], [{ job_id: 3 }]]) {
+  result = await run([{ data: [{ ...valid, invoice_jobs }], error: null }]); assert.equal(result.states.at(-1), "error"); assert.deepEqual(result.invoices.at(-1), []);
+}
 for (const count of [2, null, 10001]) {
   result = await run([{ data: [valid], error: null, count }]); assert.equal(result.states.at(-1), "error"); assert.deepEqual(result.invoices.at(-1), []);
 }

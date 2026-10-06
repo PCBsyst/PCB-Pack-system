@@ -8,6 +8,12 @@ export function hasExactAffectedIds(rows: unknown, expected: string[]): boolean 
   const ids = rows.map(row => row && typeof row === "object" ? row.id : undefined);
   return new Set(ids).size === expected.length && expected.every(id => ids.includes(id));
 }
+export function hasExactRecordValues(rows: unknown, expected: Record<string, unknown>[], fields: string[]): boolean {
+  if (!Array.isArray(rows) || !expected.length || rows.length !== expected.length || !fields.length) return false;
+  const key = (row: unknown) => row && typeof row === "object" ? JSON.stringify(fields.map(field => (row as Record<string, unknown>)[field])) : null;
+  const wanted = expected.map(key), actual = rows.map(key);
+  return !actual.includes(null) && new Set(wanted).size === wanted.length && new Set(actual).size === actual.length && wanted.every(value => actual.includes(value));
+}
 export function isConfirmedInvoice(value: unknown): value is { id: string; amount: number | string; paid_amount: number | string; paid_at: string; issued_at: string; payer_name: string; confirmed_by: string; recipient_type: "INDIVIDUAL" | "PARTNER"; recipient_name: string; payment_status: "PAID" } {
   if (!value || typeof value !== "object") return false;
   const row = value as Record<string, unknown>;

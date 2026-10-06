@@ -1,6 +1,6 @@
 "use client";
 import { packageDateDifferences } from "@/lib/package-date-consistency";
-import { workflowAmount, hasExactAffectedIds, isConfirmedInvoice } from "@/lib/workflow-record-checks";
+import { workflowAmount, hasExactAffectedIds, hasExactRecordValues, isConfirmedInvoice } from "@/lib/workflow-record-checks";
 import { useOperationMode } from "@/components/use-operation-mode";
 import { isOperationPaused } from "@/lib/operation-mode";
 import { certificateDateIssues } from "@/lib/package-request-validation";
@@ -450,15 +450,20 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     if (usesSupabaseWorkspace) {
       if (linkedJobs.some((job) => !cycleIds[job.id])) { setNotice("Job 처리 회차를 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요."); return; }
       if (selectedMembers.some((member) => !panelMemberIds[member.name])) { setNotice("선택한 심의위원이 관리자 명단과 연결되지 않았습니다. 명단을 확인해 주세요."); return; }
+      if (!linkedJobs.length || new Set(linkedJobs.map(job => cycleIds[job.id])).size !== linkedJobs.length || new Set(selectedMembers.map(member => panelMemberIds[member.name])).size !== selectedMembers.length) { setNotice("중복 회차 또는 중복 심의위원이 있습니다. 서로 다른 위원과 회차를 확인해 주세요."); return; }
       const supabase = createClient();
       const { data: userData } = await supabase.auth.getUser();
       const decisionRows = linkedJobs.map((job) => ({ cycle_id: cycleIds[job.id], result: demo.decisions[job.id].result, comment: demo.decisions[job.id].comment, decision_date: demo.decisionDate, final_approver: demo.finalApprover, final_approval_date: demo.finalApprovalDate, entered_by: userData.user?.id ?? null }));
-      const { data: savedDecisions, error } = await supabase.from("certification_decisions").upsert(decisionRows, { onConflict: "cycle_id" }).select("id, cycle_id");
+      const { data: savedDecisions, error } = await supabase.from("certification_decisions").upsert(decisionRows, { onConflict: "cycle_id" }).select("id,cycle_id,result,comment,decision_date,final_approver,final_approval_date");
       if (error || !savedDecisions) { setNotice(`인증심의 정식 기록 저장에 실패했습니다: ${error?.message ?? "심의 ID 없음"}`); return; }
       if (!hasExactAffectedIds(savedDecisions.map(row => ({ id: row.cycle_id })), linkedJobs.map(job => cycleIds[job.id]))) { setNotice("모든 Job의 심의 저장 결과를 확인하지 못했습니다. 다음 단계로 진행하지 않습니다."); return; }
+      if (!hasExactRecordValues(savedDecisions, decisionRows, ["cycle_id", "result", "comment", "decision_date", "final_approver", "final_approval_date"])) { setNotice("심의 결과·의견·대표자 승인정보가 입력 내용과 일치하지 않습니다. 다음 단계로 진행하지 않습니다."); return; }
+      if (savedDecisions.some(row => typeof row.id !== "string" || !row.id) || new Set(savedDecisions.map(row => row.id)).size !== savedDecisions.length) { setNotice("서로 다른 심의 기록 ID를 확인하지 못했습니다. 다음 단계로 진행하지 않습니다."); return; }
       const panelRows = savedDecisions.flatMap((decision) => selectedMembers.map((member) => ({ decision_id: decision.id, panel_member_id: panelMemberIds[member.name], result: member.decision, comment: member.comment })));
-      const { error: panelError } = await supabase.from("decision_panel_entries").upsert(panelRows, { onConflict: "decision_id,panel_member_id" });
-      if (panelError) { setNotice(`심의위원 개별결정 저장에 실패했습니다: ${panelError.message}`); return; }
+      const { data: existingPanel, error: existingPanelError } = await supabase.from("decision_panel_entries").select("decision_id,panel_member_id").in("decision_id", savedDecisions.map(row => row.id));
+      if (existingPanelError || !Array.isArray(existingPanel) || existingPanel.some(row => !panelRows.some(expected => expected.decision_id === row.decision_id && expected.panel_member_id === row.panel_member_id))) { setNotice("이전 심의위원 기록이 현재 선택과 다르거나 조회에 실패했습니다. 기존 기록을 임의로 삭제하지 않으며, 다음 단계로 진행하지 않습니다."); return; }
+      const { data: savedPanel, error: panelError } = await supabase.from("decision_panel_entries").upsert(panelRows, { onConflict: "decision_id,panel_member_id" }).select("decision_id,panel_member_id,result,comment");
+      if (panelError || !hasExactRecordValues(savedPanel, panelRows, ["decision_id", "panel_member_id", "result", "comment"])) { setNotice("모든 심의위원의 결정·의견 저장 결과를 확인하지 못했습니다. 일부 심의 기록은 저장됐을 수 있으니 대조해 주세요."); return; }
       const expected = linkedJobs.map(job => cycleIds[job.id]);
       const { data: updated, error: dateError } = await supabase.from("processing_cycles").update({ decision_date: demo.decisionDate }).in("id", expected).select("id");
       if (dateError || !hasExactAffectedIds(updated, expected)) { setNotice("심의 기록은 저장됐지만 회차 심의일 저장을 확인하지 못했습니다. 회차 기록을 대조한 뒤 다시 진행해 주세요."); return; }

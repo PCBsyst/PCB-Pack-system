@@ -10,7 +10,7 @@ assert.equal(checks.hasExactAffectedIds([{ id: "a" }, { id: "b" }], ["b", "a"]),
 for (const rows of [null, [], [{ id: "a" }, { id: "a" }], [{ id: "other" }]]) assert.equal(checks.hasExactAffectedIds(rows, ["a", "b"]), false);
 const source = fs.readFileSync(new URL("../components/application-detail.tsx", import.meta.url), "utf8");
 const tree = ts.createSourceFile("application.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-const names = ["runFormalStep", "move", "finishReview", "recordInvoice", "recoverInvoiceLinks", "confirmPayment", "applySharedPayment"];
+const names = ["runFormalStep", "move", "finishReview", "recordInvoice", "recoverInvoiceLinks", "confirmPayment", "applySharedPayment", "finishDecision"];
 const found = [];
 function visit(node) {
   if (ts.isVariableStatement(node) && node.declarationList.declarations.some(item => names.includes(item.name.getText(tree)))) found.push(node.getText(tree));
@@ -27,6 +27,8 @@ function fixture(query, { editable = true, local = false, confirmed = true, reas
   } };
   const deps = { demo, latestDemo, formalRunning: running, formalSnapshot: snapshot, downloadMounted: mounted, saveAccess: { current: { canEdit: editable } }, setFormalSaving: value => busy.push(value), setNotice: value => notices.push(value), setDemo: update => { const state = update(demo); states.push(state); stages.push(state.stage); }, setActive() {}, stageLabels: { PAYMENT_PENDING: "입금대기", DECISION_PENDING: "심의대기", INVOICE_PENDING: "청구대기" }, createAuditLog: () => ({}), application: { primaryOwner: "담당자" }, usesSupabaseWorkspace: !local, linkedJobs: [{ id: "j" }], cycleIds: { j: "c" }, createClient: () => client, ...checks };
   deps.window = { confirm: () => confirmed, prompt: () => reason };
+  deps.assessmentItems = ["지식"];
+  deps.panelMemberIds = { "위원1": "p1", "위원2": "p2", "위원3": "p3" };
   const actions = new Function(...Object.keys(deps), `${code};return {${names.join(",")}};`)(...Object.values(deps));
   return { actions, demo, latestDemo, mounted, notices, busy, stages, states, requests, running };
 }
@@ -82,4 +84,19 @@ let linkRead = 0;
 f = fixture(async (table, action) => table === "invoice_jobs" && action === "select" && ++linkRead === 2 ? { data: [{ invoice_id: "other-invoice", job_id: "j" }], error: null } : recovery(table, action)); await f.actions.recoverInvoiceLinks(); assert.equal(f.stages.length, 0);
 f = fixture(async (table, action) => action === "upsert" ? { data: [], error: null } : recovery(table, action)); await f.actions.recoverInvoiceLinks(); assert.equal(f.stages.length, 0);
 f = fixture(async (table, action) => table === "invoice_jobs" ? { data: [], error: null } : { data: action === "select" ? null : { id: "new-invoice" }, error: null }); await f.actions.recordInvoice(); assert.equal(f.stages.length, 0);
-console.log("업무 단계 확정: 연결 복구·사유/취소·다른 청구/입금 기록 차단·Job 연결 저장 대조·통합 입금 반영 검사 통과 (DB/브라우저 모의, 트랜잭션 보장 별도)");
+const panelRows = [{ decision_id: "d", panel_member_id: "p1", result: "승인", comment: "의견1" }, { decision_id: "d", panel_member_id: "p2", result: "승인", comment: "의견2" }];
+const multiplePanel = [...panelRows, ...panelRows.map(row => ({ ...row, decision_id: "d2" }))];
+assert.equal(checks.hasExactRecordValues([...multiplePanel].reverse(), multiplePanel, ["decision_id", "panel_member_id", "result", "comment"]), true);
+assert.equal(checks.hasExactRecordValues(multiplePanel.slice(0, 3), multiplePanel, ["decision_id", "panel_member_id", "result", "comment"]), false);
+const savedDecision = { id: "d", cycle_id: "c", result: "승인", comment: "최종 의견", decision_date: "2026-10-02", final_approver: "대표자", final_approval_date: "2026-10-02" };
+const decisions = async (table, action) => ({ data: table === "certification_decisions" ? [savedDecision] : table === "decision_panel_entries" ? action === "select" ? [] : panelRows : [{ id: "c" }], error: null });
+function decisionFixture(query = decisions) { const result = fixture(query); Object.assign(result.demo, { stage: "DECISION_PENDING", assessment: { j: { 지식: "적합" } }, panelMembers: [{ name: "위원1", selected: true, decision: "승인", comment: "의견1" }, { name: "위원2", selected: true, decision: "승인", comment: "의견2" }], decisionDate: "2026-10-02", finalApprover: "대표자", finalApprovalDate: "2026-10-02", decisions: { j: { result: "승인", comment: "최종 의견" } } }); return result; }
+f = decisionFixture(); await f.actions.finishDecision(); assert.deepEqual(f.stages, ["CERTIFICATE_DRAFT_PENDING"]);
+for (const rows of [[], [panelRows[0]], [panelRows[0], panelRows[0]], [panelRows[0], { ...panelRows[1], result: "거절" }], [panelRows[0], { ...panelRows[1], comment: "다른 의견" }], [panelRows[0], { ...panelRows[1], decision_id: "other" }]]) {
+  f = decisionFixture(async (table, action) => table === "decision_panel_entries" && action === "upsert" ? { data: rows, error: null } : decisions(table, action)); await f.actions.finishDecision(); assert.equal(f.stages.length, 0); assert.ok(!f.requests.some(r => r.table === "processing_cycles"));
+}
+f = decisionFixture(async (table, action) => table === "decision_panel_entries" && action === "select" ? { data: [{ decision_id: "d", panel_member_id: "p3" }], error: null } : decisions(table, action)); await f.actions.finishDecision(); assert.equal(f.stages.length, 0); assert.ok(!f.requests.some(r => r.table === "decision_panel_entries" && r.action === "upsert"));
+f = decisionFixture(); f.demo.panelMembers[1].name = "위원1"; await f.actions.finishDecision(); assert.equal(f.requests.length, 0);
+f = decisionFixture(); f.demo.panelMembers[1].selected = false; await f.actions.finishDecision(); assert.equal(f.requests.length, 0);
+f = decisionFixture(async (table, action) => table === "certification_decisions" ? { data: [{ ...savedDecision, final_approver: "다른 승인자" }], error: null } : decisions(table, action)); await f.actions.finishDecision(); assert.equal(f.stages.length, 0); assert.ok(!f.requests.some(r => r.table === "decision_panel_entries"));
+console.log("업무 단계 확정: 심의위원 결정·의견·대상 대조/중복 위원/과거 위원 불일치 차단, 연결 복구·통합 입금 검사 통과 (DB/브라우저 모의, 트랜잭션 보장 별도)");

@@ -10,7 +10,7 @@ assert.equal(checks.hasExactAffectedIds([{ id: "a" }, { id: "b" }], ["b", "a"]),
 for (const rows of [null, [], [{ id: "a" }, { id: "a" }], [{ id: "other" }]]) assert.equal(checks.hasExactAffectedIds(rows, ["a", "b"]), false);
 const source = fs.readFileSync(new URL("../components/application-detail.tsx", import.meta.url), "utf8");
 const tree = ts.createSourceFile("application.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-const names = ["runFormalStep", "move", "finishReview", "recordInvoice", "confirmPayment", "applySharedPayment"];
+const names = ["runFormalStep", "move", "finishReview", "recordInvoice", "recoverInvoiceLinks", "confirmPayment", "applySharedPayment"];
 const found = [];
 function visit(node) {
   if (ts.isVariableStatement(node) && node.declarationList.declarations.some(item => names.includes(item.name.getText(tree)))) found.push(node.getText(tree));
@@ -18,7 +18,7 @@ function visit(node) {
 }
 visit(tree);
 const code = compile(found.join("\n"));
-function fixture(query, { editable = true, local = false } = {}) {
+function fixture(query, { editable = true, local = false, confirmed = true, reason = "연결 실패 복구" } = {}) {
   const demo = { stage: "PAYMENT_PENDING", review: { reviewer: "검토자", reviewedAt: "2026-10-01", verifier: "검증자", verifiedAt: "2026-10-02", verificationResult: "확인", result: "적합" }, invoiceNo: "sample", invoiceAmount: "100", invoiceRecipientName: "가상수신자", invoiceIssuedAt: "2026-10-01", paidAmount: "100", payerName: "가상입금자", paymentConfirmedAt: "2026-10-02", paymentConfirmedBy: "가상담당자", dateAuditLogs: [] };
   const notices = [], busy = [], stages = [], requests = [], states = [];
   const latestDemo = { current: demo }, running = { current: false }, snapshot = { current: null }, mounted = { current: true };
@@ -26,6 +26,7 @@ function fixture(query, { editable = true, local = false } = {}) {
     const chain = { action: "select", update() { this.action = "update"; return this; }, insert() { this.action = "insert"; return this; }, upsert() { this.action = "upsert"; return this; }, in() { return this; }, eq() { return this; }, select() { return this; }, single() { return this; }, maybeSingle() { return this; }, then(resolve, reject) { requests.push({ table, action: this.action }); return Promise.resolve().then(() => query(table, this.action)).then(resolve, reject); } }; return chain;
   } };
   const deps = { demo, latestDemo, formalRunning: running, formalSnapshot: snapshot, downloadMounted: mounted, saveAccess: { current: { canEdit: editable } }, setFormalSaving: value => busy.push(value), setNotice: value => notices.push(value), setDemo: update => { const state = update(demo); states.push(state); stages.push(state.stage); }, setActive() {}, stageLabels: { PAYMENT_PENDING: "입금대기", DECISION_PENDING: "심의대기", INVOICE_PENDING: "청구대기" }, createAuditLog: () => ({}), application: { primaryOwner: "담당자" }, usesSupabaseWorkspace: !local, linkedJobs: [{ id: "j" }], cycleIds: { j: "c" }, createClient: () => client, ...checks };
+  deps.window = { confirm: () => confirmed, prompt: () => reason };
   const actions = new Function(...Object.keys(deps), `${code};return {${names.join(",")}};`)(...Object.values(deps));
   return { actions, demo, latestDemo, mounted, notices, busy, stages, states, requests, running };
 }
@@ -48,7 +49,8 @@ for (const bad of [{ ...invoiceRow, amount: 200 }, { ...invoiceRow, payment_stat
 }
 f = fixture(async (table, action) => table === "invoice_jobs" ? { data: [{ job_id: "other" }], error: null } : normal(table, action)); await f.actions.confirmPayment(); assert.equal(f.stages.length, 0); assert.ok(!f.requests.some(r => r.action === "update"));
 f = fixture(normal); await f.actions.recordInvoice(); assert.equal(f.stages.length, 0); assert.ok(!f.requests.some(r => r.action === "insert" || r.action === "upsert"));
-f = fixture(async (table, action) => ({ data: action === "select" ? null : table === "invoices" ? { id: "new-invoice" } : null, error: null })); await f.actions.recordInvoice(); assert.deepEqual(f.stages, ["PAYMENT_PENDING"]); assert.ok(f.requests.some(r => r.action === "insert"));
+f = fixture(async table => ({ data: table === "invoice_jobs" ? [] : invoiceRow, error: null })); await f.actions.recordInvoice(); assert.equal(f.stages.length, 0); assert.match(f.notices.at(-1), /이미 등록된/); assert.ok(!f.requests.some(r => r.action === "insert"));
+f = fixture(async (table, action) => ({ data: action === "select" ? table === "invoice_jobs" ? [] : null : table === "invoices" ? { id: "new-invoice" } : [{ invoice_id: "new-invoice", job_id: "j" }], error: null })); await f.actions.recordInvoice(); assert.deepEqual(f.stages, ["PAYMENT_PENDING"]); assert.ok(f.requests.some(r => r.action === "insert"));
 f = fixture(async (table, action) => table === "invoice_jobs" ? { data: [{ job_id: "j" }, { job_id: "another-candidate-job" }], error: null } : normal(table, action)); await f.actions.confirmPayment(); assert.deepEqual(f.stages, ["DECISION_PENDING"]);
 f = fixture(async (table, action) => action === "update" ? { data: [], error: null } : normal(table, action)); await f.actions.confirmPayment(); assert.equal(f.stages.length, 0);
 for (const name of ["finishReview", "recordInvoice", "confirmPayment", "finishDecision", "finishCertification", "finishOriginalDelivery"]) assert.ok(source.includes(`const ${name} = () => runFormalStep(async () => {`));
@@ -68,4 +70,16 @@ f = fixture(async () => { throw new Error("network"); }); await f.actions.applyS
 f = fixture(async table => { if (table === "profiles") f.mounted.current = false; return shared(table); }); await f.actions.applySharedPayment(); assert.equal(f.stages.length, 0);
 held = false;
 f = fixture(table => { if (!held) { held = true; return new Promise(resolve => { release = resolve; }); } return shared(table); }); const pending = f.actions.applySharedPayment(); await new Promise(resolve => setTimeout(resolve, 0)); f.latestDemo.current = { ...f.demo, invoiceNo: "changed" }; release({ data: paidInvoice, error: null }); await pending; assert.equal(f.stages.length, 0);
-console.log("업무 단계 확정: 금액·저장 대상·중복 실행·기존 통합 입금 반영·불완전 입금/다른 Job/입력 변경 차단 검사 통과 (DB/브라우저 모의, 트랜잭션 보장 별도)");
+const recoverable = { ...invoiceRow, issued_at: "2026-10-01", recipient_type: "PARTNER", recipient_name: "가상수신자", paid_at: null, paid_amount: null, confirmed_by: null, payer_name: null };
+const recovery = async (table, action) => ({ data: table === "invoices" ? recoverable : action === "upsert" ? [{ invoice_id: "invoice", job_id: "j" }] : [], error: null });
+f = fixture(recovery); await f.actions.recoverInvoiceLinks(); assert.deepEqual(f.stages, ["PAYMENT_PENDING"]); assert.ok(f.requests.every(r => r.table === "invoice_jobs" || r.action === "select")); assert.match(f.notices.at(-1), /사유: 연결 실패 복구/);
+for (const patch of [{ amount: 99 }, { recipient_name: "다른 수신자" }, { issued_at: "2026-10-02" }, { payment_status: "PAID" }, { paid_amount: 1 }]) {
+  f = fixture(async (table, action) => table === "invoices" ? { data: { ...recoverable, ...patch }, error: null } : recovery(table, action)); await f.actions.recoverInvoiceLinks(); assert.equal(f.stages.length, 0); assert.ok(!f.requests.some(r => r.action === "upsert"));
+}
+for (const options of [{ confirmed: false }, { reason: "" }, { reason: "x".repeat(501) }, { editable: false }]) { f = fixture(recovery, options); await f.actions.recoverInvoiceLinks(); assert.equal(f.stages.length, 0); assert.ok(!f.requests.some(r => r.action === "upsert")); }
+f = fixture(async (table, action) => table === "invoice_jobs" ? { data: [{ job_id: "other" }], error: null } : recovery(table, action)); await f.actions.recoverInvoiceLinks(); assert.equal(f.stages.length, 0);
+let linkRead = 0;
+f = fixture(async (table, action) => table === "invoice_jobs" && action === "select" && ++linkRead === 2 ? { data: [{ invoice_id: "other-invoice", job_id: "j" }], error: null } : recovery(table, action)); await f.actions.recoverInvoiceLinks(); assert.equal(f.stages.length, 0);
+f = fixture(async (table, action) => action === "upsert" ? { data: [], error: null } : recovery(table, action)); await f.actions.recoverInvoiceLinks(); assert.equal(f.stages.length, 0);
+f = fixture(async (table, action) => table === "invoice_jobs" ? { data: [], error: null } : { data: action === "select" ? null : { id: "new-invoice" }, error: null }); await f.actions.recordInvoice(); assert.equal(f.stages.length, 0);
+console.log("업무 단계 확정: 연결 복구·사유/취소·다른 청구/입금 기록 차단·Job 연결 저장 대조·통합 입금 반영 검사 통과 (DB/브라우저 모의, 트랜잭션 보장 별도)");

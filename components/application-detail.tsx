@@ -374,15 +374,37 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     if (usesSupabaseWorkspace) {
       const supabase = createClient();
       if (!linkedJobs.length) { setNotice("연결된 Job이 없어 인보이스를 기록할 수 없습니다."); return; }
+      const { data: priorLinks, error: priorError } = await supabase.from("invoice_jobs").select("invoice_id,job_id").in("job_id", linkedJobs.map(job => job.id));
+      if (priorError || !Array.isArray(priorLinks) || priorLinks.length) { setNotice("Job의 기존 청구 연결이 있거나 조회에 실패했습니다. 새 인보이스로 중복 청구하지 않습니다."); return; }
       const { data: existing, error: lookupError } = await supabase.from("invoices").select("id").eq("invoice_no", demo.invoiceNo.trim()).maybeSingle();
       if (lookupError) { setNotice("기존 인보이스 조회에 실패했습니다. 덮어쓰지 않습니다."); return; }
       if (existing) { setNotice("이미 등록된 인보이스 번호입니다. 기존 청구·입금 기록을 덮어쓰지 않습니다. 연결 정보와 기존 기록을 확인해 주세요."); return; }
       const { data: invoice, error } = await supabase.from("invoices").insert({ invoice_no: demo.invoiceNo.trim(), recipient_type: demo.invoiceRecipientType === "개인" ? "INDIVIDUAL" : "PARTNER", recipient_name: demo.invoiceRecipientName, amount: Number(demo.invoiceAmount), issued_at: demo.invoiceIssuedAt, payment_status: "UNPAID" }).select("id").single();
       if (error || !invoice) { setNotice(`인보이스 정식 기록 저장에 실패했습니다: ${error?.message ?? "인보이스 ID 없음"}`); return; }
-      const { error: linkError } = await supabase.from("invoice_jobs").upsert(linkedJobs.map((job) => ({ invoice_id: invoice.id, job_id: job.id })), { onConflict: "invoice_id,job_id" });
-      if (linkError) { setNotice(`인보이스와 Job 연결에 실패했습니다: ${linkError.message}`); return; }
+      const { data: savedLinks, error: linkError } = await supabase.from("invoice_jobs").upsert(linkedJobs.map((job) => ({ invoice_id: invoice.id, job_id: job.id })), { onConflict: "invoice_id,job_id" }).select("invoice_id,job_id");
+      if (linkError || !Array.isArray(savedLinks) || savedLinks.some(row => row.invoice_id !== invoice.id) || !hasExactAffectedIds(savedLinks.map(row => ({ id: row.job_id })), linkedJobs.map(job => job.id))) { setNotice("인보이스는 저장됐지만 모든 Job 연결 결과를 확인하지 못했습니다. 연결 복구 기능으로 기존 기록을 대조해 주세요."); return; }
     }
     move("PAYMENT_PENDING", "인보이스·입금", "인보이스 발행을 기록했습니다. 입금내역을 확인해 주세요.");
+  });
+  const recoverInvoiceLinks = () => runFormalStep(async () => {
+    if (!usesSupabaseWorkspace || !["INVOICE_PENDING", "PAYMENT_PENDING"].includes(demo.stage)) { setNotice("공유 DB의 청구·입금 대기 단계에서만 연결을 복구할 수 있습니다."); return; }
+    if (!demo.invoiceNo.trim() || !linkedJobs.length || workflowAmount(demo.invoiceAmount) === null) { setNotice("인보이스 번호, 청구금액과 Job을 확인해 주세요."); return; }
+    const supabase = createClient();
+    const { data: invoice, error } = await supabase.from("invoices").select("id,amount,issued_at,recipient_type,recipient_name,payment_status,paid_amount,paid_at,confirmed_by,payer_name").eq("invoice_no", demo.invoiceNo.trim()).maybeSingle();
+    if (error || !invoice || !invoice.id || invoice.payment_status !== "UNPAID" || invoice.paid_amount != null || invoice.paid_at != null || invoice.confirmed_by != null || invoice.payer_name != null || Number(invoice.amount) !== workflowAmount(demo.invoiceAmount) || invoice.issued_at !== demo.invoiceIssuedAt || invoice.recipient_name !== demo.invoiceRecipientName || invoice.recipient_type !== (demo.invoiceRecipientType === "개인" ? "INDIVIDUAL" : "PARTNER")) { setNotice("기존 미입금 인보이스의 금액·발행일·수신자 정보가 화면과 일치해야 합니다. 청구·입금 정보를 덮어쓰지 않습니다."); return; }
+    const expected = linkedJobs.map(job => job.id);
+    const { data: existingLinks, error: linksError } = await supabase.from("invoice_jobs").select("job_id").eq("invoice_id", invoice.id);
+    if (linksError || !Array.isArray(existingLinks) || existingLinks.some(row => !expected.includes(row.job_id))) { setNotice("다른 신청의 Job이 연결되어 있거나 연결 조회에 실패했습니다. 이 화면에서 복구하지 않습니다."); return; }
+    const { data: jobInvoices, error: jobError } = await supabase.from("invoice_jobs").select("invoice_id,job_id").in("job_id", expected);
+    if (jobError || !Array.isArray(jobInvoices) || jobInvoices.some(row => row.invoice_id !== invoice.id)) { setNotice("현재 Job의 다른 인보이스 연결을 확인해 주세요. 중복 청구 연결을 만들지 않습니다."); return; }
+    if (!downloadMounted.current || !saveAccess.current.canEdit || formalSnapshot.current !== JSON.stringify(latestDemo.current)) { setNotice("입력 또는 편집 상태가 변경되어 연결을 복구하지 않았습니다."); return; }
+    if (!window.confirm(`인보이스 ${demo.invoiceNo.trim()}에 현재 신청의 Job ${expected.length}건을 연결 복구합니다. 청구·입금 정보는 변경하지 않습니다. 기존 발행 기록과 대조하셨습니까?`)) return;
+    const reason = window.prompt("연결 복구 사유를 입력해 주세요. (최대 500자)")?.trim();
+    if (!reason || reason.length > 500) { setNotice("연결 복구 사유를 1~500자로 입력해야 합니다."); return; }
+    if (!downloadMounted.current || !saveAccess.current.canEdit || formalSnapshot.current !== JSON.stringify(latestDemo.current)) { setNotice("입력 또는 편집 상태가 변경되어 연결을 복구하지 않았습니다."); return; }
+    const { data: saved, error: saveError } = await supabase.from("invoice_jobs").upsert(expected.map(job_id => ({ invoice_id: invoice.id, job_id })), { onConflict: "invoice_id,job_id" }).select("invoice_id,job_id");
+    if (saveError || !Array.isArray(saved) || saved.some(row => row.invoice_id !== invoice.id) || !hasExactAffectedIds(saved.map(row => ({ id: row.job_id })), expected)) { setNotice("모든 연결 복구 결과를 확인하지 못했습니다. 일부 연결은 저장됐을 수 있으니 대조해 주세요."); return; }
+    move("PAYMENT_PENDING", "인보이스·입금", `인보이스 ${demo.invoiceNo.trim()}의 Job 연결을 복구했습니다. 사유: ${reason}. 청구·입금 정보는 변경하지 않았습니다.`);
   });
   const confirmPayment = () => runFormalStep(async () => {
     if (!demo.paidAmount || !demo.payerName || !demo.paymentConfirmedAt || !demo.paymentConfirmedBy) { setNotice("입금액, 입금자, 입금 확인일과 확인 담당자를 모두 입력해 주세요."); return; }
@@ -610,6 +632,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     </div>}
 
     {active === "인보이스·입금" && <div className="space-y-5">
+      <Section title="인보이스 연결 복구" description="신규 발행 중 Job 연결이 실패한 경우 사용합니다. 번호·금액·발행일·수신자 정보를 원 발행 기록과 대조해 입력하세요. 다른 신청 또는 다른 인보이스와 연결된 Job은 이 기능으로 처리하지 않습니다."><Button variant="outline" disabled={!usesSupabaseWorkspace || !["INVOICE_PENDING", "PAYMENT_PENDING"].includes(demo.stage)} onClick={recoverInvoiceLinks}><Check/>기존 미입금 인보이스의 Job 연결 복구</Button></Section>
       <Section title="기존 통합 입금 반영" description="다른 신청에서 이미 전액 입금 확인한 인보이스 번호를 입력한 뒤 사용하세요. 현재 신청의 모든 Job 연결을 검증하고 저장된 청구·입금 정보를 가져옵니다. 인보이스 자체는 변경하지 않습니다."><Button variant="outline" disabled={!usesSupabaseWorkspace || !["INVOICE_PENDING", "PAYMENT_PENDING"].includes(demo.stage)} onClick={applySharedPayment}><Check/>기존 통합 입금 확인 후 심의로 진행</Button></Section>
       <Section title="청구 대상 Job" description="한 신청에 포함된 Job은 하나의 인보이스로 통합 청구합니다."><div className="space-y-2">{linkedJobs.map((job) => <div key={job.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3"><div><p className="text-sm font-semibold">{job.jobNo} · {job.standard}</p><p className="mt-1 text-xs text-slate-500">{job.currentGrade} · {accreditationLabels[application.accreditationTrack]}</p></div><span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-800">청구 포함</span></div>)}</div></Section>
       <Section title="1. 인보이스 발행 기록" description="시스템은 발행 사실만 기록하며 실제 인보이스 생성과 이메일 발송은 현재 범위에 포함하지 않습니다."><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"><Field label="수신자 구분"><select className={controlClass} value={demo.invoiceRecipientType} onChange={(event) => setDemo((current) => ({ ...current, invoiceRecipientType: event.target.value as DemoState["invoiceRecipientType"] }))}><option>개인</option><option>파트너사</option></select></Field><Field label="수신자"><input className={controlClass} value={demo.invoiceRecipientName} onChange={(event) => setDemo((current) => ({ ...current, invoiceRecipientName: event.target.value }))}/></Field><Field label="인보이스 번호"><input className={controlClass} value={demo.invoiceNo} onChange={(event) => setDemo((current) => ({ ...current, invoiceNo: event.target.value }))}/></Field><Field label="청구금액"><input type="number" className={controlClass} value={demo.invoiceAmount} onChange={(event) => setDemo((current) => ({ ...current, invoiceAmount: event.target.value }))}/></Field><Field label="인보이스 발행일"><input type="date" className={controlClass} value={demo.invoiceIssuedAt} onChange={(event) => setDemo((current) => ({ ...current, invoiceIssuedAt: event.target.value }))}/></Field></div>{invoices.length > 0 && <p className="mt-3 text-xs text-slate-500">기존 가상 인보이스: {invoices.map((invoice) => invoice.invoiceNo).join(", ")}</p>}<div className="mt-5 flex justify-end"><Button variant="outline" onClick={recordInvoice}><FileText/>인보이스 발행 기록</Button></div></Section>

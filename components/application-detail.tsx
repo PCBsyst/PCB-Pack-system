@@ -369,11 +369,15 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     move("INVOICE_PENDING", "인보이스·입금", "검토자와 검증인의 확인이 완료되었습니다. 인보이스를 발행하세요.");
   });
   const recordInvoice = () => runFormalStep(async () => {
-    if (!demo.invoiceNo || !demo.invoiceAmount || !demo.invoiceRecipientName || !demo.invoiceIssuedAt) { setNotice("인보이스 번호, 금액, 수신자와 발행일을 모두 입력해 주세요."); return; }
+    if (!demo.invoiceNo.trim() || !demo.invoiceAmount || !demo.invoiceRecipientName.trim() || !demo.invoiceIssuedAt) { setNotice("인보이스 번호, 금액, 수신자와 발행일을 모두 입력해 주세요."); return; }
     if (workflowAmount(demo.invoiceAmount) === null) { setNotice("청구금액은 0보다 큰 유효한 숫자여야 합니다. 숫자와 소수점 이하 최대 2자리만 입력해 주세요."); return; }
     if (usesSupabaseWorkspace) {
       const supabase = createClient();
-      const { data: invoice, error } = await supabase.from("invoices").upsert({ invoice_no: demo.invoiceNo, recipient_type: demo.invoiceRecipientType === "개인" ? "INDIVIDUAL" : "PARTNER", recipient_name: demo.invoiceRecipientName, amount: Number(demo.invoiceAmount), issued_at: demo.invoiceIssuedAt, payment_status: "UNPAID" }, { onConflict: "invoice_no" }).select("id").single();
+      if (!linkedJobs.length) { setNotice("연결된 Job이 없어 인보이스를 기록할 수 없습니다."); return; }
+      const { data: existing, error: lookupError } = await supabase.from("invoices").select("id").eq("invoice_no", demo.invoiceNo.trim()).maybeSingle();
+      if (lookupError) { setNotice("기존 인보이스 조회에 실패했습니다. 덮어쓰지 않습니다."); return; }
+      if (existing) { setNotice("이미 등록된 인보이스 번호입니다. 기존 청구·입금 기록을 덮어쓰지 않습니다. 연결 정보와 기존 기록을 확인해 주세요."); return; }
+      const { data: invoice, error } = await supabase.from("invoices").insert({ invoice_no: demo.invoiceNo.trim(), recipient_type: demo.invoiceRecipientType === "개인" ? "INDIVIDUAL" : "PARTNER", recipient_name: demo.invoiceRecipientName, amount: Number(demo.invoiceAmount), issued_at: demo.invoiceIssuedAt, payment_status: "UNPAID" }).select("id").single();
       if (error || !invoice) { setNotice(`인보이스 정식 기록 저장에 실패했습니다: ${error?.message ?? "인보이스 ID 없음"}`); return; }
       const { error: linkError } = await supabase.from("invoice_jobs").upsert(linkedJobs.map((job) => ({ invoice_id: invoice.id, job_id: job.id })), { onConflict: "invoice_id,job_id" });
       if (linkError) { setNotice(`인보이스와 Job 연결에 실패했습니다: ${linkError.message}`); return; }
@@ -386,10 +390,17 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     if (Number(demo.paidAmount) < Number(demo.invoiceAmount)) { setNotice("입금액이 청구금액보다 적습니다. 전액 입금을 확인한 뒤 진행해 주세요."); return; }
     if (usesSupabaseWorkspace) {
       const supabase = createClient();
+      const { data: invoice, error: lookupError } = await supabase.from("invoices").select("id,amount,payment_status").eq("invoice_no", demo.invoiceNo.trim()).maybeSingle();
+      if (lookupError || !invoice || typeof invoice.id !== "string") { setNotice("입금 저장 대상 인보이스 1건을 확인하지 못했습니다. 다음 단계로 진행하지 않습니다."); return; }
+      if (invoice.payment_status !== "UNPAID") { setNotice("미입금 상태의 인보이스만 확인할 수 있습니다. 기존 입금·확인필요 기록을 덮어쓰지 않습니다."); return; }
+      if (workflowAmount(String(invoice.amount)) === null || Number(invoice.amount) !== Number(demo.invoiceAmount)) { setNotice("저장된 청구금액과 화면 금액이 다릅니다. 기존 인보이스 금액을 확인해 주세요."); return; }
+      const { data: links, error: linkError } = await supabase.from("invoice_jobs").select("job_id").eq("invoice_id", invoice.id);
+      if (linkError || !linkedJobs.length || !Array.isArray(links) || !linkedJobs.every(job => links.some(link => link.job_id === job.id))) { setNotice("해당 인보이스와 현재 신청의 모든 Job 연결을 확인하지 못했습니다. 입금을 기록하지 않습니다."); return; }
       const { data: userData } = await supabase.auth.getUser();
-      const { data: updated, error } = await supabase.from("invoices").update({ payment_status: "PAID", paid_amount: Number(demo.paidAmount), paid_at: demo.paymentConfirmedAt, payer_name: demo.payerName, confirmed_by: userData.user?.id ?? null }).eq("invoice_no", demo.invoiceNo).select("id");
+      if (!userData.user) { setNotice("입금 확인 담당자의 로그인 상태를 확인하지 못했습니다."); return; }
+      const { data: updated, error } = await supabase.from("invoices").update({ payment_status: "PAID", paid_amount: Number(demo.paidAmount), paid_at: demo.paymentConfirmedAt, payer_name: demo.payerName, confirmed_by: userData.user.id }).eq("id", invoice.id).eq("payment_status", "UNPAID").eq("amount", invoice.amount).select("id");
       if (error) { setNotice(`입금 정식 기록 저장에 실패했습니다: ${error.message}`); return; }
-      if (!Array.isArray(updated) || updated.length !== 1 || typeof updated[0]?.id !== "string" || !updated[0].id) { setNotice("입금 저장 대상 인보이스 1건을 확인하지 못했습니다. 다음 단계로 진행하지 않습니다."); return; }
+      if (!hasExactAffectedIds(updated, [invoice.id])) { setNotice("입금 저장 대상 인보이스 1건을 확인하지 못했습니다. 다음 단계로 진행하지 않습니다."); return; }
     }
     move("DECISION_PENDING", "인증심의", "전액 입금 확인이 완료되었습니다. 인증심의를 진행하세요.");
   });

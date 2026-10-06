@@ -23,22 +23,33 @@ function fixture(query, { editable = true, local = false } = {}) {
   const notices = [], busy = [], stages = [], requests = [];
   const latestDemo = { current: demo }, running = { current: false }, snapshot = { current: null }, mounted = { current: true };
   const client = { auth: { getUser: async () => ({ data: { user: { id: "staff" } } }) }, from(table) {
-    const chain = { action: "", update() { this.action = "update"; return this; }, upsert() { this.action = "upsert"; return this; }, in() { return this; }, eq() { return this; }, select() { return this; }, single() { return this; }, then(resolve, reject) { requests.push({ table, action: this.action }); return Promise.resolve().then(() => query(table, this.action)).then(resolve, reject); } }; return chain;
+    const chain = { action: "select", update() { this.action = "update"; return this; }, insert() { this.action = "insert"; return this; }, upsert() { this.action = "upsert"; return this; }, in() { return this; }, eq() { return this; }, select() { return this; }, single() { return this; }, maybeSingle() { return this; }, then(resolve, reject) { requests.push({ table, action: this.action }); return Promise.resolve().then(() => query(table, this.action)).then(resolve, reject); } }; return chain;
   } };
   const deps = { demo, latestDemo, formalRunning: running, formalSnapshot: snapshot, downloadMounted: mounted, saveAccess: { current: { canEdit: editable } }, setFormalSaving: value => busy.push(value), setNotice: value => notices.push(value), setDemo: update => stages.push(update(demo).stage), setActive() {}, stageLabels: { PAYMENT_PENDING: "입금대기", DECISION_PENDING: "심의대기", INVOICE_PENDING: "청구대기" }, createAuditLog: () => ({}), application: { primaryOwner: "담당자" }, usesSupabaseWorkspace: !local, linkedJobs: [{ id: "j" }], cycleIds: { j: "c" }, createClient: () => client, ...checks };
   const actions = new Function(...Object.keys(deps), `${code};return {${names.join(",")}};`)(...Object.values(deps));
   return { actions, demo, latestDemo, mounted, notices, busy, stages, requests, running };
 }
-let f = fixture(async table => ({ data: [{ id: table === "invoices" ? "invoice" : "c" }], error: null }));
+const invoiceRow = { id: "invoice", amount: 100, payment_status: "UNPAID" };
+const normal = async (table, action) => ({ data: table === "invoice_jobs" ? [{ job_id: "j" }] : action === "select" ? invoiceRow : [{ id: "invoice" }], error: null });
+let f = fixture(normal);
 await f.actions.confirmPayment(); assert.deepEqual(f.stages, ["DECISION_PENDING"]); assert.equal(f.busy.at(-1), false);
 f = fixture(async () => ({ data: [], error: null })); await f.actions.confirmPayment(); assert.equal(f.stages.length, 0); assert.match(f.notices.at(-1), /인보이스 1건/);
 f = fixture(async table => table === "document_reviews" ? { error: null } : { data: [], error: null }); await f.actions.finishReview(); assert.equal(f.stages.length, 0); assert.match(f.notices.at(-1), /회차 검토일/);
 f = fixture(async () => { throw new Error("network"); }); await f.actions.confirmPayment(); assert.equal(f.stages.length, 0); assert.equal(f.running.current, false); assert.match(f.notices.at(-1), /일부 기록/);
 let release;
-f = fixture(() => new Promise(resolve => { release = resolve; })); const first = f.actions.confirmPayment(); await new Promise(resolve => setTimeout(resolve, 0)); await f.actions.confirmPayment(); assert.equal(f.requests.length, 1);
-f.latestDemo.current = { ...f.demo, paidAmount: "200" }; release({ data: [{ id: "invoice" }], error: null }); await first; assert.equal(f.stages.length, 0); assert.match(f.notices.at(-1), /입력이 변경/);
+let held = false;
+f = fixture((table, action) => { if (!held) { held = true; return new Promise(resolve => { release = resolve; }); } return normal(table, action); }); const first = f.actions.confirmPayment(); await new Promise(resolve => setTimeout(resolve, 0)); await f.actions.confirmPayment(); assert.equal(f.requests.length, 1);
+f.latestDemo.current = { ...f.demo, paidAmount: "200" }; release({ data: invoiceRow, error: null }); await first; assert.equal(f.stages.length, 0); assert.match(f.notices.at(-1), /입력이 변경/);
 f = fixture(async () => ({ data: [{ id: "invoice" }], error: null }), { editable: false }); await f.actions.confirmPayment(); assert.equal(f.requests.length, 0);
 f = fixture(async () => ({ data: [{ id: "invoice" }], error: null }), { local: true }); f.demo.invoiceAmount = "NaN"; await f.actions.recordInvoice(); assert.equal(f.stages.length, 0); await f.actions.confirmPayment(); assert.equal(f.stages.length, 0);
 assert.ok(source.includes("disabled={!canEdit || formalSaving}"));
+for (const bad of [{ ...invoiceRow, amount: 200 }, { ...invoiceRow, payment_status: "PAID" }]) {
+  f = fixture(async () => ({ data: bad, error: null })); await f.actions.confirmPayment(); assert.equal(f.stages.length, 0); assert.ok(!f.requests.some(r => r.action === "update"));
+}
+f = fixture(async (table, action) => table === "invoice_jobs" ? { data: [{ job_id: "other" }], error: null } : normal(table, action)); await f.actions.confirmPayment(); assert.equal(f.stages.length, 0); assert.ok(!f.requests.some(r => r.action === "update"));
+f = fixture(normal); await f.actions.recordInvoice(); assert.equal(f.stages.length, 0); assert.ok(!f.requests.some(r => r.action === "insert" || r.action === "upsert"));
+f = fixture(async (table, action) => ({ data: action === "select" ? null : table === "invoices" ? { id: "new-invoice" } : null, error: null })); await f.actions.recordInvoice(); assert.deepEqual(f.stages, ["PAYMENT_PENDING"]); assert.ok(f.requests.some(r => r.action === "insert"));
+f = fixture(async (table, action) => table === "invoice_jobs" ? { data: [{ job_id: "j" }, { job_id: "another-candidate-job" }], error: null } : normal(table, action)); await f.actions.confirmPayment(); assert.deepEqual(f.stages, ["DECISION_PENDING"]);
+f = fixture(async (table, action) => action === "update" ? { data: [], error: null } : normal(table, action)); await f.actions.confirmPayment(); assert.equal(f.stages.length, 0);
 for (const name of ["finishReview", "recordInvoice", "confirmPayment", "finishDecision", "finishCertification", "finishOriginalDelivery"]) assert.ok(source.includes(`const ${name} = () => runFormalStep(async () => {`));
 console.log("업무 단계 확정: 금액 검증·0건/일부 저장 차단·중복 실행·입력 변경·읽기전용·실패 후 해제 검사 통과 (DB/브라우저 모의, 트랜잭션 보장 별도)");

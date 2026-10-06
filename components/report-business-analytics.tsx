@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
 import { ReportCertificationEvents } from "@/components/report-certification-events";
@@ -19,6 +19,9 @@ export function ReportBusinessAnalytics({ jobs, period, dateBasis = "RECEIVED", 
   const [financeRevision, setFinanceRevision] = useState(0);
   const [dimension, setDimension] = useState<"businessArea" | "standard" | "grade" | "applicationType">("businessArea");
   const [trendUnit, setTrendUnit] = useState<"month" | "year">("month");
+  const [xlsxBusy, setXlsxBusy] = useState(false);
+  const [xlsxNotice, setXlsxNotice] = useState("");
+  const xlsxRunning = useRef(false), mounted = useRef(true), exportVersion = useRef("");
   useEffect(() => {
     setInvoices([]); setFinanceState("loading");
     if (!hasEnvVars) { setFinanceState("prototype"); return; }
@@ -57,6 +60,24 @@ export function ReportBusinessAnalytics({ jobs, period, dateBasis = "RECEIVED", 
     const periods = trendUnit === "month" ? Array.from({ length: 12 }, (_, index) => `${year}-${String(index + 1).padStart(2, "0")}`) : Array.from({ length: 5 }, (_, index) => String(year - 4 + index));
     return periods.map((key) => ({ period: key, ...customerCounts(jobs.filter((job) => matchesReportPeriod(job.receivedAt, key))) }));
   }, [jobs, period, trendUnit, validMonth]);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  exportVersion.current = JSON.stringify({ period, dateBasis, filters, dimension, trendUnit, financeState, financeRevision, groups, trends });
+  async function exportExcel() {
+    if (xlsxRunning.current || !validMonth || financeState !== "ready" || !groups.length) return;
+    xlsxRunning.current = true; setXlsxBusy(true); setXlsxNotice("");
+    const snapshot = exportVersion.current;
+    try {
+      const { buildBusinessReportXlsx } = await import("@/lib/report-business-xlsx");
+      if (!mounted.current || snapshot !== exportVersion.current) throw new Error("생성 중 화면 또는 조회 조건이 바뀌었습니다. 현재 조건으로 다시 요청해 주세요.");
+      const metadata = [...reportExportMetadata("고객·수익 분석", period, `${customerBasisLabel}일`, filters), ["집계 구분", ({ businessArea: "분야", standard: "표준·세부 분야", grade: "등급", applicationType: "신청 유형" })[dimension]], ["추이 단위", trendUnit === "month" ? "선택 연도 월별" : "최근 5년 연별"]];
+      const blob = buildBusinessReportXlsx({ metadata, dimension, groups, trends, financeReady: financeState === "ready" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a"); anchor.href = url; anchor.download = `고객수익추이_${period}.xlsx`;
+      try { anchor.click(); } finally { window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
+      setXlsxNotice("분석 Excel 다운로드를 요청했습니다. 금액은 균등배분 참고값이며 PC 저장 완료를 뜻하지 않습니다.");
+    } catch (cause) { if (mounted.current) setXlsxNotice(cause instanceof Error ? cause.message : "분석 Excel을 생성하지 못했습니다."); }
+    finally { xlsxRunning.current = false; if (mounted.current) setXlsxBusy(false); }
+  }
   function exportSummary() {
     if (!validMonth) return;
     const metadata = reportExportMetadata("고객·수익 분석", period, `${customerBasisLabel}일`, filters);
@@ -71,6 +92,8 @@ export function ReportBusinessAnalytics({ jobs, period, dateBasis = "RECEIVED", 
   }
   if (!validMonth) return <section role="status" className="rounded-xl border bg-card p-5 text-sm">보고서를 조회할 월을 선택해 주세요. 기간을 선택하기 전에는 수익 집계와 다운로드를 제공하지 않습니다.</section>;
   return <section className="space-y-4 rounded-xl border bg-white p-5">
+    <div className="flex flex-wrap items-center gap-3"><button type="button" className="rounded border px-3 py-2 text-sm disabled:opacity-50" disabled={xlsxBusy || financeState !== "ready" || !groups.length} onClick={exportExcel}>고객·수익 Excel (.xlsx)</button><span className="text-xs text-muted-foreground">조회 조건·고객 및 수익·고객 추이 3개 시트. 금액은 화면과 같은 원 단위 참고값.</span></div>
+    {xlsxNotice && <p role="status" className="text-sm text-amber-700">{xlsxNotice}</p>}
     <p className="text-sm font-medium">고객 집계: {period || "기간 미선택"} · {customerBasisLabel}일 기준. 수익은 청구·입금 발생월, 아래 고객 추이는 접수 기간 기준입니다.</p>
     <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-semibold">고객·수익 분석</h2><button className="rounded border px-3 py-2 text-sm" onClick={exportSummary}>분석 CSV 다운로드</button></div>
     <p className="text-xs leading-6 text-slate-500">고객 수는 후보자 ID별 중복을 제거합니다. 같은 고객이 여러 분야·등급·상태에 포함되면 각 행에 집계되므로 합계는 전체 고유 고객 수와 다를 수 있습니다. 고객은 선택한 날짜 기준, 청구액은 인보이스 발행월, 입금액은 실제 입금월 기준입니다. 통합 청구액은 연결된 전체 Job에 균등 배분한 참고값이며 회계상 확정 수익이 아닙니다.</p>

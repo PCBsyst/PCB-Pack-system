@@ -15,7 +15,7 @@ import { documentTranslationIssues, documentTranslationMessage } from "@/lib/doc
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DocumentDownloadButton } from "@/components/document-download-button";
 import { PackageTemplateReadiness } from "@/components/package-template-readiness";
-import { canAttachPackageGeneration } from "@/lib/package-completion-policy";
+import { canAttachPackageGeneration, packageStageAfterDownload } from "@/lib/package-completion-policy";
 import { confirmPackageReadiness, isTemplateReadinessRows } from "@/lib/template-readiness";
 import { documentErrorMessage } from "@/lib/document-errors";
 import { packageDocumentIssues } from "@/lib/package-document-checks";
@@ -574,6 +574,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   };
   const downloadZip = async () => {
     if (generationBusy.current) return;
+    const startedStage = demo.stage;
     const selected = (["KR", "EN"] as DocumentLanguage[]).filter((language) => languages[language]);
     if (!selected.length) { setNotice("생성할 언어를 선택해 주세요."); return; }
     generationBusy.current = true;
@@ -601,8 +602,8 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
         setNotice("생성 중 업무 입력이 변경되었습니다. 파일 다운로드는 요청됐지만 현재 업무를 새로 완료 처리하지 않았습니다. 입력 저장 후 다시 생성해 주세요.");
         return;
       }
-      setDemo((current) => canAttachPackageGeneration(packageContext, { ...latestPackageContext.current, ...current }) ? ({ ...current, stage: receipt.complete ? "COMPLETED" : "PACKAGE_READY", generated: true, packageGeneration: receipt, dateAuditLogs: [...current.dateAuditLogs, createAuditLog("처리", "", "기록 패키지", "생성 준비", receipt.complete ? "DOCX ZIP 생성" : "일부 DOCX 생성", `실제 ${receipt.fileCount}개 DOCX 생성 응답 확인. PDF 생성·사용자 저장 완료는 별도 확인 필요.`, application.primaryOwner)] }) : current);
-      setNotice(`${receipt.fileCount}개 DOCX를 포함한 ZIP을 생성하고 다운로드를 요청했습니다. ${receipt.complete ? "" : "일부 양식이 미등록되어 전체 패키지 완료로 처리하지 않았습니다. "}PDF 생성 및 PC 저장 완료를 의미하지 않습니다. ${receipt.receiptStatus === "RECORDED" ? "서버 생성기록 저장 확인." : "서버 생성기록은 DB 적용 대기 또는 로컬 미리보기입니다."} 업무단계 공유 저장은 별도로 확인해 주세요.`);
+      setDemo((current) => canAttachPackageGeneration(packageContext, { ...latestPackageContext.current, ...current }) ? ({ ...current, stage: packageStageAfterDownload(current.stage, startedStage, receipt.complete, saveAccess.current.canEdit, usesSupabaseWorkspace, receipt.receiptStatus) as DemoStage, generated: true, packageGeneration: receipt, dateAuditLogs: [...current.dateAuditLogs, createAuditLog("처리", "", "기록 패키지", stageLabels[current.stage], receipt.complete ? "DOCX ZIP 생성" : "일부 DOCX 생성", `실제 ${receipt.fileCount}개 DOCX 생성 응답 확인. 업무 완료 전환은 패키지 준비 단계와 편집 권한 및 공유 DB 생성기록 확인을 충족한 경우에만 적용. PDF 생성·사용자 저장 완료는 별도 확인 필요.`, application.primaryOwner)] }) : current);
+      setNotice(`${receipt.fileCount}개 DOCX를 포함한 ZIP을 생성하고 다운로드를 요청했습니다. ${receipt.complete ? "" : "일부 양식이 미등록되어 전체 패키지 완료로 처리하지 않았습니다. "}다운로드만으로 이전 업무 절차를 완료 처리하지 않습니다. PDF 생성 및 PC 저장 완료를 의미하지 않습니다. ${receipt.receiptStatus === "RECORDED" ? "서버 생성기록 저장 확인." : "서버 생성기록은 DB 적용 대기 또는 로컬 미리보기입니다."} 업무단계 공유 저장은 별도로 확인해 주세요.`);
     } catch (error) {
       if (downloadMounted.current) setNotice(error instanceof Error ? error.message : "기업 양식 ZIP 생성에 실패했습니다. 완료로 기록하지 않았습니다.");
     } finally { generationBusy.current = false; if (downloadMounted.current) setGenerating(false); }

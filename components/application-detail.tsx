@@ -1,5 +1,6 @@
 "use client";
 import { packageDateDifferences } from "@/lib/package-date-consistency";
+import { workflowAmount, hasExactAffectedIds } from "@/lib/workflow-record-checks";
 import { useOperationMode } from "@/components/use-operation-mode";
 import { isOperationPaused } from "@/lib/operation-mode";
 import { certificateDateIssues } from "@/lib/package-request-validation";
@@ -114,6 +115,9 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   const [languages, setLanguages] = useState<Record<DocumentLanguage, boolean>>({ KR: true, EN: false });
   const [generating, setGenerating] = useState(false);
   const generationBusy = useRef(false);
+  const [formalSaving, setFormalSaving] = useState(false);
+  const formalRunning = useRef(false), formalSnapshot = useRef<string | null>(null), latestDemo = useRef(demo);
+  latestDemo.current = demo;
   const [notice, setNotice] = useState("서류검토 탭에서 샘플 업무를 시작하세요.");
   const [trainingInstitutions, setTrainingInstitutions] = useState<TrainingInstitution[]>([]);
   const [hydrated, setHydrated] = useState(false);
@@ -322,7 +326,14 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
       setWorkspaceSaveError(message); setNotice(message);
     }
   };
-  const move = (stage: DemoStage, tab: Tab, message: string) => { setDemo((current) => ({ ...current, stage, dateAuditLogs: [...current.dateAuditLogs, createAuditLog("처리", "", "업무 단계", stageLabels[current.stage], stageLabels[stage], message, application.primaryOwner)] })); setActive(tab); setNotice(message); };
+  const runFormalStep = async (task: () => Promise<void>) => {
+    if (formalRunning.current || !saveAccess.current.canEdit || !downloadMounted.current) return;
+    formalRunning.current = true; formalSnapshot.current = JSON.stringify(demo); setFormalSaving(true);
+    try { await task(); }
+    catch { if (downloadMounted.current) setNotice("정식 기록 저장 결과를 확인하지 못했습니다. 일부 기록은 저장됐을 수 있으니 현재 기록을 확인한 뒤 다시 진행해 주세요. 다음 단계로 자동 완료하지 않습니다."); }
+    finally { formalRunning.current = false; formalSnapshot.current = null; if (downloadMounted.current) setFormalSaving(false); }
+  };
+  const move = (stage: DemoStage, tab: Tab, message: string) => { if (!downloadMounted.current || !saveAccess.current.canEdit) return; if (formalSnapshot.current && formalSnapshot.current !== JSON.stringify(latestDemo.current)) { setNotice("저장 중 업무 입력이 변경되어 다음 단계로 이동하지 않았습니다. 일부 정식 기록은 저장됐을 수 있으니 대조 후 다시 진행해 주세요."); return; } setDemo((current) => ({ ...current, stage, dateAuditLogs: [...current.dateAuditLogs, createAuditLog("처리", "", "업무 단계", stageLabels[current.stage], stageLabels[stage], message, application.primaryOwner)] })); setActive(tab); setNotice(message); };
   const reset = () => { setDemo(makeInitial(application, linkedJobs)); window.localStorage.removeItem(storageKey); setActive("서류검토"); setNotice("샘플 진행상태를 처음으로 되돌렸습니다."); };
   const allocateCertificationNo = async (job: Job) => {
     const issueDate = demo.certificates[job.id]?.issueDate;
@@ -340,7 +351,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     setNotice(`${job.jobNo} 인증번호 ${String(data)}을(를) 확정했습니다. 예약된 번호는 재사용되지 않습니다.`);
   };
 
-  const finishReview = async () => {
+  const finishReview = () => runFormalStep(async () => {
     if (!demo.review.reviewer || !demo.review.reviewedAt) { setNotice("1차 검토자와 검토일을 입력해 주세요."); return; }
     if (!demo.review.verifier || !demo.review.verifiedAt) { setNotice("2차 검증인과 검증일을 입력해 주세요."); return; }
     if (demo.review.verificationResult === "재검토요청") { setNotice("검증인이 재검토를 요청했습니다. 검토내용을 보완한 뒤 다시 검증해 주세요."); return; }
@@ -351,12 +362,15 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
       const rows = linkedJobs.map((job) => ({ cycle_id: cycleIds[job.id], round: 1, stored_documents: demo.storedDocuments, requirements: demo.reviewRequirements, overall_result: demo.review.result, comment: demo.review.comment, reviewer_id: userData.user?.id ?? null, reviewer_name_snapshot: demo.review.reviewer, reviewed_at: demo.review.reviewedAt, verification_result: demo.review.verificationResult, verification_comment: demo.review.verificationComment, verifier_id: userData.user?.id ?? null, verifier_name_snapshot: demo.review.verifier, verified_at: demo.review.verifiedAt }));
       const { error } = await supabase.from("document_reviews").upsert(rows, { onConflict: "cycle_id,round" });
       if (error) { setNotice(`서류검토 정식 기록 저장에 실패했습니다: ${error.message}`); return; }
-      await supabase.from("processing_cycles").update({ document_review_date: demo.review.reviewedAt }).in("id", Object.values(cycleIds));
+      const expected = linkedJobs.map(job => cycleIds[job.id]);
+      const { data: updated, error: cycleError } = await supabase.from("processing_cycles").update({ document_review_date: demo.review.reviewedAt }).in("id", expected).select("id");
+      if (cycleError || !hasExactAffectedIds(updated, expected)) { setNotice("검토 기록은 저장됐지만 회차 검토일 저장을 확인하지 못했습니다. 회차 기록을 대조한 뒤 다시 진행해 주세요."); return; }
     }
     move("INVOICE_PENDING", "인보이스·입금", "검토자와 검증인의 확인이 완료되었습니다. 인보이스를 발행하세요.");
-  };
-  const recordInvoice = async () => {
+  });
+  const recordInvoice = () => runFormalStep(async () => {
     if (!demo.invoiceNo || !demo.invoiceAmount || !demo.invoiceRecipientName || !demo.invoiceIssuedAt) { setNotice("인보이스 번호, 금액, 수신자와 발행일을 모두 입력해 주세요."); return; }
+    if (workflowAmount(demo.invoiceAmount) === null) { setNotice("청구금액은 0보다 큰 유효한 숫자여야 합니다. 숫자와 소수점 이하 최대 2자리만 입력해 주세요."); return; }
     if (usesSupabaseWorkspace) {
       const supabase = createClient();
       const { data: invoice, error } = await supabase.from("invoices").upsert({ invoice_no: demo.invoiceNo, recipient_type: demo.invoiceRecipientType === "개인" ? "INDIVIDUAL" : "PARTNER", recipient_name: demo.invoiceRecipientName, amount: Number(demo.invoiceAmount), issued_at: demo.invoiceIssuedAt, payment_status: "UNPAID" }, { onConflict: "invoice_no" }).select("id").single();
@@ -365,20 +379,22 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
       if (linkError) { setNotice(`인보이스와 Job 연결에 실패했습니다: ${linkError.message}`); return; }
     }
     move("PAYMENT_PENDING", "인보이스·입금", "인보이스 발행을 기록했습니다. 입금내역을 확인해 주세요.");
-  };
-  const confirmPayment = async () => {
+  });
+  const confirmPayment = () => runFormalStep(async () => {
     if (!demo.paidAmount || !demo.payerName || !demo.paymentConfirmedAt || !demo.paymentConfirmedBy) { setNotice("입금액, 입금자, 입금 확인일과 확인 담당자를 모두 입력해 주세요."); return; }
+    if (workflowAmount(demo.invoiceAmount) === null || workflowAmount(demo.paidAmount) === null) { setNotice("청구금액과 입금액을 0보다 큰 유효한 숫자로 입력해 주세요."); return; }
     if (Number(demo.paidAmount) < Number(demo.invoiceAmount)) { setNotice("입금액이 청구금액보다 적습니다. 전액 입금을 확인한 뒤 진행해 주세요."); return; }
     if (usesSupabaseWorkspace) {
       const supabase = createClient();
       const { data: userData } = await supabase.auth.getUser();
-      const { error } = await supabase.from("invoices").update({ payment_status: "PAID", paid_amount: Number(demo.paidAmount), paid_at: demo.paymentConfirmedAt, payer_name: demo.payerName, confirmed_by: userData.user?.id ?? null }).eq("invoice_no", demo.invoiceNo);
+      const { data: updated, error } = await supabase.from("invoices").update({ payment_status: "PAID", paid_amount: Number(demo.paidAmount), paid_at: demo.paymentConfirmedAt, payer_name: demo.payerName, confirmed_by: userData.user?.id ?? null }).eq("invoice_no", demo.invoiceNo).select("id");
       if (error) { setNotice(`입금 정식 기록 저장에 실패했습니다: ${error.message}`); return; }
+      if (!Array.isArray(updated) || updated.length !== 1 || typeof updated[0]?.id !== "string" || !updated[0].id) { setNotice("입금 저장 대상 인보이스 1건을 확인하지 못했습니다. 다음 단계로 진행하지 않습니다."); return; }
     }
     move("DECISION_PENDING", "인증심의", "전액 입금 확인이 완료되었습니다. 인증심의를 진행하세요.");
-  };
+  });
 
-  const finishDecision = async () => {
+  const finishDecision = () => runFormalStep(async () => {
     if (linkedJobs.some((job) => assessmentItems.some((item) => !demo.assessment[job.id]?.[item]))) { setNotice("모든 Job의 5개 평가항목을 직접 판정해 주세요."); return; }
     const selectedMembers = demo.panelMembers.filter((member) => member.selected);
     if (selectedMembers.length < 2) { setNotice("활성 심의위원 중 최소 2명을 선택해 주세요."); return; }
@@ -393,20 +409,22 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
       const decisionRows = linkedJobs.map((job) => ({ cycle_id: cycleIds[job.id], result: demo.decisions[job.id].result, comment: demo.decisions[job.id].comment, decision_date: demo.decisionDate, final_approver: demo.finalApprover, final_approval_date: demo.finalApprovalDate, entered_by: userData.user?.id ?? null }));
       const { data: savedDecisions, error } = await supabase.from("certification_decisions").upsert(decisionRows, { onConflict: "cycle_id" }).select("id, cycle_id");
       if (error || !savedDecisions) { setNotice(`인증심의 정식 기록 저장에 실패했습니다: ${error?.message ?? "심의 ID 없음"}`); return; }
+      if (!hasExactAffectedIds(savedDecisions.map(row => ({ id: row.cycle_id })), linkedJobs.map(job => cycleIds[job.id]))) { setNotice("모든 Job의 심의 저장 결과를 확인하지 못했습니다. 다음 단계로 진행하지 않습니다."); return; }
       const panelRows = savedDecisions.flatMap((decision) => selectedMembers.map((member) => ({ decision_id: decision.id, panel_member_id: panelMemberIds[member.name], result: member.decision, comment: member.comment })));
       const { error: panelError } = await supabase.from("decision_panel_entries").upsert(panelRows, { onConflict: "decision_id,panel_member_id" });
       if (panelError) { setNotice(`심의위원 개별결정 저장에 실패했습니다: ${panelError.message}`); return; }
-      const { error: dateError } = await supabase.from("processing_cycles").update({ decision_date: demo.decisionDate }).in("id", Object.values(cycleIds));
-      if (dateError) { setNotice(`처리 회차 심의일 저장에 실패했습니다: ${dateError.message}`); return; }
+      const expected = linkedJobs.map(job => cycleIds[job.id]);
+      const { data: updated, error: dateError } = await supabase.from("processing_cycles").update({ decision_date: demo.decisionDate }).in("id", expected).select("id");
+      if (dateError || !hasExactAffectedIds(updated, expected)) { setNotice("심의 기록은 저장됐지만 회차 심의일 저장을 확인하지 못했습니다. 회차 기록을 대조한 뒤 다시 진행해 주세요."); return; }
     }
     move("CERTIFICATE_DRAFT_PENDING", "Job·패키지", "심의와 대표자 승인이 완료되었습니다. 기본 신청정보가 기재된 인증서 초안을 발행하세요.");
-  };
+  });
   const finishDraft = () => {
     const approved = linkedJobs.filter((job) => ["승인", "재승인"].includes(demo.decisions[job.id]?.result));
     if (approved.some((job) => !demo.certificates[job.id]?.draftIssuedAt)) { setNotice("승인된 모든 Job의 초안 발행일을 입력해 주세요."); return; }
     move("CERTIFICATION_INFO_PENDING", "Job·패키지", "초안 발행을 기록했습니다. 인증번호와 전자본 PDF 발행정보를 입력하세요.");
   };
-  const finishCertification = async () => {
+  const finishCertification = () => runFormalStep(async () => {
     const approved = linkedJobs.filter((job) => ["승인", "재승인"].includes(demo.decisions[job.id]?.result));
     if (!approved.length) { setNotice("승인된 Job이 없어 패키지 생성 단계로 진행할 수 없습니다."); return; }
     if (approved.some((job) => !demo.certificates[job.id]?.certificationNo || !demo.certificates[job.id]?.issueDate || !demo.certificates[job.id]?.expiryDate)) { setNotice("승인 Job의 인증번호·발행일·만료일을 입력해 주세요."); return; }
@@ -423,19 +441,22 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
       if (error) { setNotice(`인증정보 정식 기록 저장에 실패했습니다: ${error.message}`); return; }
       if (previousRecords?.length) {
         const historyState = application.applicationType === "갱신" ? "REPLACED_BY_RENEWAL" : "REPLACED_BY_GRADE_CHANGE";
-        const { error: historyError } = await supabase.from("certification_records").update({ history_state: historyState }).in("id", previousRecords.map((record) => record.id));
-        if (historyError) { setNotice(`기존 인증이력 상태를 변경하지 못했습니다: ${historyError.message}`); return; }
+        const expected = previousRecords.map(record => record.id);
+        const { data: updated, error: historyError } = await supabase.from("certification_records").update({ history_state: historyState }).in("id", expected).select("id");
+        if (historyError || !hasExactAffectedIds(updated, expected)) { setNotice("기존 인증이력 상태 변경을 확인하지 못했습니다. 새 인증정보가 일부 저장됐을 수 있으니 이력을 대조해 주세요."); return; }
       }
-      const cycleUpdates = await Promise.all(approved.map((job) => supabase.from("processing_cycles").update({ planned_issue_date: demo.certificates[job.id].issueDate }).eq("id", cycleIds[job.id])));
+      const cycleUpdates = await Promise.all(approved.map((job) => supabase.from("processing_cycles").update({ planned_issue_date: demo.certificates[job.id].issueDate }).eq("id", cycleIds[job.id]).select("id")));
       const cycleError = cycleUpdates.find((result) => result.error)?.error;
       if (cycleError) { setNotice(`처리 회차 인증발행일 저장에 실패했습니다: ${cycleError.message}`); return; }
-      const { error: jobError } = await supabase.from("jobs").update({ certification_state: "ACTIVE" }).in("id", approved.map((job) => job.id));
-      if (jobError) { setNotice(`Job 인증상태 저장에 실패했습니다: ${jobError.message}`); return; }
+      if (cycleUpdates.some((result, index) => !hasExactAffectedIds(result.data, [cycleIds[approved[index].id]]))) { setNotice("모든 회차의 발행일 저장을 확인하지 못했습니다. 다음 단계로 진행하지 않습니다."); return; }
+      const { data: updatedJobs, error: jobError } = await supabase.from("jobs").update({ certification_state: "ACTIVE" }).in("id", approved.map((job) => job.id)).select("id");
+      if (jobError || !hasExactAffectedIds(updatedJobs, approved.map(job => job.id))) { setNotice("모든 Job의 인증상태 저장을 확인하지 못했습니다. 다음 단계로 진행하지 않습니다."); return; }
     }
     move("ORIGINAL_DELIVERY_PENDING", "Job·패키지", "전자본 PDF 발행을 기록했습니다. 원본 송부정보를 입력하세요.");
-  };
-  const finishOriginalDelivery = async () => {
+  });
+  const finishOriginalDelivery = () => runFormalStep(async () => {
     const approved = linkedJobs.filter((job) => ["승인", "재승인"].includes(demo.decisions[job.id]?.result));
+    if (!approved.length) { setNotice("승인된 Job이 없어 원본 송부를 확정할 수 없습니다."); return; }
     if (approved.some((job) => !demo.certificates[job.id]?.originalSentAt || !demo.certificates[job.id]?.trackingNumber)) { setNotice("승인된 모든 Job의 원본 송부일과 운송장 번호를 입력해 주세요."); return; }
     if (usesSupabaseWorkspace) {
       if (approved.some((job) => !cycleIds[job.id])) { setNotice("Job 처리 회차를 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요."); return; }
@@ -444,12 +465,13 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
       const rows = approved.map((job) => { const certificate = demo.certificates[job.id]; const delivery = demo.deliveryDocuments[job.id]; return { cycle_id: cycleIds[job.id], document_checklist: delivery, delivery_method: "이메일·우편", electronic_issued_at: certificate.issueDate, original_sent_at: certificate.originalSentAt, tracking_number: certificate.trackingNumber, delivered_by: userData.user?.id ?? null, note: delivery?.deliveryConfirmation?.comment || null }; });
       const { error } = await supabase.from("document_deliveries").upsert(rows, { onConflict: "cycle_id" });
       if (error) { setNotice(`문서전달 정식 기록 저장에 실패했습니다: ${error.message}`); return; }
-      const cycleUpdates = await Promise.all(approved.map((job) => supabase.from("processing_cycles").update({ delivery_date: demo.deliveryDocuments[job.id]?.deliveryConfirmation?.date || demo.certificates[job.id].originalSentAt }).eq("id", cycleIds[job.id])));
+      const cycleUpdates = await Promise.all(approved.map((job) => supabase.from("processing_cycles").update({ delivery_date: demo.deliveryDocuments[job.id]?.deliveryConfirmation?.date || demo.certificates[job.id].originalSentAt }).eq("id", cycleIds[job.id]).select("id")));
       const cycleError = cycleUpdates.find((result) => result.error)?.error;
       if (cycleError) { setNotice(`처리 회차 문서전달일 저장에 실패했습니다: ${cycleError.message}`); return; }
+      if (cycleUpdates.some((result, index) => !hasExactAffectedIds(result.data, [cycleIds[approved[index].id]]))) { setNotice("모든 회차의 문서전달일 저장을 확인하지 못했습니다. 다음 단계로 진행하지 않습니다."); return; }
     }
     move("PACKAGE_READY", "Job·패키지", "원본 송부정보까지 확인했습니다. 기록 패키지를 생성하세요.");
-  };
+  });
   const generate = async () => {
     if (!languages.KR && !languages.EN) { setNotice("생성할 언어를 하나 이상 선택해 주세요."); return; }
     const issues = packageDocumentIssues(linkedJobs, demo.deliveryDocuments, deliveryDocumentRows);
@@ -545,7 +567,8 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     <div className="overflow-x-auto rounded-lg border bg-white px-2"><div className="flex min-w-max">{tabs.map((tab) => <Link key={tab} href={`?tab=${tabSlugs[tab]}`} onClick={() => setActive(tab)} aria-current={active === tab ? "page" : undefined} className={`border-b-2 px-4 py-3 text-sm font-medium ${active === tab ? "border-blue-800 text-blue-800" : "border-transparent text-slate-500 hover:text-slate-800"}`}>{tab}</Link>)}</div></div>
 
     {!hydrated && <div role="status" className="rounded-lg border border-amber-300 bg-card p-4 text-sm text-amber-700 dark:text-amber-300"><p>{workspaceLoadError || "저장된 업무기록을 확인하고 있습니다. 확인 전에는 편집·저장·업무 처리를 할 수 없습니다."}</p>{workspaceLoadError && <Button type="button" className="mt-3" variant="outline" onClick={() => setWorkspaceLoadRevision((value) => value + 1)}><RotateCcw/>저장된 업무기록 다시 조회</Button>}</div>}
-    <fieldset disabled={!canEdit} className="space-y-5 border-0 p-0 disabled:opacity-80">
+    {formalSaving && <p role="status" className="rounded-lg border bg-card p-3 text-sm">정식 업무기록 저장 결과를 확인 중입니다. 중복 실행과 입력 변경을 잠시 제한합니다.</p>}
+    <fieldset disabled={!canEdit || formalSaving} className="space-y-5 border-0 p-0 disabled:opacity-80">
 
     {active === "신청 개요" && <div className="grid gap-5 xl:grid-cols-2">
       <Section title="접수정보"><dl className="grid gap-5 sm:grid-cols-2"><Info label="신청번호" value={application.applicationNo}/><Info label="신청구분" value={application.applicationType}/><Info label="파트너사" value={application.partnerCompany}/><Info label="주 담당자" value={application.primaryOwner}/><Info label="공식 접수일" value={application.receivedAt}/><Info label="시스템 등록일시" value={application.registeredAt}/></dl></Section>

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import ts from "typescript";
 const compile = (source) => ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
+const { verifyReportPage, verifyReportTotal } = await import(`data:text/javascript;base64,${Buffer.from(compile(fs.readFileSync(new URL("../lib/report-query-completeness.ts", import.meta.url), "utf8"))).toString("base64")}`);
 const analytics = compile(fs.readFileSync(new URL("../lib/report-analytics.ts", import.meta.url), "utf8"));
 const { isCertificationEventRecord } = await import(`data:text/javascript;base64,${Buffer.from(analytics).toString("base64")}`);
 const record = { id: "event", job_id: "job", action_type: "SUSPENDED", effective_date: "2026-10-05" };
@@ -12,9 +13,9 @@ const source = fs.readFileSync(new URL("../components/report-certification-event
 const effect = compile(source.slice(source.indexOf("  useEffect(() => {"), source.indexOf("  const rows =")));
 function fixture(query) {
   const states = [], events = []; let cleanup;
-  const client = { from() { return this; }, select() { return this; }, order() { return this; }, range: query };
-  new Function("useEffect", "hasEnvVars", "createClient", "setState", "setEvents", "revision", "isCertificationEventRecord", effect)(
-    (callback) => { cleanup = callback(); }, true, () => client, (value) => states.push(value), (value) => events.push(value), 1, isCertificationEventRecord);
+  const client = { from() { return this; }, select() { return this; }, order() { return this; }, range: async (...args) => { const page = await query(...args); return { count: Array.isArray(page.data) ? new Set(page.data.map(row => row?.id)).size : null, ...page }; } };
+  new Function("useEffect", "hasEnvVars", "createClient", "setState", "setEvents", "revision", "isCertificationEventRecord", "verifyReportPage", "verifyReportTotal", effect)(
+    (callback) => { cleanup = callback(); }, true, () => client, (value) => states.push(value), (value) => events.push(value), 1, isCertificationEventRecord, verifyReportPage, verifyReportTotal);
   return { states, events, cleanup: () => cleanup() };
 }
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -24,6 +25,7 @@ for (const data of [null, [{ ...record, effective_date: null }]]) {
   f = fixture(async () => ({ data, error: null })); await flush(); assert.equal(f.states.at(-1), "error"); assert.deepEqual(f.events.at(-1), []); f.cleanup();
 }
 f = fixture(async () => { throw new Error("network"); }); await flush(); assert.equal(f.states.at(-1), "error"); f.cleanup();
+f = fixture(async () => ({ data: [record], error: null, count: 2 })); await flush(); assert.equal(f.states.at(-1), "error"); assert.deepEqual(f.events.at(-1), []); f.cleanup();
 let release;
 f = fixture(() => new Promise((resolve) => { release = resolve; })); f.cleanup(); release({ data: [record], error: null }); await flush();
 assert.equal(f.events.length, 1); assert.equal(f.states.at(-1), "loading");

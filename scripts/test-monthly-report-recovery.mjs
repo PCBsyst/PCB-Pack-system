@@ -1,15 +1,17 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import ts from "typescript";
+const completeness = ts.transpileModule(fs.readFileSync(new URL("../lib/report-query-completeness.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+const { verifyReportPage, verifyReportTotal } = await import(`data:text/javascript;base64,${Buffer.from(completeness).toString("base64")}`);
 const source = fs.readFileSync(new URL("../components/monthly-operations-report.tsx", import.meta.url), "utf8");
 const helper = source.slice(source.indexOf("function arrayOf"), source.indexOf("export function MonthlyOperationsReport"));
 const effect = source.slice(source.indexOf("  useEffect(() => {\n    setRows"), source.indexOf("  const options ="));
 const code = ts.transpileModule(helper + effect, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 function fixture(query) {
   const rows = [], errors = [], loading = []; let cleanup;
-  const client = { from() { return this; }, select() { return this; }, order() { return this; }, range: query };
-  new Function("useEffect", "hasEnvVars", "createClient", "setRows", "setError", "setLoading", "revision", code)(
-    (callback) => { cleanup = callback(); }, true, () => client, (value) => rows.push(value), (value) => errors.push(value), (value) => loading.push(value), 1);
+  const client = { from() { return this; }, select() { return this; }, order() { return this; }, range: async (...args) => { const page = await query(...args); return { count: Array.isArray(page.data) ? new Set(page.data.map(row => row?.id)).size : null, ...page }; } };
+  new Function("useEffect", "hasEnvVars", "createClient", "setRows", "setError", "setLoading", "revision", "verifyReportPage", "verifyReportTotal", code)(
+    (callback) => { cleanup = callback(); }, true, () => client, (value) => rows.push(value), (value) => errors.push(value), (value) => loading.push(value), 1, verifyReportPage, verifyReportTotal);
   return { rows, errors, loading, cleanup: () => cleanup() };
 }
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -20,6 +22,7 @@ for (const page of [{ data: null, error: null }, { data: [], error: { message: "
   f = fixture(async () => page); await flush(); assert.deepEqual(f.rows.at(-1), []); assert.match(f.errors.at(-1), /조회하지 못/); assert.equal(f.loading.at(-1), false); f.cleanup();
 }
 let release;
+f = fixture(async () => ({ data: [application], error: null, count: 2 })); await flush(); assert.deepEqual(f.rows.at(-1), []); assert.equal(f.loading.at(-1), false); assert.match(f.errors.at(-1), /조회하지 못/); f.cleanup();
 f = fixture(() => new Promise((resolve) => { release = resolve; })); f.cleanup();
 release({ data: [application], error: null }); await flush(); assert.equal(f.rows.length, 1); assert.equal(f.errors.length, 1);
 assert.match(source, /\[revision\]/); assert.match(source, /업무보고 자료 다시 조회/);

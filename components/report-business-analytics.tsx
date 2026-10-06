@@ -7,6 +7,7 @@ import { customerCounts, revenueForJobs, isReportPeriod, matchesReportPeriod, ty
 import { matchesReportMonth } from "@/lib/report-filters";
 import type { ReportFilters } from "@/lib/report-filters";
 import { reportExportMetadata, reportGroupLabel, serializeReportCsv } from "@/lib/report-export";
+import { verifyReportPage, verifyReportTotal } from "@/lib/report-query-completeness";
 
 const money = (value: number) => Math.round(value).toLocaleString("ko-KR");
 const areaLabel = (value: string) => value === "K_BEAUTY" ? "K-Beauty" : value;
@@ -29,10 +30,12 @@ export function ReportBusinessAnalytics({ jobs, period, dateBasis = "RECEIVED", 
     void (async () => {
       const client = createClient();
       const result: RevenueInvoice[] = [];
+      let expected: number | undefined;
       for (let offset = 0; ; offset += 500) {
-        const { data, error } = await client.from("invoices").select("id, amount, paid_amount, issued_at, paid_at, invoice_jobs(job_id)").order("id").range(offset, offset + 499);
+        const { data, error, count } = await client.from("invoices").select("id, amount, paid_amount, issued_at, paid_at, invoice_jobs(job_id)", { count: "exact" }).order("id").range(offset, offset + 499);
         if (!active) return;
         if (error) { setFinanceState("error"); return; }
+        expected = verifyReportPage({ data, error, count }, expected);
         if (!Array.isArray(data) || data.some((row) => !row || typeof row.id !== "string" || !Array.isArray(row.invoice_jobs)
           || row.amount === null || row.amount === undefined || String(row.amount).trim() === ""
           || !Number.isFinite(Number(row.amount)) || Number(row.amount) < 0
@@ -41,7 +44,9 @@ export function ReportBusinessAnalytics({ jobs, period, dateBasis = "RECEIVED", 
         }
         result.push(...(data as unknown as RevenueInvoice[]));
         if ((data?.length ?? 0) < 500) break;
+        if (offset >= 10000) throw new Error("보고서 조회 한도 초과");
       }
+      verifyReportTotal(result, expected!);
       if (active) { setInvoices([...new Map(result.map((invoice) => [invoice.id, invoice])).values()]); setFinanceState("ready"); }
     })().catch(() => { if (active) setFinanceState("error"); });
     return () => { active = false; };

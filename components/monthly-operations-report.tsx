@@ -11,6 +11,7 @@ import { matchesReportFilters, matchesReportMonth } from "@/lib/report-filters";
 import { reportApplicationTypeLabel, reportExportMetadata, serializeReportCsv } from "@/lib/report-export";
 import { buildMonthlyReportPrintHtml } from "@/lib/monthly-report-print";
 import { verifiedReportCsv } from "@/lib/report-download";
+import { verifyReportPage, verifyReportTotal } from "@/lib/report-query-completeness";
 
 type CandidateRelation = { id: string; name: string };
 type CertificationRelation = { certification_no: string; issue_date: string; state: string; history_state: string };
@@ -52,13 +53,17 @@ export function MonthlyOperationsReport() {
     void (async () => {
       const client = createClient();
       const data: ApplicationQueryRow[] = [];
+      let expected: number | undefined;
       for (let offset = 0; ; offset += 500) {
-        const page = await client.from("applications").select("id, application_no, received_at, business_area, partner_name_snapshot, application_type, status, jobs(id, job_no, standard, grade, certification_state, candidates(id, name), certification_records(certification_no, issue_date, state, history_state))").order("id").range(offset, offset + 499);
+        const page = await client.from("applications").select("id, application_no, received_at, business_area, partner_name_snapshot, application_type, status, jobs(id, job_no, standard, grade, certification_state, candidates(id, name), certification_records(certification_no, issue_date, state, history_state))", { count: "exact" }).order("id").range(offset, offset + 499);
         if (!active) return;
         if (page.error || !Array.isArray(page.data)) { setError("업무보고 자료를 조회하지 못했습니다."); setLoading(false); return; }
+        expected = verifyReportPage(page, expected);
         data.push(...(page.data as unknown as ApplicationQueryRow[]));
         if ((page.data?.length ?? 0) < 500) break;
+        if (offset >= 10000) throw new Error("보고서 조회 한도 초과");
       }
+      verifyReportTotal(data, expected!);
       const result = ((data ?? []) as unknown as ApplicationQueryRow[]).flatMap((application) => arrayOf(application.jobs).map((job) => {
         const candidate = first(job.candidates);
         const currentCertification = arrayOf(job.certification_records).filter((record) => record.history_state === "CURRENT").sort((a, b) => b.issue_date.localeCompare(a.issue_date))[0];

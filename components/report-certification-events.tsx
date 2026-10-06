@@ -6,6 +6,7 @@ import { hasEnvVars } from "@/lib/utils";
 import { certificationEventCounts, isCertificationEventRecord, type AnalyticsJob, type CertificationEvent } from "@/lib/report-analytics";
 import type { ReportFilters } from "@/lib/report-filters";
 import { reportExportMetadata, serializeReportCsv } from "@/lib/report-export";
+import { verifyReportPage, verifyReportTotal } from "@/lib/report-query-completeness";
 
 export function ReportCertificationEvents({ jobs, periods, filters }: { jobs: AnalyticsJob[]; periods: string[]; filters?: ReportFilters }) {
   const [events, setEvents] = useState<CertificationEvent[]>([]);
@@ -17,14 +18,18 @@ export function ReportCertificationEvents({ jobs, periods, filters }: { jobs: An
     let active = true;
     void (async () => {
       const result: CertificationEvent[] = [];
+      let expected: number | undefined;
       const client = createClient();
       for (let offset = 0; ; offset += 500) {
-        const { data, error } = await client.from("certification_actions").select("id, job_id, action_type, effective_date").order("id").range(offset, offset + 499);
+        const { data, error, count } = await client.from("certification_actions").select("id, job_id, action_type, effective_date", { count: "exact" }).order("id").range(offset, offset + 499);
         if (!active) return;
         if (error || !Array.isArray(data) || !data.every(isCertificationEventRecord)) { setState("error"); return; }
+        expected = verifyReportPage({ data, error, count }, expected);
         result.push(...data);
         if ((data?.length ?? 0) < 500) break;
+        if (offset >= 10000) throw new Error("보고서 조회 한도 초과");
       }
+      verifyReportTotal(result, expected!);
       if (active) { setEvents([...new Map(result.map((event) => [event.id, event])).values()]); setState("ready"); }
     })().catch(() => { if (active) setState("error"); });
     return () => { active = false; };

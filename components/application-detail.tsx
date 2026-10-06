@@ -452,8 +452,17 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
       if (selectedMembers.some((member) => !panelMemberIds[member.name])) { setNotice("선택한 심의위원이 관리자 명단과 연결되지 않았습니다. 명단을 확인해 주세요."); return; }
       if (!linkedJobs.length || new Set(linkedJobs.map(job => cycleIds[job.id])).size !== linkedJobs.length || new Set(selectedMembers.map(member => panelMemberIds[member.name])).size !== selectedMembers.length) { setNotice("중복 회차 또는 중복 심의위원이 있습니다. 서로 다른 위원과 회차를 확인해 주세요."); return; }
       const supabase = createClient();
-      const { data: userData } = await supabase.auth.getUser();
-      const decisionRows = linkedJobs.map((job) => ({ cycle_id: cycleIds[job.id], result: demo.decisions[job.id].result, comment: demo.decisions[job.id].comment, decision_date: demo.decisionDate, final_approver: demo.finalApprover, final_approval_date: demo.finalApprovalDate, entered_by: userData.user?.id ?? null }));
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError || !userData.user?.id) { setNotice("로그인 담당자를 확인하지 못했습니다. 심의 기록을 저장하지 않습니다."); return; }
+      const enteredBy = userData.user.id;
+      const { data: priorDecisions, error: priorError } = await supabase.from("certification_decisions").select("id,cycle_id").in("cycle_id", linkedJobs.map(job => cycleIds[job.id]));
+      if (priorError || !Array.isArray(priorDecisions) || priorDecisions.some(row => !row.id || !linkedJobs.some(job => cycleIds[job.id] === row.cycle_id)) || new Set(priorDecisions.map(row => row.id)).size !== priorDecisions.length || new Set(priorDecisions.map(row => row.cycle_id)).size !== priorDecisions.length) { setNotice("기존 심의 기록을 확인하지 못했습니다. 본문을 저장하지 않습니다."); return; }
+      if (priorDecisions.length) {
+        const { data: priorPanel, error: priorPanelError } = await supabase.from("decision_panel_entries").select("decision_id,panel_member_id").in("decision_id", priorDecisions.map(row => row.id));
+        if (priorPanelError || !Array.isArray(priorPanel) || priorPanel.some(row => !priorDecisions.some(prior => prior.id === row.decision_id) || !selectedMembers.some(member => panelMemberIds[member.name] === row.panel_member_id))) { setNotice("기존 위원 명단과 현재 선택이 다르거나 조회에 실패했습니다. 심의 본문과 위원 기록을 변경하지 않습니다."); return; }
+      }
+      if (!downloadMounted.current || !saveAccess.current.canEdit || formalSnapshot.current !== JSON.stringify(latestDemo.current)) { setNotice("입력 또는 편집 상태가 변경되어 심의 기록을 저장하지 않았습니다."); return; }
+      const decisionRows = linkedJobs.map((job) => ({ cycle_id: cycleIds[job.id], result: demo.decisions[job.id].result, comment: demo.decisions[job.id].comment, decision_date: demo.decisionDate, final_approver: demo.finalApprover, final_approval_date: demo.finalApprovalDate, entered_by: enteredBy }));
       const { data: savedDecisions, error } = await supabase.from("certification_decisions").upsert(decisionRows, { onConflict: "cycle_id" }).select("id,cycle_id,result,comment,decision_date,final_approver,final_approval_date");
       if (error || !savedDecisions) { setNotice(`인증심의 정식 기록 저장에 실패했습니다: ${error?.message ?? "심의 ID 없음"}`); return; }
       if (!hasExactAffectedIds(savedDecisions.map(row => ({ id: row.cycle_id })), linkedJobs.map(job => cycleIds[job.id]))) { setNotice("모든 Job의 심의 저장 결과를 확인하지 못했습니다. 다음 단계로 진행하지 않습니다."); return; }
@@ -528,8 +537,10 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     if (usesSupabaseWorkspace) {
       if (approved.some((job) => !cycleIds[job.id])) { setNotice("Job 처리 회차를 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요."); return; }
       const supabase = createClient();
-      const { data: userData } = await supabase.auth.getUser();
-      const rows = approved.map((job) => { const certificate = demo.certificates[job.id]; const delivery = demo.deliveryDocuments[job.id]; return { cycle_id: cycleIds[job.id], document_checklist: delivery, delivery_method: "이메일·우편", electronic_issued_at: certificate.issueDate, original_sent_at: certificate.originalSentAt, tracking_number: certificate.trackingNumber, delivered_by: userData.user?.id ?? null, note: delivery?.deliveryConfirmation?.comment || null }; });
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError || !userData.user?.id) { setNotice("로그인 담당자를 확인하지 못했습니다. 송부 기록을 저장하지 않습니다."); return; }
+      const deliveredBy = userData.user.id;
+      const rows = approved.map((job) => { const certificate = demo.certificates[job.id]; const delivery = demo.deliveryDocuments[job.id]; return { cycle_id: cycleIds[job.id], document_checklist: delivery, delivery_method: "이메일·우편", electronic_issued_at: certificate.issueDate, original_sent_at: certificate.originalSentAt, tracking_number: certificate.trackingNumber, delivered_by: deliveredBy, note: delivery?.deliveryConfirmation?.comment || null }; });
       const { data: savedDeliveries, error } = await supabase.from("document_deliveries").upsert(rows, { onConflict: "cycle_id" }).select("cycle_id,document_checklist,delivery_method,electronic_issued_at,original_sent_at,tracking_number,delivered_by,note");
       if (error || !hasExactRecordValues(savedDeliveries, rows, ["cycle_id", "document_checklist", "delivery_method", "electronic_issued_at", "original_sent_at", "tracking_number", "delivered_by", "note"])) { setNotice("모든 회차의 송부일·운송장·문서전달 항목 저장 결과를 확인하지 못했습니다. 다음 단계로 진행하지 않습니다."); return; }
       const cycleUpdates = await Promise.all(approved.map((job) => supabase.from("processing_cycles").update({ delivery_date: demo.deliveryDocuments[job.id]?.deliveryConfirmation?.date || demo.certificates[job.id].originalSentAt }).eq("id", cycleIds[job.id]).select("id")));

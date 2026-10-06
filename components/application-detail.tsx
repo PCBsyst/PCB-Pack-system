@@ -1,6 +1,7 @@
 "use client";
 import { packageDateDifferences } from "@/lib/package-date-consistency";
 import { workflowAmount, hasExactAffectedIds, hasExactRecordValues, isConfirmedInvoice } from "@/lib/workflow-record-checks";
+import { canRunWorkflowAction } from "@/lib/workflow-stage-policy";
 import { useOperationMode } from "@/components/use-operation-mode";
 import { isOperationPaused } from "@/lib/operation-mode";
 import { certificateDateIssues } from "@/lib/package-request-validation";
@@ -352,6 +353,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   };
 
   const finishReview = () => runFormalStep(async () => {
+    if (!canRunWorkflowAction(demo.stage, "review")) { setNotice("서류검토 단계에서만 검토를 확정할 수 있습니다. 현재 업무 단계를 확인해 주세요."); return; }
     if (!demo.review.reviewer || !demo.review.reviewedAt) { setNotice("1차 검토자와 검토일을 입력해 주세요."); return; }
     if (!demo.review.verifier || !demo.review.verifiedAt) { setNotice("2차 검증인과 검증일을 입력해 주세요."); return; }
     if (demo.review.verificationResult === "재검토요청") { setNotice("검증인이 재검토를 요청했습니다. 검토내용을 보완한 뒤 다시 검증해 주세요."); return; }
@@ -369,6 +371,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     move("INVOICE_PENDING", "인보이스·입금", "검토자와 검증인의 확인이 완료되었습니다. 인보이스를 발행하세요.");
   });
   const recordInvoice = () => runFormalStep(async () => {
+    if (!canRunWorkflowAction(demo.stage, "invoice")) { setNotice("서류검토 완료 후 인보이스 대기 단계에서만 신규 발행을 기록할 수 있습니다."); return; }
     if (!demo.invoiceNo.trim() || !demo.invoiceAmount || !demo.invoiceRecipientName.trim() || !demo.invoiceIssuedAt) { setNotice("인보이스 번호, 금액, 수신자와 발행일을 모두 입력해 주세요."); return; }
     if (workflowAmount(demo.invoiceAmount) === null) { setNotice("청구금액은 0보다 큰 유효한 숫자여야 합니다. 숫자와 소수점 이하 최대 2자리만 입력해 주세요."); return; }
     if (usesSupabaseWorkspace) {
@@ -387,7 +390,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     move("PAYMENT_PENDING", "인보이스·입금", "인보이스 발행을 기록했습니다. 입금내역을 확인해 주세요.");
   });
   const recoverInvoiceLinks = () => runFormalStep(async () => {
-    if (!usesSupabaseWorkspace || !["INVOICE_PENDING", "PAYMENT_PENDING"].includes(demo.stage)) { setNotice("공유 DB의 청구·입금 대기 단계에서만 연결을 복구할 수 있습니다."); return; }
+    if (!usesSupabaseWorkspace || !canRunWorkflowAction(demo.stage, "invoiceRecovery")) { setNotice("공유 DB의 청구·입금 대기 단계에서만 연결을 복구할 수 있습니다."); return; }
     if (!demo.invoiceNo.trim() || !linkedJobs.length || workflowAmount(demo.invoiceAmount) === null) { setNotice("인보이스 번호, 청구금액과 Job을 확인해 주세요."); return; }
     const supabase = createClient();
     const { data: invoice, error } = await supabase.from("invoices").select("id,amount,issued_at,recipient_type,recipient_name,payment_status,paid_amount,paid_at,confirmed_by,payer_name").eq("invoice_no", demo.invoiceNo.trim()).maybeSingle();
@@ -407,6 +410,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     move("PAYMENT_PENDING", "인보이스·입금", `인보이스 ${demo.invoiceNo.trim()}의 Job 연결을 복구했습니다. 사유: ${reason}. 청구·입금 정보는 변경하지 않았습니다.`);
   });
   const confirmPayment = () => runFormalStep(async () => {
+    if (!canRunWorkflowAction(demo.stage, "payment")) { setNotice("인보이스 발행 완료 후 입금 대기 단계에서만 입금을 확정할 수 있습니다."); return; }
     if (!demo.paidAmount || !demo.payerName || !demo.paymentConfirmedAt || !demo.paymentConfirmedBy) { setNotice("입금액, 입금자, 입금 확인일과 확인 담당자를 모두 입력해 주세요."); return; }
     if (workflowAmount(demo.invoiceAmount) === null || workflowAmount(demo.paidAmount) === null) { setNotice("청구금액과 입금액을 0보다 큰 유효한 숫자로 입력해 주세요."); return; }
     if (Number(demo.paidAmount) < Number(demo.invoiceAmount)) { setNotice("입금액이 청구금액보다 적습니다. 전액 입금을 확인한 뒤 진행해 주세요."); return; }
@@ -429,7 +433,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
 
   const applySharedPayment = () => runFormalStep(async () => {
     if (!usesSupabaseWorkspace) { setNotice("공유 DB 신청에서만 기존 통합 입금을 반영할 수 있습니다."); return; }
-    if (!["INVOICE_PENDING", "PAYMENT_PENDING"].includes(demo.stage)) { setNotice("서류검토 완료 후 청구·입금 대기 단계에서만 반영할 수 있습니다."); return; }
+    if (!canRunWorkflowAction(demo.stage, "sharedPayment")) { setNotice("서류검토 완료 후 청구·입금 대기 단계에서만 반영할 수 있습니다."); return; }
     if (!demo.invoiceNo.trim() || !linkedJobs.length) { setNotice("기존 인보이스 번호와 연결된 Job을 확인해 주세요."); return; }
     const supabase = createClient();
     const { data: invoice, error } = await supabase.from("invoices").select("id,amount,paid_amount,paid_at,issued_at,payer_name,confirmed_by,recipient_type,recipient_name,payment_status").eq("invoice_no", demo.invoiceNo.trim()).maybeSingle();
@@ -441,6 +445,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     move("DECISION_PENDING", "인증심의", `인보이스 ${demo.invoiceNo.trim()}의 기존 전액 입금 기록을 반영했습니다. 인보이스는 수정하지 않았습니다.`, { invoiceNo: demo.invoiceNo.trim(), invoiceAmount: String(invoice.amount), invoiceIssuedAt: invoice.issued_at, invoiceRecipientType: invoice.recipient_type === "INDIVIDUAL" ? "개인" : "파트너사", invoiceRecipientName: invoice.recipient_name, paidAmount: String(invoice.paid_amount), payerName: invoice.payer_name, paymentConfirmedAt: invoice.paid_at, paymentConfirmedBy: profile.display_name });
   });
   const finishDecision = () => runFormalStep(async () => {
+    if (!canRunWorkflowAction(demo.stage, "decision")) { setNotice("입금 확인 완료 후 인증심의 단계에서만 심의를 확정할 수 있습니다."); return; }
     if (linkedJobs.some((job) => assessmentItems.some((item) => !demo.assessment[job.id]?.[item]))) { setNotice("모든 Job의 5개 평가항목을 직접 판정해 주세요."); return; }
     const selectedMembers = demo.panelMembers.filter((member) => member.selected);
     if (selectedMembers.length < 2) { setNotice("활성 심의위원 중 최소 2명을 선택해 주세요."); return; }
@@ -480,11 +485,14 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     move("CERTIFICATE_DRAFT_PENDING", "Job·패키지", "심의와 대표자 승인이 완료되었습니다. 기본 신청정보가 기재된 인증서 초안을 발행하세요.");
   });
   const finishDraft = () => {
+    if (!canEdit || !canRunWorkflowAction(demo.stage, "draft")) { setNotice("심의 완료 후 초안 발행 단계에서만 초안을 확정할 수 있습니다."); return; }
     const approved = linkedJobs.filter((job) => ["승인", "재승인"].includes(demo.decisions[job.id]?.result));
+    if (!approved.length) { setNotice("승인된 Job이 없어 초안 발행으로 진행할 수 없습니다."); return; }
     if (approved.some((job) => !demo.certificates[job.id]?.draftIssuedAt)) { setNotice("승인된 모든 Job의 초안 발행일을 입력해 주세요."); return; }
     move("CERTIFICATION_INFO_PENDING", "Job·패키지", "초안 발행을 기록했습니다. 인증번호와 전자본 PDF 발행정보를 입력하세요.");
   };
   const finishCertification = () => runFormalStep(async () => {
+    if (!canRunWorkflowAction(demo.stage, "certification")) { setNotice("초안 발행 완료 후 전자본 발행 단계에서만 인증정보를 확정할 수 있습니다."); return; }
     const approved = linkedJobs.filter((job) => ["승인", "재승인"].includes(demo.decisions[job.id]?.result));
     if (!approved.length) { setNotice("승인된 Job이 없어 패키지 생성 단계로 진행할 수 없습니다."); return; }
     if (approved.some((job) => !demo.certificates[job.id]?.certificationNo || !demo.certificates[job.id]?.issueDate || !demo.certificates[job.id]?.expiryDate)) { setNotice("승인 Job의 인증번호·발행일·만료일을 입력해 주세요."); return; }
@@ -529,6 +537,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     move("ORIGINAL_DELIVERY_PENDING", "Job·패키지", "전자본 PDF 발행을 기록했습니다. 원본 송부정보를 입력하세요.");
   });
   const finishOriginalDelivery = () => runFormalStep(async () => {
+    if (!canRunWorkflowAction(demo.stage, "delivery")) { setNotice("전자본 발행 완료 후 원본 송부 단계에서만 송부정보를 확정할 수 있습니다."); return; }
     const approved = linkedJobs.filter((job) => ["승인", "재승인"].includes(demo.decisions[job.id]?.result));
     if (!approved.length) { setNotice("승인된 Job이 없어 원본 송부를 확정할 수 없습니다."); return; }
     if (approved.some((job) => !demo.certificates[job.id]?.originalSentAt || !demo.certificates[job.id]?.trackingNumber)) { setNotice("승인된 모든 Job의 원본 송부일과 운송장 번호를 입력해 주세요."); return; }
@@ -647,6 +656,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     {!hydrated && <div role="status" className="rounded-lg border border-amber-300 bg-card p-4 text-sm text-amber-700 dark:text-amber-300"><p>{workspaceLoadError || "저장된 업무기록을 확인하고 있습니다. 확인 전에는 편집·저장·업무 처리를 할 수 없습니다."}</p>{workspaceLoadError && <Button type="button" className="mt-3" variant="outline" onClick={() => setWorkspaceLoadRevision((value) => value + 1)}><RotateCcw/>저장된 업무기록 다시 조회</Button>}</div>}
     {formalSaving && <p role="status" className="rounded-lg border bg-card p-3 text-sm">정식 업무기록 저장 결과를 확인 중입니다. 중복 실행과 입력 변경을 잠시 제한합니다.</p>}
     <fieldset disabled={!canEdit || formalSaving} className="space-y-5 border-0 p-0 disabled:opacity-80">
+      <p className="rounded-lg border bg-card p-3 text-sm text-muted-foreground">현재 단계: {stageLabels[demo.stage]}. 단계 확정은 현재 단계에서만 가능합니다. 이전 탭의 기록은 조회·입력할 수 있으며, 기존 확정 기록의 정식 정정은 별도 절차가 필요합니다.</p>
 
     {active === "신청 개요" && <div className="grid gap-5 xl:grid-cols-2">
       <Section title="접수정보"><dl className="grid gap-5 sm:grid-cols-2"><Info label="신청번호" value={application.applicationNo}/><Info label="신청구분" value={application.applicationType}/><Info label="파트너사" value={application.partnerCompany}/><Info label="주 담당자" value={application.primaryOwner}/><Info label="공식 접수일" value={application.receivedAt}/><Info label="시스템 등록일시" value={application.registeredAt}/></dl></Section>

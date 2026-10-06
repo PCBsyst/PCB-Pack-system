@@ -4,6 +4,7 @@ import ts from "typescript";
 const compile = source => ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const checks = await import(`data:text/javascript;base64,${Buffer.from(compile(fs.readFileSync(new URL("../lib/workflow-record-checks.ts", import.meta.url), "utf8"))).toString("base64")}`);
 const dateChecks = await import(`data:text/javascript;base64,${Buffer.from(compile(fs.readFileSync(new URL("../lib/package-request-validation.ts", import.meta.url), "utf8"))).toString("base64")}`);
+const stageChecks = await import(`data:text/javascript;base64,${Buffer.from(compile(fs.readFileSync(new URL("../lib/workflow-stage-policy.ts", import.meta.url), "utf8"))).toString("base64")}`);
 for (const input of ["", "0", "-1", "NaN", "Infinity", "1e4", "1,000", "1.234", "9007199254740992"]) assert.equal(checks.workflowAmount(input), null);
 assert.equal(checks.workflowAmount("123.45"), 123.45);
 assert.equal(checks.workflowAmount(" 100 "), 100);
@@ -11,7 +12,7 @@ assert.equal(checks.hasExactAffectedIds([{ id: "a" }, { id: "b" }], ["b", "a"]),
 for (const rows of [null, [], [{ id: "a" }, { id: "a" }], [{ id: "other" }]]) assert.equal(checks.hasExactAffectedIds(rows, ["a", "b"]), false);
 const source = fs.readFileSync(new URL("../components/application-detail.tsx", import.meta.url), "utf8");
 const tree = ts.createSourceFile("application.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-const names = ["runFormalStep", "move", "finishReview", "recordInvoice", "recoverInvoiceLinks", "confirmPayment", "applySharedPayment", "finishDecision", "finishCertification", "finishOriginalDelivery"];
+const names = ["runFormalStep", "move", "finishReview", "recordInvoice", "recoverInvoiceLinks", "confirmPayment", "applySharedPayment", "finishDecision", "finishDraft", "finishCertification", "finishOriginalDelivery"];
 const found = [];
 function visit(node) {
   if (ts.isVariableStatement(node) && node.declarationList.declarations.some(item => names.includes(item.name.getText(tree)))) found.push(node.getText(tree));
@@ -34,6 +35,8 @@ function fixture(query, { editable = true, local = false, confirmed = true, reas
   deps.getCertificationNumberPrefix = () => "2675";
   deps.escapeRegExp = value => value;
   deps.certificateDateIssues = dateChecks.certificateDateIssues;
+  deps.canRunWorkflowAction = stageChecks.canRunWorkflowAction;
+  deps.canEdit = editable;
   const actions = new Function(...Object.keys(deps), `${code};return {${names.join(",")}};`)(...Object.values(deps));
   return { actions, demo, latestDemo, mounted, notices, busy, stages, states, requests, running };
 }
@@ -42,7 +45,7 @@ const normal = async (table, action) => ({ data: table === "invoice_jobs" ? [{ j
 let f = fixture(normal);
 await f.actions.confirmPayment(); assert.deepEqual(f.stages, ["DECISION_PENDING"]); assert.equal(f.busy.at(-1), false);
 f = fixture(async () => ({ data: [], error: null })); await f.actions.confirmPayment(); assert.equal(f.stages.length, 0); assert.match(f.notices.at(-1), /인보이스 1건/);
-f = fixture(async table => table === "document_reviews" ? { error: null } : { data: [], error: null }); await f.actions.finishReview(); assert.equal(f.stages.length, 0); assert.match(f.notices.at(-1), /회차 검토일/);
+f = fixture(async table => table === "document_reviews" ? { error: null } : { data: [], error: null }); f.demo.stage = "DOCUMENT_REVIEW"; await f.actions.finishReview(); assert.equal(f.stages.length, 0); assert.match(f.notices.at(-1), /회차 검토일/);
 f = fixture(async () => { throw new Error("network"); }); await f.actions.confirmPayment(); assert.equal(f.stages.length, 0); assert.equal(f.running.current, false); assert.match(f.notices.at(-1), /일부 기록/);
 let release;
 let held = false;
@@ -55,9 +58,9 @@ for (const bad of [{ ...invoiceRow, amount: 200 }, { ...invoiceRow, payment_stat
   f = fixture(async () => ({ data: bad, error: null })); await f.actions.confirmPayment(); assert.equal(f.stages.length, 0); assert.ok(!f.requests.some(r => r.action === "update"));
 }
 f = fixture(async (table, action) => table === "invoice_jobs" ? { data: [{ job_id: "other" }], error: null } : normal(table, action)); await f.actions.confirmPayment(); assert.equal(f.stages.length, 0); assert.ok(!f.requests.some(r => r.action === "update"));
-f = fixture(normal); await f.actions.recordInvoice(); assert.equal(f.stages.length, 0); assert.ok(!f.requests.some(r => r.action === "insert" || r.action === "upsert"));
-f = fixture(async table => ({ data: table === "invoice_jobs" ? [] : invoiceRow, error: null })); await f.actions.recordInvoice(); assert.equal(f.stages.length, 0); assert.match(f.notices.at(-1), /이미 등록된/); assert.ok(!f.requests.some(r => r.action === "insert"));
-f = fixture(async (table, action) => ({ data: action === "select" ? table === "invoice_jobs" ? [] : null : table === "invoices" ? { id: "new-invoice" } : [{ invoice_id: "new-invoice", job_id: "j" }], error: null })); await f.actions.recordInvoice(); assert.deepEqual(f.stages, ["PAYMENT_PENDING"]); assert.ok(f.requests.some(r => r.action === "insert"));
+f = fixture(normal); f.demo.stage = "INVOICE_PENDING"; await f.actions.recordInvoice(); assert.equal(f.stages.length, 0); assert.ok(!f.requests.some(r => r.action === "insert" || r.action === "upsert"));
+f = fixture(async table => ({ data: table === "invoice_jobs" ? [] : invoiceRow, error: null })); f.demo.stage = "INVOICE_PENDING"; await f.actions.recordInvoice(); assert.equal(f.stages.length, 0); assert.match(f.notices.at(-1), /이미 등록된/); assert.ok(!f.requests.some(r => r.action === "insert"));
+f = fixture(async (table, action) => ({ data: action === "select" ? table === "invoice_jobs" ? [] : null : table === "invoices" ? { id: "new-invoice" } : [{ invoice_id: "new-invoice", job_id: "j" }], error: null })); f.demo.stage = "INVOICE_PENDING"; await f.actions.recordInvoice(); assert.deepEqual(f.stages, ["PAYMENT_PENDING"]); assert.ok(f.requests.some(r => r.action === "insert"));
 f = fixture(async (table, action) => table === "invoice_jobs" ? { data: [{ job_id: "j" }, { job_id: "another-candidate-job" }], error: null } : normal(table, action)); await f.actions.confirmPayment(); assert.deepEqual(f.stages, ["DECISION_PENDING"]);
 f = fixture(async (table, action) => action === "update" ? { data: [], error: null } : normal(table, action)); await f.actions.confirmPayment(); assert.equal(f.stages.length, 0);
 for (const name of ["finishReview", "recordInvoice", "confirmPayment", "finishDecision", "finishCertification", "finishOriginalDelivery"]) assert.ok(source.includes(`const ${name} = () => runFormalStep(async () => {`));
@@ -88,7 +91,7 @@ f = fixture(async (table, action) => table === "invoice_jobs" ? { data: [{ job_i
 let linkRead = 0;
 f = fixture(async (table, action) => table === "invoice_jobs" && action === "select" && ++linkRead === 2 ? { data: [{ invoice_id: "other-invoice", job_id: "j" }], error: null } : recovery(table, action)); await f.actions.recoverInvoiceLinks(); assert.equal(f.stages.length, 0);
 f = fixture(async (table, action) => action === "upsert" ? { data: [], error: null } : recovery(table, action)); await f.actions.recoverInvoiceLinks(); assert.equal(f.stages.length, 0);
-f = fixture(async (table, action) => table === "invoice_jobs" ? { data: [], error: null } : { data: action === "select" ? null : { id: "new-invoice" }, error: null }); await f.actions.recordInvoice(); assert.equal(f.stages.length, 0);
+f = fixture(async (table, action) => table === "invoice_jobs" ? { data: [], error: null } : { data: action === "select" ? null : { id: "new-invoice" }, error: null }); f.demo.stage = "INVOICE_PENDING"; await f.actions.recordInvoice(); assert.equal(f.stages.length, 0);
 const panelRows = [{ decision_id: "d", panel_member_id: "p1", result: "승인", comment: "의견1" }, { decision_id: "d", panel_member_id: "p2", result: "승인", comment: "의견2" }];
 const multiplePanel = [...panelRows, ...panelRows.map(row => ({ ...row, decision_id: "d2" }))];
 assert.equal(checks.hasExactRecordValues([...multiplePanel].reverse(), multiplePanel, ["decision_id", "panel_member_id", "result", "comment"]), true);
@@ -105,13 +108,13 @@ f = decisionFixture(); f.demo.panelMembers[1].name = "위원1"; await f.actions.
 f = decisionFixture(); f.demo.panelMembers[1].selected = false; await f.actions.finishDecision(); assert.equal(f.requests.length, 0);
 f = decisionFixture(async (table, action) => table === "certification_decisions" && action === "upsert" ? { data: [{ ...savedDecision, final_approver: "다른 승인자" }], error: null } : decisions(table, action)); await f.actions.finishDecision(); assert.equal(f.stages.length, 0); assert.ok(!f.requests.some(r => r.table === "decision_panel_entries" && r.action === "upsert"));
 const issuance = async (table, action, payload) => ({ data: action === "upsert" || action === "insert" ? payload : table === "certification_records" ? [] : table === "jobs" ? [{ id: "j" }] : [{ id: "c" }], error: null });
-function issuanceFixture(query = issuance, options) { const result = fixture(query, options); Object.assign(result.demo, { decisions: { j: { result: "승인" } }, certificates: { j: { certificationNo: "26750001", draftIssuedAt: "2026-10-01", issueDate: "2026-10-02", expiryDate: "2029-10-02", originalSentAt: "2026-10-05", trackingNumber: "SAMPLE-123" } }, deliveryDocuments: { j: { deliveryConfirmation: { date: "2026-10-05", comment: "송부 확인" } } } }); return result; }
+function issuanceFixture(query = issuance, options) { const result = fixture(query, options); Object.assign(result.demo, { stage: "CERTIFICATION_INFO_PENDING", decisions: { j: { result: "승인" } }, certificates: { j: { certificationNo: "26750001", draftIssuedAt: "2026-10-01", issueDate: "2026-10-02", expiryDate: "2029-10-02", originalSentAt: "2026-10-05", trackingNumber: "SAMPLE-123" } }, deliveryDocuments: { j: { deliveryConfirmation: { date: "2026-10-05", comment: "송부 확인" } } } }); return result; }
 f = issuanceFixture(); await f.actions.finishCertification(); assert.deepEqual(f.stages, ["ORIGINAL_DELIVERY_PENDING"]);
-f = issuanceFixture(); await f.actions.finishOriginalDelivery(); assert.deepEqual(f.stages, ["PACKAGE_READY"]);
+f = issuanceFixture(); f.demo.stage = "ORIGINAL_DELIVERY_PENDING"; await f.actions.finishOriginalDelivery(); assert.deepEqual(f.stages, ["PACKAGE_READY"]);
 for (const patch of [{ certification_no: "other" }, { valid_until: "2028-10-02" }, { cycle_id: "other" }, { revision: 1 }]) { f = issuanceFixture(async (table, action, payload) => table === "certification_records" && action === "insert" ? { data: payload.map(row => ({ ...row, ...patch })), error: null } : issuance(table, action, payload)); await f.actions.finishCertification(); assert.equal(f.stages.length, 0); assert.ok(!f.requests.some(r => r.action === "update")); }
-for (const patch of [{ tracking_number: "other" }, { original_sent_at: "2026-10-06" }, { document_checklist: {} }, { cycle_id: "other" }]) { f = issuanceFixture(async (table, action, payload) => table === "document_deliveries" ? { data: payload.map(row => ({ ...row, ...patch })), error: null } : issuance(table, action, payload)); await f.actions.finishOriginalDelivery(); assert.equal(f.stages.length, 0); assert.ok(!f.requests.some(r => r.table === "processing_cycles")); }
+for (const patch of [{ tracking_number: "other" }, { original_sent_at: "2026-10-06" }, { document_checklist: {} }, { cycle_id: "other" }]) { f = issuanceFixture(async (table, action, payload) => table === "document_deliveries" ? { data: payload.map(row => ({ ...row, ...patch })), error: null } : issuance(table, action, payload)); f.demo.stage = "ORIGINAL_DELIVERY_PENDING"; await f.actions.finishOriginalDelivery(); assert.equal(f.stages.length, 0); assert.ok(!f.requests.some(r => r.table === "processing_cycles")); }
 f = issuanceFixture(); f.demo.certificates.j.expiryDate = "2025-10-02"; await f.actions.finishCertification(); assert.equal(f.requests.length, 0);
-f = issuanceFixture(); f.demo.certificates.j.originalSentAt = "2026-02-30"; await f.actions.finishOriginalDelivery(); assert.equal(f.requests.length, 0);
+f = issuanceFixture(); f.demo.stage = "ORIGINAL_DELIVERY_PENDING"; f.demo.certificates.j.originalSentAt = "2026-02-30"; await f.actions.finishOriginalDelivery(); assert.equal(f.requests.length, 0);
 let certificateReads = 0;
 f = issuanceFixture(async (table, action, payload) => action === "select" && table === "certification_records" && ++certificateReads === 2 ? { data: [{ id: "old1", job_id: "old" }, { id: "old2", job_id: "old" }], error: null } : issuance(table, action, payload), { previousJobId: "old" }); await f.actions.finishCertification(); assert.equal(f.stages.length, 0); assert.ok(!f.requests.some(r => r.action === "insert"));
 const existingCertificate = { job_id: "j", cycle_id: "c", certification_no: "26750001", revision: 0, draft_issued_at: "2026-10-01", issue_date: "2026-10-02", valid_from: "2026-10-02", valid_until: "2029-10-02", state: "ACTIVE", history_state: "CURRENT", replaced_record_id: null };
@@ -120,8 +123,12 @@ f = issuanceFixture(retry); await f.actions.finishCertification(); assert.deepEq
 for (const patch of [{ certification_no: "26750002" }, { issue_date: "2026-10-03" }, { revision: 1 }, { state: "SUSPENDED" }, { history_state: "REPLACED_BY_RENEWAL" }]) { f = issuanceFixture(async (table, action, payload) => table === "certification_records" ? { data: [{ ...existingCertificate, ...patch }], error: null } : retry(table, action, payload)); await f.actions.finishCertification(); assert.equal(f.stages.length, 0); assert.ok(f.requests.every(r => r.action === "select")); }
 f = issuanceFixture(async (table, action, payload) => table === "jobs" && action === "select" ? { data: [{ id: "j", certification_state: "SUSPENDED" }], error: null } : retry(table, action, payload)); await f.actions.finishCertification(); assert.equal(f.stages.length, 0); assert.ok(f.requests.every(r => r.action === "select"));
 assert.equal(checks.hasExactRecordValues([{ id: "a", content: { b: 2, a: { d: 4, c: 3 } } }], [{ id: "a", content: { a: { c: 3, d: 4 }, b: 2 } }], ["id", "content"]), true);
-for (const options of [{ authenticated: false }, { authError: { message: "인증 오류" } }]) { f = decisionFixture(decisions, options); await f.actions.finishDecision(); assert.equal(f.requests.length, 0); f = issuanceFixture(issuance, options); await f.actions.finishOriginalDelivery(); assert.equal(f.requests.length, 0); }
+for (const options of [{ authenticated: false }, { authError: { message: "인증 오류" } }]) { f = decisionFixture(decisions, options); await f.actions.finishDecision(); assert.equal(f.requests.length, 0); f = issuanceFixture(issuance, options); f.demo.stage = "ORIGINAL_DELIVERY_PENDING"; await f.actions.finishOriginalDelivery(); assert.equal(f.requests.length, 0); }
 f = decisionFixture(async (table, action) => table === "decision_panel_entries" ? { data: [{ decision_id: "d", panel_member_id: "p3" }], error: null } : decisions(table, action)); await f.actions.finishDecision(); assert.ok(f.requests.every(r => r.action === "select"));
 f = decisionFixture(async (table, action) => table === "certification_decisions" && action === "select" ? { data: null, error: { message: "조회 실패" } } : decisions(table, action)); await f.actions.finishDecision(); assert.ok(f.requests.every(r => r.action === "select"));
 f = decisionFixture(async (table, action) => { if (table === "decision_panel_entries" && action === "select") f.latestDemo.current = { ...f.demo, finalApprover: "변경" }; return decisions(table, action); }); await f.actions.finishDecision(); assert.ok(f.requests.every(r => r.action === "select"));
-console.log("업무 단계 확정: 심의 변경 전 사전 대조·담당자 인증 실패 차단, 발행/송부/연결 복구/통합 입금 검사 통과 (DB/브라우저 모의, 서버 권한은 별도 검증)");
+for (const action of ["finishReview", "recordInvoice", "confirmPayment", "finishDecision", "finishDraft", "finishCertification", "finishOriginalDelivery"]) { f = issuanceFixture(); f.demo.stage = "COMPLETED"; await f.actions[action](); assert.equal(f.requests.length, 0); assert.equal(f.stages.length, 0); }
+f = decisionFixture(); f.demo.stage = "DOCUMENT_REVIEW"; await f.actions.finishDecision(); assert.equal(f.requests.length, 0);
+f = issuanceFixture(); f.demo.stage = "CERTIFICATE_DRAFT_PENDING"; f.demo.decisions.j.result = "거절"; await f.actions.finishDraft(); assert.equal(f.stages.length, 0);
+f = issuanceFixture(); f.demo.stage = "CERTIFICATE_DRAFT_PENDING"; await f.actions.finishDraft(); assert.deepEqual(f.stages, ["CERTIFICATION_INFO_PENDING"]);
+console.log("업무 단계 확정: 완료 후 역행·절차 건너뛰기·승인 없는 초안 차단, 심의/발행/송부/통합 입금 검사 통과 (DB/브라우저 모의, 서버 단계 보호 별도)");

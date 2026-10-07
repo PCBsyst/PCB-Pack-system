@@ -12,6 +12,7 @@ import { reportApplicationTypeLabel, reportExportMetadata, serializeReportCsv } 
 import { buildMonthlyReportPrintHtml } from "@/lib/monthly-report-print";
 import { verifiedReportCsv } from "@/lib/report-download";
 import { verifyReportPage, verifyReportTotal } from "@/lib/report-query-completeness";
+import { selectCurrentReportCertification } from "@/lib/monthly-report-records";
 
 type CandidateRelation = { id: string; name: string };
 type CertificationRelation = { certification_no: string; issue_date: string; state: string; history_state: string };
@@ -66,7 +67,7 @@ export function MonthlyOperationsReport() {
       verifyReportTotal(data, expected!);
       const result = ((data ?? []) as unknown as ApplicationQueryRow[]).flatMap((application) => arrayOf(application.jobs).map((job) => {
         const candidate = first(job.candidates);
-        const currentCertification = arrayOf(job.certification_records).filter((record) => record.history_state === "CURRENT").sort((a, b) => b.issue_date.localeCompare(a.issue_date))[0];
+        const currentCertification = selectCurrentReportCertification(job.certification_records);
         return { applicationId: application.id, applicationNo: application.application_no, receivedAt: application.received_at, businessArea: application.business_area, partner: application.partner_name_snapshot, applicationType: application.application_type, applicationStatus: application.status, jobId: job.id, jobNo: job.job_no, candidateId: candidate?.id ?? job.id, candidateName: candidate?.name ?? "후보자 미확인", standard: job.standard, grade: job.grade, certificationState: currentCertification?.state ?? job.certification_state, certificationNo: currentCertification?.certification_no ?? "", issueDate: currentCertification?.issue_date ?? "" } satisfies ReportRow;
       }));
       if (active) { setRows([...new Map(result.map((row) => [row.jobId, row])).values()]); setLoading(false); }

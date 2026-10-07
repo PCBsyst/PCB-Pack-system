@@ -38,4 +38,11 @@ f = fixture(); response = await f.POST(request({ ...input, dateBasis: "RECEIVED"
 f = fixture({ data: Array.from({ length: 101 }, (_, index) => ({ ...application, id: `app-${index}`, jobs: [{ ...application.jobs[0], id: `job-${index}` }] })) });
 response = await f.POST(request()); assert.equal(response.status, 413); assert.equal(f.logs.length, 0);
 assert.throws(() => records.normalizeMonthlyReportRecords(null));
+const duplicateCurrent = { ...application, jobs: [{ ...application.jobs[0], certification_records: [application.jobs[0].certification_records[0], { ...application.jobs[0].certification_records[0], issue_date: "2026-10-02" }] }] };
+f = fixture({ data: [duplicateCurrent] }); response = await f.POST(request()); assert.equal(response.status, 503); assert.equal(f.logs.length, 0);
+assert.throws(() => records.normalizeMonthlyReportRecords([duplicateCurrent]));
+assert.equal(records.selectCurrentReportCertification(null), undefined);
+assert.equal(records.selectCurrentReportCertification([{ history_state: "REPLACED" }]), undefined);
+assert.equal(records.selectCurrentReportCertification([{ history_state: "REPLACED" }, application.jobs[0].certification_records[0]]).certification_no, "TEST");
+for (const malformed of [[null], [{}], ["CURRENT"], [{ history_state: 42 }]]) assert.throws(() => records.selectCurrentReportCertification(malformed));
 console.log("상세 보고서 실제 API: 서버 재조회·국문 CSV/수식 보호·파일 해시·권한/요청/대상 제한·접근이력 실패 시 미응답 통과 (DB/인증 모의)");

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { recordedJobCertificationState } from "@/lib/job-list-state";
 import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
+import { readBoundedRows } from "@/lib/bounded-row-reader";
 import { reconcileJobCertificate, reconciliationLabels, type RegistryCertificate } from "@/lib/job-certificate-reconciliation";
 import { useLinkedRecordsState } from "@/components/prototype-linked-rows";
 import { certificationStateLabels, getCandidate, getCurrentCycle, jobs, statusLabels } from "@/data/mock-data";
@@ -33,15 +34,22 @@ export function JobsTable() {
     setRegistry([]); setRegistryLoaded(false); setRegistryNotice("");
     if (!hasEnvVars) { setRegistryNotice("로컬 미리보기: 인증원장 대조는 DB 연결 후 사용할 수 있습니다."); return; }
     if (notice) { setRegistryNotice("연결 업무기록 확인 후 인증원장을 조회합니다."); return; }
-    const ids = records.map((record) => record.jobId).filter((id): id is string => Boolean(id));
+    const ids = [...new Set(records.map((record) => record.jobId).filter((id): id is string => Boolean(id)))];
     if (!ids.length) { setRegistryLoaded(true); return; }
     setRegistryNotice("현재 인증원장을 조회하고 있습니다.");
     const load = async () => {
       try {
-        const { data, error } = await createClient().from("certification_records").select("id, job_id, certification_no, issue_date, valid_until").in("job_id", ids).eq("history_state", "CURRENT");
-        if (cancelled) return;
-        if (error) throw new Error("인증원장 조회 실패");
-        setRegistry((data ?? []) as RegistryCertificate[]); setRegistryLoaded(true); setRegistryNotice("");
+        const client = createClient();
+        const collected: RegistryCertificate[] = [];
+        for (let start = 0; start < ids.length; start += 100) {
+          const batch = ids.slice(start, start + 100);
+          const data = await readBoundedRows((from, to) => client.from("certification_records").select("id, job_id, certification_no, issue_date, valid_until", { count: "exact" }).in("job_id", batch).eq("history_state", "CURRENT").order("id").range(from, to), row => batch.includes(row?.job_id) ? row.id : undefined, () => cancelled, 10000 - collected.length);
+          if (cancelled) return;
+          if (!data) throw new Error("인증원장 조회 실패");
+          collected.push(...data as RegistryCertificate[]);
+        }
+        if (new Set(collected.map(row => row.id)).size !== collected.length) throw new Error("인증원장 중복 응답");
+        setRegistry(collected); setRegistryLoaded(true); setRegistryNotice("");
       } catch { if (!cancelled) { setRegistry([]); setRegistryLoaded(false); setRegistryNotice("인증원장 조회에 실패했습니다. 발행 기록 없음으로 판단하지 않으며 다시 조회해 주세요."); } }
     };
     void load();

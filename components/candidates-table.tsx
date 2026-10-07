@@ -7,6 +7,7 @@ import { hasEnvVars } from "@/lib/utils";
 import { RotateCcw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { candidateRecordSummary } from "@/lib/candidate-list-summary";
+import { readBoundedRows } from "@/lib/bounded-row-reader";
 import { useLinkedRecordsState } from "@/components/prototype-linked-rows";
 import { candidates, certificationStateLabels, jobs } from "@/data/mock-data";
 import { prototypeCandidateId, prototypeJobId, type PrototypeApplicationRecord } from "@/lib/prototype-storage";
@@ -33,10 +34,11 @@ export function CandidatesTable() {
     setDirectoryNotice("전체 후보자 조회 중...");
     const load = async () => {
       try {
-        const { data, error } = await createClient().from("candidates").select("id, name, name_en, phone, email, nationality").order("name");
+        const client = createClient();
+        const data = await readBoundedRows((from, to) => client.from("candidates").select("id, name, name_en, phone, email, nationality", { count: "exact" }).order("name").order("id").range(from, to), row => row?.id, () => cancelled);
         if (cancelled) return;
-        if (error) throw new Error("후보자 조회 실패");
-        setDirectory((data ?? []).map((item) => ({ id: item.id, name: item.name, nameEn: item.name_en ?? "", phone: item.phone ?? "", email: item.email ?? "", nationality: item.nationality ?? "", records: [] })));
+        if (!data) throw new Error("후보자 조회 실패");
+        setDirectory(data.map((item) => ({ id: item.id, name: item.name, nameEn: item.name_en ?? "", phone: item.phone ?? "", email: item.email ?? "", nationality: item.nationality ?? "", records: [] })));
         setDirectoryNotice("");
       } catch { if (!cancelled) { setDirectory([]); setDirectoryNotice("전체 후보자 조회에 실패했습니다. 연결 업무에서 확인된 후보자만 표시하므로 수량은 확정값이 아닙니다."); } }
     };
@@ -50,10 +52,11 @@ export function CandidatesTable() {
     setArchiveNotice("보관 상태 확인 중...");
     const load = async () => {
       try {
-        const { data, error } = await createClient().from("candidates").select("id, archived_at");
+        const client = createClient();
+        const data = await readBoundedRows((from, to) => client.from("candidates").select("id, archived_at", { count: "exact" }).order("id").range(from, to), row => row?.id, () => cancelled);
         if (cancelled) return;
-        if (error) throw new Error("보관 상태 조회 실패");
-        setArchiveIds((data ?? []).filter((item) => item.archived_at).map((item) => item.id));
+        if (!data) throw new Error("보관 상태 조회 실패");
+        setArchiveIds(data.filter((item) => item.archived_at).map((item) => item.id));
         setArchiveNotice("");
       } catch { if (!cancelled) { setArchiveIds([]); setArchiveNotice("보관 상태를 확인하지 못했습니다. 일반·보관 분류는 미확인이며 전체 후보자로 표시합니다."); } }
     };

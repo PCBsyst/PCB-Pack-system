@@ -4,7 +4,7 @@ import ts from "typescript";
 const completeness = ts.transpileModule(fs.readFileSync(new URL("../lib/report-query-completeness.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const { verifyReportPage, verifyReportTotal } = await import(`data:text/javascript;base64,${Buffer.from(completeness).toString("base64")}`);
 const recordCode = ts.transpileModule(fs.readFileSync(new URL("../lib/monthly-report-records.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
-const { selectCurrentReportCertification } = await import(`data:text/javascript;base64,${Buffer.from(recordCode).toString("base64")}`);
+const { selectCurrentReportCertification, validateMonthlyReportRelationships } = await import(`data:text/javascript;base64,${Buffer.from(recordCode).toString("base64")}`);
 const source = fs.readFileSync(new URL("../components/monthly-operations-report.tsx", import.meta.url), "utf8");
 const helper = source.slice(source.indexOf("function arrayOf"), source.indexOf("export function MonthlyOperationsReport"));
 const effect = source.slice(source.indexOf("  useEffect(() => {\n    setRows"), source.indexOf("  const options ="));
@@ -12,23 +12,27 @@ const code = ts.transpileModule(helper + effect, { compilerOptions: { target: ts
 function fixture(query) {
   const rows = [], errors = [], loading = []; let cleanup;
   const client = { from() { return this; }, select() { return this; }, order() { return this; }, range: async (...args) => { const page = await query(...args); return { count: Array.isArray(page.data) ? new Set(page.data.map(row => row?.id)).size : null, ...page }; } };
-  new Function("useEffect", "hasEnvVars", "createClient", "setRows", "setError", "setLoading", "revision", "verifyReportPage", "verifyReportTotal", "selectCurrentReportCertification", code)(
-    (callback) => { cleanup = callback(); }, true, () => client, (value) => rows.push(value), (value) => errors.push(value), (value) => loading.push(value), 1, verifyReportPage, verifyReportTotal, selectCurrentReportCertification);
+  new Function("useEffect", "hasEnvVars", "createClient", "setRows", "setError", "setLoading", "revision", "verifyReportPage", "verifyReportTotal", "selectCurrentReportCertification", "validateMonthlyReportRelationships", code)(
+    (callback) => { cleanup = callback(); }, true, () => client, (value) => rows.push(value), (value) => errors.push(value), (value) => loading.push(value), 1, verifyReportPage, verifyReportTotal, selectCurrentReportCertification, validateMonthlyReportRelationships);
   return { rows, errors, loading, cleanup: () => cleanup() };
 }
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
-const application = { id: "app", received_at: "2026-10-01", jobs: [{ id: "job", candidates: [{ id: "candidate", name: "가상후보" }], certification_records: [] }] };
-let f = fixture(async () => ({ data: [application, application], error: null })); await flush();
+const application = { id: "app", candidate_id: "candidate", received_at: "2026-10-01", jobs: [{ id: "job", application_id: "app", candidate_id: "candidate", candidates: [{ id: "candidate", name: "가상후보" }], certification_records: [] }] };
+let f = fixture(async () => ({ data: [application], error: null })); await flush();
 assert.deepEqual(f.rows[0], []); assert.equal(f.rows.at(-1).length, 1); assert.equal(f.loading.at(-1), false); f.cleanup();
 for (const page of [{ data: null, error: null }, { data: [], error: { message: "network" } }]) {
   f = fixture(async () => page); await flush(); assert.deepEqual(f.rows.at(-1), []); assert.match(f.errors.at(-1), /조회하지 못/); assert.equal(f.loading.at(-1), false); f.cleanup();
 }
 let release;
-const ambiguous = { ...application, jobs: [{ ...application.jobs[0], certification_records: [{ history_state: "CURRENT" }, { history_state: "CURRENT" }] }] };
+const ambiguous = { ...application, jobs: [{ ...application.jobs[0], certification_records: [{ job_id: "job", history_state: "CURRENT" }, { job_id: "job", history_state: "CURRENT" }] }] };
 f = fixture(async () => ({ data: [ambiguous], error: null })); await flush(); assert.equal(f.rows.at(-1).length, 0); assert.match(f.errors.at(-1), /조회하지 못/); f.cleanup();
 f = fixture(async () => ({ data: [application], error: null, count: 2 })); await flush(); assert.deepEqual(f.rows.at(-1), []); assert.equal(f.loading.at(-1), false); assert.match(f.errors.at(-1), /조회하지 못/); f.cleanup();
+for (const jobs of [null, [application.jobs[0], application.jobs[0]], [{ ...application.jobs[0], application_id: "other" }], [{ ...application.jobs[0], candidate_id: "other" }], [{ ...application.jobs[0], candidates: [] }], [{ ...application.jobs[0], candidates: [{ id: "other" }] }], [{ ...application.jobs[0], candidates: [application.jobs[0].candidates[0], application.jobs[0].candidates[0]] }], [{ ...application.jobs[0], certification_records: [{ job_id: "other", history_state: "CURRENT" }] }]]) {
+  f = fixture(async () => ({ data: [{ ...application, jobs }], error: null })); await flush(); assert.equal(f.rows.at(-1).length, 0); assert.match(f.errors.at(-1), /조회하지 못/); f.cleanup();
+}
+f = fixture(async () => ({ data: [application, { ...application, id: "other-app", jobs: [{ ...application.jobs[0], application_id: "other-app" }] }], error: null })); await flush(); assert.match(f.errors.at(-1), /조회하지 못/); f.cleanup();
 f = fixture(() => new Promise((resolve) => { release = resolve; })); f.cleanup();
 release({ data: [application], error: null }); await flush(); assert.equal(f.rows.length, 1); assert.equal(f.errors.length, 1);
 assert.match(source, /\[revision\]/); assert.match(source, /업무보고 자료 다시 조회/);
 assert.match(source, /setRows\(\[\]\); setError\(""\); setLoading\(true\); setRevision/);
-console.log("월간 보고서 실제 조회 effect: 재조회 초기화·중복 Job 제거·오류 후 빈 자료 유지·화면 종료 후 과거 응답 무시 통과 (DB 모의)");
+console.log("월간 보고서 실제 조회: 신청/후보자/Job/인증 연결 대조·중복/손상 차단·재조회 및 화면 종료 보호 통과 (DB 모의)");

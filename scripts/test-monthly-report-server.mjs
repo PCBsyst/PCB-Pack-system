@@ -10,8 +10,8 @@ const exportHelper = await load("../lib/report-export.ts");
 const bounded = await load("../lib/bounded-row-reader.ts");
 const { privateDocumentResponse } = await load("../lib/private-document-response.ts");
 const route = compile("../app/api/reports/monthly-csv/route.ts").replace(/^import .*;\r?$/gm, "").replace(/export /g, "");
-const application = { id: "application-1", received_at: "2026-09-01", business_area: "ISO", partner_name_snapshot: "가상파트너", application_type: "RENEWAL",
-  jobs: [{ id: "job-1", job_no: "QMS260001", standard: "ISO 9001", grade: "A", certification_state: "ACTIVE", candidates: { name: '=HYPERLINK("bad")' }, certification_records: [{ history_state: "CURRENT", issue_date: "2026-10-01", certification_no: "TEST", state: "SUSPENDED" }] }] };
+const application = { id: "application-1", candidate_id: "candidate", received_at: "2026-09-01", business_area: "ISO", partner_name_snapshot: "가상파트너", application_type: "RENEWAL",
+  jobs: [{ id: "job-1", application_id: "application-1", candidate_id: "candidate", job_no: "QMS260001", standard: "ISO 9001", grade: "A", certification_state: "ACTIVE", candidates: { id: "candidate", name: '=HYPERLINK("bad")' }, certification_records: [{ job_id: "job-1", history_state: "CURRENT", issue_date: "2026-10-01", certification_no: "TEST", state: "SUSPENDED" }] }] };
 const filters = { area: "전체", standard: "전체", partner: "전체", grade: "전체", applicationType: "전체", certificationState: "전체" };
 const input = { month: "2026-10", dateBasis: "ISSUED", filters };
 function fixture({ denied = null, data = [application], dbError = null, audit = true, pageQuery } = {}) {
@@ -36,7 +36,7 @@ for (const options of [{ audit: false }, { dbError: { message: "private db detai
   f = fixture(options); response = await f.POST(request()); assert.equal(response.status, 503); assert.ok(!(await response.text()).includes("private db details"));
 }
 f = fixture(); response = await f.POST(request({ ...input, dateBasis: "RECEIVED" })); assert.equal(response.status, 409); assert.equal(f.logs.length, 0);
-f = fixture({ data: Array.from({ length: 101 }, (_, index) => ({ ...application, id: `app-${index}`, jobs: [{ ...application.jobs[0], id: `job-${index}` }] })) });
+f = fixture({ data: Array.from({ length: 101 }, (_, index) => ({ ...application, id: `app-${index}`, jobs: [{ ...application.jobs[0], id: `job-${index}`, application_id: `app-${index}`, certification_records: [{ ...application.jobs[0].certification_records[0], job_id: `job-${index}` }] }] })) });
 response = await f.POST(request()); assert.equal(response.status, 413); assert.equal(f.logs.length, 0);
 assert.throws(() => records.normalizeMonthlyReportRecords(null));
 const duplicateCurrent = { ...application, jobs: [{ ...application.jobs[0], certification_records: [application.jobs[0].certification_records[0], { ...application.jobs[0].certification_records[0], issue_date: "2026-10-02" }] }] };
@@ -46,7 +46,7 @@ assert.equal(records.selectCurrentReportCertification(null), undefined);
 assert.equal(records.selectCurrentReportCertification([{ history_state: "REPLACED" }]), undefined);
 assert.equal(records.selectCurrentReportCertification([{ history_state: "REPLACED" }, application.jobs[0].certification_records[0]]).certification_no, "TEST");
 for (const malformed of [[null], [{}], ["CURRENT"], [{ history_state: 42 }]]) assert.throws(() => records.selectCurrentReportCertification(malformed));
-const many = Array.from({ length: 501 }, (_, index) => ({ ...application, id: `app-${index}`, jobs: index === 0 ? application.jobs : [] }));
+const many = Array.from({ length: 501 }, (_, index) => ({ ...application, id: `app-${index}`, jobs: index === 0 ? [{ ...application.jobs[0], application_id: "app-0" }] : [] }));
 f = fixture({ data: many }); response = await f.POST(request()); assert.equal(response.status, 200); assert.equal(f.queries(), 2); assert.equal(f.logs.length, 1);
 for (const pageQuery of [
   () => ({ data: [application], count: 501, error: null }),
@@ -64,4 +64,10 @@ const during = new AbortController();
 f = fixture({ pageQuery: () => { during.abort(); return { data: [application], count: 1, error: null }; } });
 response = await f.POST(new Request("https://example.com/api/reports/monthly-csv", { method: "POST", body: JSON.stringify(input), signal: during.signal }));
 assert.equal(response.status, 408); assert.equal(f.queries(), 1); assert.equal(f.logs.length, 0);
+for (const jobs of [null, [application.jobs[0], application.jobs[0]], [{ ...application.jobs[0], application_id: "other" }], [{ ...application.jobs[0], candidate_id: "other" }], [{ ...application.jobs[0], candidates: [] }], [{ ...application.jobs[0], candidates: [{ id: "other", name: "다른 후보자" }] }], [{ ...application.jobs[0], candidates: [application.jobs[0].candidates, application.jobs[0].candidates] }], [{ ...application.jobs[0], certification_records: [{ ...application.jobs[0].certification_records[0], job_id: "other" }] }]]) {
+  f = fixture({ data: [{ ...application, jobs }] }); response = await f.POST(request()); assert.equal(response.status, 503); assert.equal(f.logs.length, 0);
+}
+f = fixture({ data: [application, { ...application, id: "another-app", jobs: [{ ...application.jobs[0], application_id: "another-app" }] }] }); response = await f.POST(request()); assert.equal(response.status, 503); assert.equal(f.logs.length, 0);
+assert.doesNotThrow(() => records.validateMonthlyReportRelationships([{ ...application, jobs: [] }]));
+assert.doesNotThrow(() => records.validateMonthlyReportRelationships([{ ...application, jobs: [application.jobs[0], { ...application.jobs[0], id: "job-2", certification_records: [] }] }]));
 console.log("상세 보고서 실제 API: 서버 재조회·국문 CSV/수식 보호·파일 해시·권한/요청/대상 제한·접근이력 실패 시 미응답 통과 (DB/인증 모의)");

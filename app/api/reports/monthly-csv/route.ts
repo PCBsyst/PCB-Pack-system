@@ -41,7 +41,7 @@ export async function POST(request: Request) {
     const filters = input.filters as ReportFilters;
     const client = await createClient();
     const records = await readBoundedRows(async (from, to) => {
-      const result = await client.from("applications").select("id, received_at, business_area, partner_name_snapshot, application_type, jobs(id, job_no, standard, grade, certification_state, candidates(name), certification_records(certification_no, issue_date, state, history_state))", { count: "exact" }).order("id").range(from, to);
+      const result = await client.from("applications").select("id, candidate_id, received_at, business_area, partner_name_snapshot, application_type, jobs(id, application_id, candidate_id, job_no, standard, grade, certification_state, candidates(id, name), certification_records(job_id, certification_no, issue_date, state, history_state))", { count: "exact" }).order("id").range(from, to);
       if (!result.error && typeof result.count === "number" && result.count > 10000) throw new ReportQueryLimitError();
       return result;
     }, row => row?.id, () => request.signal.aborted);

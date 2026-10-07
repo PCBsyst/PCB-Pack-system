@@ -12,12 +12,12 @@ import { reportApplicationTypeLabel, reportExportMetadata, serializeReportCsv } 
 import { buildMonthlyReportPrintHtml } from "@/lib/monthly-report-print";
 import { verifiedReportCsv } from "@/lib/report-download";
 import { verifyReportPage, verifyReportTotal } from "@/lib/report-query-completeness";
-import { selectCurrentReportCertification } from "@/lib/monthly-report-records";
+import { selectCurrentReportCertification, validateMonthlyReportRelationships } from "@/lib/monthly-report-records";
 
 type CandidateRelation = { id: string; name: string };
-type CertificationRelation = { certification_no: string; issue_date: string; state: string; history_state: string };
-type JobRelation = { id: string; job_no: string; standard: string; grade: string; certification_state: string; candidates: CandidateRelation | CandidateRelation[] | null; certification_records: CertificationRelation[] | CertificationRelation | null };
-type ApplicationQueryRow = { id: string; application_no: string; received_at: string; business_area: string; partner_name_snapshot: string; application_type: string; status: string; jobs: JobRelation[] | JobRelation | null };
+type CertificationRelation = { job_id: string; certification_no: string; issue_date: string; state: string; history_state: string };
+type JobRelation = { id: string; application_id: string; candidate_id: string; job_no: string; standard: string; grade: string; certification_state: string; candidates: CandidateRelation | CandidateRelation[] | null; certification_records: CertificationRelation[] | CertificationRelation | null };
+type ApplicationQueryRow = { id: string; candidate_id: string; application_no: string; received_at: string; business_area: string; partner_name_snapshot: string; application_type: string; status: string; jobs: JobRelation[] | JobRelation | null };
 type ReportRow = { applicationId: string; applicationNo: string; receivedAt: string; businessArea: string; partner: string; applicationType: string; applicationStatus: string; jobId: string; jobNo: string; candidateName: string; candidateId: string; standard: string; grade: string; certificationState: string; certificationNo: string; issueDate: string };
 
 const inputClass = "h-9 w-full rounded-md border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-blue-200";
@@ -56,7 +56,7 @@ export function MonthlyOperationsReport() {
       const data: ApplicationQueryRow[] = [];
       let expected: number | undefined;
       for (let offset = 0; ; offset += 500) {
-        const page = await client.from("applications").select("id, application_no, received_at, business_area, partner_name_snapshot, application_type, status, jobs(id, job_no, standard, grade, certification_state, candidates(id, name), certification_records(certification_no, issue_date, state, history_state))", { count: "exact" }).order("id").range(offset, offset + 499);
+        const page = await client.from("applications").select("id, candidate_id, application_no, received_at, business_area, partner_name_snapshot, application_type, status, jobs(id, application_id, candidate_id, job_no, standard, grade, certification_state, candidates(id, name), certification_records(job_id, certification_no, issue_date, state, history_state))", { count: "exact" }).order("id").range(offset, offset + 499);
         if (!active) return;
         if (page.error || !Array.isArray(page.data)) { setError("업무보고 자료를 조회하지 못했습니다."); setLoading(false); return; }
         expected = verifyReportPage(page, expected);
@@ -65,6 +65,7 @@ export function MonthlyOperationsReport() {
         if (offset >= 10000) throw new Error("보고서 조회 한도 초과");
       }
       verifyReportTotal(data, expected!);
+      validateMonthlyReportRelationships(data);
       const result = ((data ?? []) as unknown as ApplicationQueryRow[]).flatMap((application) => arrayOf(application.jobs).map((job) => {
         const candidate = first(job.candidates);
         const currentCertification = selectCurrentReportCertification(job.certification_records);

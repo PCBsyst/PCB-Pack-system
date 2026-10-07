@@ -15,8 +15,28 @@ export function selectCurrentReportCertification<T extends { history_state: unkn
   if (current.length > 1) throw new Error("현재 인증기록이 여러 개입니다. 원장을 확인해 주세요.");
   return current[0];
 }
+export function validateMonthlyReportRelationships(data: unknown): void {
+  if (!Array.isArray(data)) throw new Error("보고서 신청 구성을 확인하지 못했습니다.");
+  const applications = new Set<string>(), jobs = new Set<string>();
+  for (const application of relation(data)) {
+    const applicationId = text(application, "id"), candidateId = text(application, "candidate_id");
+    if (applications.has(applicationId) || !Array.isArray(application.jobs)) throw new Error("신청 중복 또는 Job 연결 확인 실패");
+    applications.add(applicationId);
+    for (const job of relation(application.jobs)) {
+      const jobId = text(job, "id");
+      const candidates = relation(job.candidates);
+      if (jobs.has(jobId) || text(job, "application_id") !== applicationId || text(job, "candidate_id") !== candidateId
+        || candidates.length !== 1 || text(candidates[0], "id") !== candidateId) throw new Error("보고서 후보자·Job 연결이 일치하지 않습니다.");
+      jobs.add(jobId);
+      for (const certificate of relation(job.certification_records)) {
+        if (text(certificate, "job_id") !== jobId) throw new Error("보고서 인증기록 연결이 일치하지 않습니다.");
+      }
+    }
+  }
+}
 export function normalizeMonthlyReportRecords(data: unknown): MonthlyReportRow[] {
   if (!Array.isArray(data)) throw new Error("Invalid report records");
+  validateMonthlyReportRelationships(data);
   const rows = relation(data).flatMap((application) => relation(application.jobs).map((job) => {
     const candidate = relation(job.candidates)[0];
     if (!candidate) throw new Error("Candidate missing from report");

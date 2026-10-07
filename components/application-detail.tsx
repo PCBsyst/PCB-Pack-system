@@ -631,18 +631,28 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     const before = selectedCorrection.value ?? "";
     if (!correctionOptions.some((item) => item.key === correctionTarget)) { setNotice("정정 대상을 다시 선택해 주세요."); return; }
     if (!after || !correctionReason.trim()) { setNotice("정정값과 정정 사유를 모두 입력해 주세요."); return; }
+    if (after.length > 500 || correctionReason.trim().length > 500 || /[\x00-\x1f]/.test(after + correctionReason)) { setNotice("정정값과 사유는 제어문자 없이 각각 500자 이내로 입력해 주세요."); return; }
     if (correctionTarget === "review.result" && !["적합", "보완필요", "부적합"].includes(after) || correctionTarget === "review.verificationResult" && !["확인", "재검토요청"].includes(after)) { setNotice("해당 검토 항목의 선택 가능한 결과를 입력해 주세요."); return; }
     if (selectedCorrection.type === "date") {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(after) || !Number.isFinite(Date.parse(after)) || new Date(after).toISOString().slice(0, 10) !== after) { setNotice("유효한 날짜를 입력해 주세요."); return; }
       after = nextKoreanBusinessDay(after);
     }
     if (after === before) { setNotice("변경 전과 다른 값을 입력해 주세요."); return; }
+    const corrected = applyCorrectionValue(demo, correctionTarget, after);
+    const correctedJobId = correctionTarget.includes(":") ? correctionTarget.split(":")[1] : "";
+    if (correctedJobId) {
+      const issues = certificateDateIssues(corrected.certificates[correctedJobId]);
+      if (issues.length) { setNotice(issues.join(" ")); return; }
+    }
     let actor = "로컬 테스트 사용자";
     if (usesSupabaseWorkspace) {
       const supabase = createClient();
       const { data, error } = await supabase.auth.getUser();
       if (error || !data.user) { setNotice("정정 작업자 확인에 실패했습니다. 다시 로그인해 주세요."); return; }
       actor = data.user.id;
+      const { data: profile, error: profileError } = await supabase.from("profiles").select("display_name").eq("id", data.user.id).maybeSingle();
+      if (profileError) { setNotice("정정 작업자 정보를 조회하지 못했습니다. 다시 시도해 주세요."); return; }
+      if (profile?.display_name?.trim()) actor = `${profile.display_name.trim()} (${data.user.id})`;
     }
     if (!downloadMounted.current || !saveAccess.current.canEdit || formalSnapshot.current !== JSON.stringify(latestDemo.current)) { setNotice("편집 권한 또는 입력값이 변경되어 정정을 중단했습니다."); return; }
     setDemo((current) => {

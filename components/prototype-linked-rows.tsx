@@ -6,7 +6,7 @@ import { prototypeCandidateId, prototypeJobId, prototypeWorkflowLabels, readProt
 import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
 import { readBoundedRows } from "@/lib/bounded-row-reader";
-type LinkedJobRow = { id: string; job_no: string; management_no: number; standard: string; grade: string; certification_state: PrototypeApplicationRecord["certificationState"]; primary_owner_id: string | null };
+type LinkedJobRow = { id: string; application_id: string; candidate_id: string; job_no: string; management_no: number; standard: string; grade: string; certification_state: PrototypeApplicationRecord["certificationState"]; primary_owner_id: string | null };
 
 export function useLinkedRecordsState(revision = 0) {
   const [records, setRecords] = useState<PrototypeApplicationRecord[]>([]);
@@ -18,9 +18,20 @@ export function useLinkedRecordsState(revision = 0) {
     const load = async () => {
       try {
       const supabase = createClient();
-      const data = await readBoundedRows((from, to) => supabase.from("applications").select("*, candidates(id, name, name_en, birth_date, nationality, email, phone), jobs(id, job_no, management_no, standard, grade, certification_state, primary_owner_id)", { count: "exact" }).order("received_at", { ascending: false }).order("id", { ascending: true }).range(from, to), row => row?.id, () => cancelled);
+      const data = await readBoundedRows((from, to) => supabase.from("applications").select("*, candidates(id, name, name_en, birth_date, nationality, email, phone), jobs(id, application_id, candidate_id, job_no, management_no, standard, grade, certification_state, primary_owner_id)", { count: "exact" }).order("received_at", { ascending: false }).order("id", { ascending: true }).range(from, to), row => row?.id, () => cancelled);
       if (cancelled) return;
       if (!data) throw new Error("신청 조회 실패");
+      const linkedJobIds = new Set<string>();
+      for (const item of data) {
+        if (Array.isArray(item.candidates) && item.candidates.length !== 1) throw new Error("후보자 연결 확인 실패");
+        const candidate = Array.isArray(item.candidates) ? item.candidates[0] : item.candidates;
+        if (!candidate || typeof candidate.id !== "string" || !candidate.id.trim() || candidate.id !== item.candidate_id) throw new Error("후보자 연결 확인 실패");
+        if (!Array.isArray(item.jobs)) throw new Error("Job 연결 확인 실패");
+        for (const job of item.jobs) {
+          if (!job || typeof job.id !== "string" || !job.id.trim() || job.application_id !== item.id || job.candidate_id !== candidate.id || linkedJobIds.has(job.id)) throw new Error("Job 연결 확인 실패");
+          linkedJobIds.add(job.id);
+        }
+      }
       const applicationIds = data.map((item) => item.id);
       const workspaces = new Map<string, PrototypeApplicationRecord["workflow"]>();
       for (let start = 0; start < applicationIds.length; start += 100) {

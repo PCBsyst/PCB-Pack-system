@@ -5,9 +5,11 @@ import { recordMonthlyReportAccess } from "@/lib/server/report-access";
 import { privateDocumentResponse } from "@/lib/private-document-response";
 import { matchesReportMonth, matchesReportFilters, type ReportFilters } from "@/lib/report-filters";
 import { normalizeMonthlyReportRecords } from "@/lib/monthly-report-records";
+import { readBoundedRows } from "@/lib/bounded-row-reader";
 import { reportExportMetadata, reportApplicationTypeLabel, reportStateLabel, reportGroupLabel, serializeReportCsv } from "@/lib/report-export";
 
 const failure = (message: string, status: number) => privateDocumentResponse(Response.json({ error: message }, { status }));
+class ReportQueryLimitError extends Error {}
 export async function POST(request: Request) {
   try {
     const denied = await requireApiStaff();
@@ -38,14 +40,12 @@ export async function POST(request: Request) {
       || Object.keys(input.filters).some((key) => !filterKeys.includes(key as typeof filterKeys[number]))) return failure("조회 조건을 확인해 주세요.", 400);
     const filters = input.filters as ReportFilters;
     const client = await createClient();
-    const records: unknown[] = [];
-    for (let offset = 0; ; offset += 500) {
-      const result = await client.from("applications").select("id, received_at, business_area, partner_name_snapshot, application_type, jobs(id, job_no, standard, grade, certification_state, candidates(name), certification_records(certification_no, issue_date, state, history_state))").order("id").range(offset, offset + 499);
-      if (result.error || !Array.isArray(result.data)) return failure("보고서 자료를 조회하지 못했습니다.", 503);
-      records.push(...result.data);
-      if (records.length > 10000) return failure("대상 자료가 많아 상세 내보내기를 중단했습니다. 관리자에게 문의해 주세요.", 413);
-      if (result.data.length < 500) break;
-    }
+    const records = await readBoundedRows(async (from, to) => {
+      const result = await client.from("applications").select("id, received_at, business_area, partner_name_snapshot, application_type, jobs(id, job_no, standard, grade, certification_state, candidates(name), certification_records(certification_no, issue_date, state, history_state))", { count: "exact" }).order("id").range(from, to);
+      if (!result.error && typeof result.count === "number" && result.count > 10000) throw new ReportQueryLimitError();
+      return result;
+    }, row => row?.id, () => request.signal.aborted);
+    if (!records || request.signal.aborted) return failure("보고서 요청이 중단됐습니다. 다시 시도해 주세요.", 408);
     const selected = normalizeMonthlyReportRecords(records).filter((row) => matchesReportFilters(row, filters) && matchesReportMonth(row, input.month, input.dateBasis));
     if (!selected.length) return failure("선택한 조건에 해당하는 서버 자료가 없습니다. 화면 자료를 다시 조회해 주세요.", 409);
     const applications = [...new Set(selected.map((row) => row.applicationId))];
@@ -60,5 +60,8 @@ export async function POST(request: Request) {
     if (!await recordMonthlyReportAccess(applications, `CSV ${input.month} ${input.dateBasis} ${sha}`)) return failure("보고서 접근이력을 저장하지 못해 다운로드를 중단했습니다. 서버 설정과 개인정보 접근이력 기능을 확인해 주세요.", 503);
     return privateDocumentResponse(new Response(bytes, { headers: { "Content-Type": "text/csv;charset=utf-8", "Content-Disposition": `attachment; filename="monthly-report-${input.month}.csv"`,
       "X-Report-SHA256": sha, "X-Report-Byte-Size": String(bytes.byteLength), "X-Report-Row-Count": String(selected.length) } }));
-  } catch { return failure("보고서 생성 상태를 확인하지 못했습니다. 다시 시도해 주세요.", 503); }
+  } catch (error) {
+    if (error instanceof ReportQueryLimitError) return failure("대상 자료가 많아 상세 내보내기를 중단했습니다. 관리자에게 문의해 주세요.", 413);
+    return failure("보고서 생성 상태를 확인하지 못했습니다. 다시 시도해 주세요.", 503);
+  }
 }

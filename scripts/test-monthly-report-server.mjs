@@ -7,16 +7,17 @@ const load = async (file) => import(`data:text/javascript;base64,${Buffer.from(c
 const records = await load("../lib/monthly-report-records.ts");
 const filtersHelper = await load("../lib/report-filters.ts");
 const exportHelper = await load("../lib/report-export.ts");
+const bounded = await load("../lib/bounded-row-reader.ts");
 const { privateDocumentResponse } = await load("../lib/private-document-response.ts");
 const route = compile("../app/api/reports/monthly-csv/route.ts").replace(/^import .*;\r?$/gm, "").replace(/export /g, "");
 const application = { id: "application-1", received_at: "2026-09-01", business_area: "ISO", partner_name_snapshot: "가상파트너", application_type: "RENEWAL",
   jobs: [{ id: "job-1", job_no: "QMS260001", standard: "ISO 9001", grade: "A", certification_state: "ACTIVE", candidates: { name: '=HYPERLINK("bad")' }, certification_records: [{ history_state: "CURRENT", issue_date: "2026-10-01", certification_no: "TEST", state: "SUSPENDED" }] }] };
 const filters = { area: "전체", standard: "전체", partner: "전체", grade: "전체", applicationType: "전체", certificationState: "전체" };
 const input = { month: "2026-10", dateBasis: "ISSUED", filters };
-function fixture({ denied = null, data = [application], dbError = null, audit = true } = {}) {
+function fixture({ denied = null, data = [application], dbError = null, audit = true, pageQuery } = {}) {
   let queries = 0; const logs = [];
-  const query = { select() { return this; }, order() { return this; }, range: async () => { queries++; return { data, error: dbError }; } };
-  const deps = { createHash, requireApiStaff: async () => denied, createClient: async () => ({ from: () => query }), recordMonthlyReportAccess: async (...args) => { logs.push(args); return audit; }, privateDocumentResponse, ...records, ...filtersHelper, ...exportHelper };
+  const query = { select() { return this; }, order() { return this; }, range: async (from, to) => { queries++; return pageQuery ? pageQuery(from, to) : { data: Array.isArray(data) ? data.slice(from, to + 1) : data, count: Array.isArray(data) ? data.length : null, error: dbError }; } };
+  const deps = { createHash, requireApiStaff: async () => denied, createClient: async () => ({ from: () => query }), recordMonthlyReportAccess: async (...args) => { logs.push(args); return audit; }, privateDocumentResponse, ...records, ...filtersHelper, ...exportHelper, ...bounded };
   const POST = new Function(...Object.keys(deps), `${route}; return POST;`)(...Object.values(deps));
   return { POST, logs, queries: () => queries };
 }
@@ -45,4 +46,22 @@ assert.equal(records.selectCurrentReportCertification(null), undefined);
 assert.equal(records.selectCurrentReportCertification([{ history_state: "REPLACED" }]), undefined);
 assert.equal(records.selectCurrentReportCertification([{ history_state: "REPLACED" }, application.jobs[0].certification_records[0]]).certification_no, "TEST");
 for (const malformed of [[null], [{}], ["CURRENT"], [{ history_state: 42 }]]) assert.throws(() => records.selectCurrentReportCertification(malformed));
+const many = Array.from({ length: 501 }, (_, index) => ({ ...application, id: `app-${index}`, jobs: index === 0 ? application.jobs : [] }));
+f = fixture({ data: many }); response = await f.POST(request()); assert.equal(response.status, 200); assert.equal(f.queries(), 2); assert.equal(f.logs.length, 1);
+for (const pageQuery of [
+  () => ({ data: [application], count: 501, error: null }),
+  () => ({ data: [application], count: null, error: null }),
+  () => ({ data: [application, application], count: 2, error: null }),
+  (from, to) => ({ data: many.slice(from, to + 1), count: from ? 500 : 501, error: null }),
+]) {
+  f = fixture({ pageQuery }); response = await f.POST(request()); assert.equal(response.status, 503); assert.equal(f.logs.length, 0); assert.match(response.headers.get("Cache-Control"), /no-store/);
+}
+f = fixture({ pageQuery: () => ({ data: [], count: 10001, error: null }) }); response = await f.POST(request()); assert.equal(response.status, 413); assert.equal(f.logs.length, 0);
+const controller = new AbortController(); controller.abort();
+f = fixture(); response = await f.POST(new Request("https://example.com/api/reports/monthly-csv", { method: "POST", body: JSON.stringify(input), signal: controller.signal }));
+assert.equal(response.status, 408); assert.equal(f.queries(), 0); assert.equal(f.logs.length, 0);
+const during = new AbortController();
+f = fixture({ pageQuery: () => { during.abort(); return { data: [application], count: 1, error: null }; } });
+response = await f.POST(new Request("https://example.com/api/reports/monthly-csv", { method: "POST", body: JSON.stringify(input), signal: during.signal }));
+assert.equal(response.status, 408); assert.equal(f.queries(), 1); assert.equal(f.logs.length, 0);
 console.log("상세 보고서 실제 API: 서버 재조회·국문 CSV/수식 보호·파일 해시·권한/요청/대상 제한·접근이력 실패 시 미응답 통과 (DB/인증 모의)");

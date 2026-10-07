@@ -9,6 +9,7 @@ import { accreditationLabels, businessAreaLabels } from "@/data/workflow-data";
 import { prototypeApplicationStatus, prototypeWorkflowLabels, readPrototypeApplications, readPrototypeWorkflow, type PrototypeApplicationRecord } from "@/lib/prototype-storage";
 import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
+import { readBoundedRows } from "@/lib/bounded-row-reader";
 import { missingWorkflowItems } from "@/lib/workflow-completeness";
 import { DashboardPaymentQueue } from "@/components/dashboard-payment-queue";
 import { dashboardMetrics } from "@/lib/dashboard-metrics";
@@ -27,27 +28,23 @@ export default function DashboardPage() {
     setRecords([]);
     if (!hasEnvVars) { setRecords(readPrototypeApplications()); setLoadState("ready"); return; }
     const supabase = createClient();
-    void Promise.resolve(supabase.from("applications").select("*, candidates(id, name), jobs(id, job_no, management_no, standard, grade, primary_owner_id), application_workspaces(state)").order("received_at", { ascending: false }).order("id").range(0, 499)).then(async ({ data, error }) => {
+    void readBoundedRows((from, to) => supabase.from("applications").select("*, candidates(id, name), jobs(id, job_no, management_no, standard, grade, primary_owner_id), application_workspaces(state)", { count: "exact" }).order("received_at", { ascending: false }).order("id").range(from, to), row => row?.id, () => !active).then(async (data) => {
       if (!active) return;
-      if (error || !data) { setLoadState("error"); return; }
-      let allData = data;
-      if (data.length === 500) {
-        for (let offset = 500; ; offset += 500) {
-          const next = await supabase.from("applications").select("*, candidates(id, name), jobs(id, job_no, management_no, standard, grade, primary_owner_id), application_workspaces(state)").order("received_at", { ascending: false }).order("id").range(offset, offset + 499);
-          if (!active) return;
-          if (next.error) { setLoadState("error"); return; }
-          allData = allData.concat(next.data ?? []);
-          if ((next.data?.length ?? 0) < 500) break;
-        }
-      }
-      if (!data) return;
+      if (!data) { setLoadState("error"); return; }
+      const allData = data;
       const ownerIds = [...new Set(allData.flatMap((item) => ((Array.isArray(item.jobs) ? item.jobs : []) as DashboardJobRow[]).map((job) => job.primary_owner_id).filter((ownerId): ownerId is string => Boolean(ownerId))))];
-      const { data: profiles } = ownerIds.length ? await supabase.from("profiles").select("id, display_name").in("id", ownerIds) : { data: [] };
-      const ownerNames = new Map((profiles ?? []).map((profile) => [profile.id, profile.display_name]));
+      const ownerNames = new Map<string, string>();
+      for (let start = 0; start < ownerIds.length; start += 100) {
+        const ids = ownerIds.slice(start, start + 100);
+        const profiles = await readBoundedRows((from, to) => supabase.from("profiles").select("id, display_name", { count: "exact" }).in("id", ids).order("id").range(from, to), row => ids.includes(row?.id) ? row.id : undefined, () => !active, ids.length);
+        if (!active) return;
+        if (!profiles) throw new Error("담당자 조회 실패");
+        profiles.forEach(profile => ownerNames.set(profile.id, profile.display_name));
+      }
       const mapped: PrototypeApplicationRecord[] = allData.flatMap((item) => {
         const candidate = Array.isArray(item.candidates) ? item.candidates[0] : item.candidates;
         const workspace = Array.isArray(item.application_workspaces) ? item.application_workspaces[0] : item.application_workspaces;
-        const jobRows = (Array.isArray(item.jobs) ? item.jobs : []) as DashboardJobRow[];
+        const jobRows = (Array.isArray(item.jobs) ? [...item.jobs] : []) as DashboardJobRow[];
         // Job 미부여 접수 건도 신청 현황에 포함하되 실제 Job을 생성하지 않습니다.
         if (!jobRows.length) jobRows.push({ id: "", job_no: "Job 미부여", management_no: 0, standard: "분야 확인 중", grade: "미확정", primary_owner_id: null });
         return jobRows.map((job) => ({ id: item.id, candidateId: candidate?.id, jobId: job.id, applicationNo: item.application_no, receivedAt: item.received_at, candidateName: candidate?.name ?? "이름 미입력", businessArea: item.business_area, scheme: item.accreditation_scheme === "PJLA" ? "PJLA" : "IAS", accreditationTrack: item.accreditation_track, accreditationHidden: item.accreditation_hidden, applicationType: item.application_type, managementNo: job.management_no, jobNo: job.job_no, standard: job.standard, grade: job.grade, partnerCompany: item.partner_name_snapshot, primaryOwner: job.primary_owner_id ? ownerNames.get(job.primary_owner_id) ?? "담당자 미확인" : "담당자 미지정", status: "INTAKE_REVIEW", createdAt: item.created_at, workflow: workspace?.state ?? {} }));

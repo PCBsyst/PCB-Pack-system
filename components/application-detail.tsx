@@ -31,7 +31,8 @@ import { getCertificationNumber, getCertificationNumberPrefix } from "@/lib/cert
 import { defaultApplicability, profileKey, readStoredProfiles } from "@/lib/document-requirement-rules";
 import { addKoreanBusinessDays, nextKoreanBusinessDay } from "@/lib/business-days";
 import { jobs as allJobs } from "@/data/mock-data";
-import { readTrainingInstitutions, type TrainingInstitution } from "@/lib/training-institutions";
+import { readTrainingInstitutions, parseTrainingInstitutionRow, type TrainingInstitution } from "@/lib/training-institutions";
+import { readBoundedRows } from "@/lib/bounded-row-reader";
 import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
 import { SupabaseAuditTrail } from "@/components/supabase-audit-trail";
@@ -121,6 +122,9 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   latestDemo.current = demo;
   const [notice, setNotice] = useState("서류검토 탭에서 샘플 업무를 시작하세요.");
   const [trainingInstitutions, setTrainingInstitutions] = useState<TrainingInstitution[]>([]);
+  const [trainingLoading, setTrainingLoading] = useState(true);
+  const [trainingError, setTrainingError] = useState("");
+  const [trainingRevision, setTrainingRevision] = useState(0);
   const [hydrated, setHydrated] = useState(false);
   const [workspaceLoadError, setWorkspaceLoadError] = useState("");
   const [workspaceLoadRevision, setWorkspaceLoadRevision] = useState(0);
@@ -248,14 +252,23 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     if (requested && tabsBySlug[requested]) setActive(tabsBySlug[requested]);
   }, []);
   useEffect(() => {
-    setTrainingInstitutions(readTrainingInstitutions());
-    if (!hasEnvVars) return;
-    const supabase = createClient();
-    void supabase.from("training_institutions").select("*").order("name").then(({ data }) => {
-      if (!data) return;
-      setTrainingInstitutions(data.map((item) => ({ id: item.id, name: item.name, designationNo: item.designation_no, validFrom: item.valid_from, validUntil: item.valid_until, standards: item.standards ?? [], active: item.active })));
-    });
-  }, []);
+    let cancelled = false;
+    setTrainingInstitutions([]); setTrainingLoading(true); setTrainingError("");
+    const load = async () => {
+      try {
+        if (!hasEnvVars) { setTrainingInstitutions(readTrainingInstitutions()); return; }
+        const supabase = createClient();
+        const rows = await readBoundedRows((from, to) => supabase.from("training_institutions").select("*", { count: "exact" }).order("name").order("id").range(from, to), row => row?.id, () => cancelled);
+        if (cancelled) return;
+        if (!rows) throw new Error("조회 미확인");
+        setTrainingInstitutions(rows.map(parseTrainingInstitutionRow));
+      } catch {
+        if (!cancelled) { setTrainingInstitutions([]); setTrainingError("지정 연수기관 목록을 확인하지 못했습니다. 샘플로 대체하지 않습니다. 기존 교육·시험 기록은 유지되며 기관 선택 전에 다시 조회해 주세요."); }
+      } finally { if (!cancelled) setTrainingLoading(false); }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [trainingRevision]);
   useEffect(() => {
     if (!hasEnvVars || !hydrated) return;
     const supabase = createClient();
@@ -667,6 +680,11 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   });
 
   return <div className="space-y-5">
+    {active === "신청 개요" && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3 text-sm">
+      <span>{trainingLoading ? "지정 연수기관 조회 중 · 선택 목록 미확정" : trainingError || `지정 연수기관 ${trainingInstitutions.length}개 조회 완료 · 접수일 유효기간과 신청표준에 맞는 활성 기관만 선택할 수 있습니다.`}</span>
+      <Button variant="outline" disabled={trainingLoading} onClick={() => setTrainingRevision(value => value + 1)}><RotateCcw/>연수기관 다시 조회</Button>
+      {!trainingLoading && !trainingError && linkedJobs.some(job => { const schedule = demo.examSchedules[job.id]; return schedule.providerType === "PARTNER" && schedule.providerName && !trainingInstitutions.some(item => item.name === schedule.providerName && item.active && item.validFrom <= application.receivedAt && item.validUntil >= application.receivedAt && item.standards.includes(job.standard)); }) && <p className="w-full text-amber-700">기존 기록에 현재 선택 조건과 맞지 않는 연수기관이 있습니다. 과거 기록은 자동 변경하지 않으니 지정번호와 당시 유효기간을 확인해 주세요.</p>}
+    </div>}
     {usesSupabaseWorkspace && editLock === "CHECKING" && <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">편집 가능 여부를 확인하고 있습니다.</div>}
     {usesSupabaseWorkspace && editLock === "OWNED" && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"><strong>편집 가능</strong> · 현재 신청 건의 편집 권한을 확보했습니다. 작업 중에는 자동으로 연장됩니다.</div>}
     {usesSupabaseWorkspace && editLock === "READ_ONLY" && <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"><strong>조회 전용</strong> · {lockOwner}이(가) 현재 편집 중입니다. 해당 직원이 화면을 닫거나 15분 동안 갱신하지 않으면 편집할 수 있습니다.</div>}

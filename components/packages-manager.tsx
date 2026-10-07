@@ -12,7 +12,7 @@ import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
 import { corporateTemplateRegistry } from "@/lib/document-template-registry";
 import { packageListState, packageReceiptForJob, packageListLabels, type PackageListState } from "@/lib/package-list-status";
-import { parsePackageDocumentHistory, packageDocumentLanguageSummary, type PackageDocumentHistoryRow } from "@/lib/package-document-history";
+import { readPackageDocumentHistory, packageDocumentLanguageSummary, type PackageDocumentHistoryRow } from "@/lib/package-document-history";
 
 const controlClass = "h-9 rounded-md border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-blue-200";
 type PackageRow = PackageDocumentHistoryRow;
@@ -36,11 +36,9 @@ export function PackagesManager() {
     setDocumentNotice("기존 문서 이력을 조회하고 있습니다.");
     const load = async () => {
       try {
-        const { data, error, count } = await createClient().from("package_documents").select("job_id, document_type, language, format, generated_at", { count: "exact" }).in("job_id", jobIds);
+        const client = createClient();
+        const verified = await readPackageDocumentHistory(jobIds, (ids, from, to) => client.from("package_documents").select("id, job_id, document_type, language, format, generated_at", { count: "exact" }).in("job_id", ids).order("id", { ascending: true }).range(from, to), () => cancelled);
         if (cancelled) return;
-        if (error) throw new Error("문서 이력 조회 실패");
-        if (!Array.isArray(data) || !Number.isSafeInteger(count) || count !== data.length) throw new Error("문서 이력 조회 범위 확인 실패");
-        const verified = parsePackageDocumentHistory(data, jobIds);
         if (!verified) throw new Error("문서 이력 응답 확인 실패");
         setDocumentRows(verified); setDocumentNotice("");
       } catch { if (!cancelled) { setDocumentRows([]); setDocumentNotice("기존 문서 이력을 조회하지 못했습니다. 언어 필터·문서 수는 일부 정보만 반영될 수 있습니다."); } }

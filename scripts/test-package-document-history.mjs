@@ -6,7 +6,7 @@ const source = readFileSync("lib/package-document-history.ts", "utf8");
 const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
 const runtime = vm.createContext({ exports: {} }); vm.runInContext(js, runtime);
 const { parsePackageDocumentHistory: parse, packageDocumentLanguageSummary: summary } = runtime.exports;
-const row = { job_id: "job", document_type: "APPLICATION_REVIEW", language: "KR", format: "WORD", generated_at: null };
+const row = { id: "row", job_id: "job", document_type: "APPLICATION_REVIEW", language: "KR", format: "WORD", generated_at: null };
 assert.equal(parse([row], ["job"])[0], row);
 assert.equal(parse([], ["job"]).length, 0);
 assert.equal(parse([{ ...row, document_type: "LEGACY_CERTIFICATE", format: "ZIP" }], ["job"]).length, 1);
@@ -25,9 +25,9 @@ const effectJS = ts.transpileModule(`const effect = ${effect.getText(ast)}; glob
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
 async function load(response, close = false) {
   const rows = [], notices = []; let resolve;
-  const sandbox = vm.createContext({ records: [{ jobId: "job" }], hasEnvVars: true, parsePackageDocumentHistory: parse,
+  const sandbox = vm.createContext({ records: [{ jobId: "job" }], hasEnvVars: true, readPackageDocumentHistory: runtime.exports.readPackageDocumentHistory,
     setDocumentRows: value => rows.push(value), setDocumentNotice: value => notices.push(value),
-    createClient: () => ({ from: () => ({ select: () => ({ in: () => new Promise(done => { resolve = done; }) }) }) }),
+    createClient: () => ({ from: () => ({ select: () => ({ in: () => ({ order: () => ({ range: () => new Promise(done => { resolve = done; }) }) }) }) }) }),
   });
   vm.runInContext(effectJS, sandbox); const cleanup = sandbox.start();
   if (close) cleanup(); resolve(response); await flush(); return { rows, notices };
@@ -38,4 +38,20 @@ for (const response of [{ data: null, count: 0, error: null }, { data: [row], co
 }
 assert.equal((await load({ data: [row], count: 1, error: null }, true)).rows.length, 1);
 assert.match(ui, /languageSummary\(documents, !documentNotice && !recordsNotice\)/);
+const read = runtime.exports.readPackageDocumentHistory;
+const many = Array.from({ length: 1201 }, (_, index) => ({ ...row, id: `row-${index}` }));
+const pages = [];
+const fetched = await read(["job", "job"], async (ids, from, to) => { pages.push([ids.length, from, to]); return { data: many.slice(from, to + 1), count: many.length, error: null }; }, () => false);
+assert.equal(fetched.length, 1201);
+assert.deepEqual(pages, [[1, 0, 499], [1, 500, 999], [1, 1000, 1499]]);
+const chunks = [];
+assert.equal((await read(Array.from({ length: 101 }, (_, index) => `job-${index}`), async ids => { chunks.push(ids.length); return { data: [], count: 0, error: null }; }, () => false)).length, 0);
+assert.deepEqual(chunks, [100, 1]);
+for (const fetch of [
+  async () => ({ data: [row], count: 501, error: null }),
+  async (_, from) => ({ data: from ? [row] : Array.from({ length: 500 }, (_, index) => ({ ...row, id: `id-${index}` })), count: from ? 502 : 501, error: null }),
+  async () => ({ data: [row, row], count: 2, error: null }),
+  async () => ({ data: [], count: 10001, error: null }),
+]) await assert.rejects(() => read(["job"], fetch, () => false));
+assert.equal(await read(["job"], async () => { throw new Error("Must not fetch"); }, () => true), null);
 console.log("패키지 목록 문서 이력: 조회 실패/빈 기록 구분·Job 범위·잘못된 응답·기존 ZIP/양식 허용·화면 종료 보호 검사 통과 (DB/브라우저 모의)");

@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
-import { documentHistoryLabel, filterPackageHistory, summarizeHistoryDocuments, type HistoryDocument } from "@/lib/package-history-summary";
+import { documentHistoryLabel, filterPackageHistory, summarizeHistoryDocuments, parsePackageHistoryRows, type PackageHistoryRow } from "@/lib/package-history-summary";
 
-type ReceiptRow = { id: string; actor_id: string; occurred_at: string; file_count: number; complete: boolean; sha256: string; byte_size: number; documents: HistoryDocument[] };
+type ReceiptRow = PackageHistoryRow;
 
 export function PackageGenerationHistory({ applicationId }: { applicationId: string }) {
   const [rows, setRows] = useState<ReceiptRow[]>([]);
@@ -21,6 +21,7 @@ export function PackageGenerationHistory({ applicationId }: { applicationId: str
     setRows([]); setNames({}); setNotice("서버 생성기록 확인 중...");
     const load = async () => {
       const current = ++sequence;
+      setRows([]); setNames({});
       setNotice("서버 생성기록 확인 중...");
       try {
       if (!hasEnvVars) { setNotice("로컬 미리보기: 서버 생성기록은 DB 연결 후 사용할 수 있습니다."); return; }
@@ -28,11 +29,13 @@ export function PackageGenerationHistory({ applicationId }: { applicationId: str
       const { data, error } = await client.from("package_generation_receipts").select("id, actor_id, occurred_at, file_count, complete, sha256, byte_size, documents").eq("application_id", applicationId).order("occurred_at", { ascending: false }).limit(30);
       if (cancelled || current !== sequence) return;
       if (error) { setRows([]); setNotice("서버 생성기록 DB 적용 또는 연결 확인 대기입니다. 화면의 생성 표시를 서버 기록으로 간주하지 않습니다."); return; }
-      setRows((data ?? []) as ReceiptRow[]); setNotice("");
-      const ids = [...new Set((data ?? []).map((row) => row.actor_id))];
+      const verified = parsePackageHistoryRows(data);
+      if (!verified) { setNotice("생성기록의 문서 구성·파일 수·검증값을 확인하지 못했습니다. 정상 생성기록으로 표시하지 않습니다. 다시 확인하거나 관리자에게 문의해 주세요."); return; }
+      setRows(verified); setNotice("");
+      const ids = [...new Set(verified.map((row) => row.actor_id))];
       if (ids.length) {
-        const { data: profiles } = await client.from("profiles").select("id, display_name").in("id", ids);
-        if (!cancelled && current === sequence) setNames(Object.fromEntries((profiles ?? []).map((profile) => [profile.id, profile.display_name])));
+        const { data: profiles, error: profileError } = await client.from("profiles").select("id, display_name").in("id", ids);
+        if (!cancelled && current === sequence && !profileError) setNames(Object.fromEntries((profiles ?? []).filter((profile) => ids.includes(profile.id) && typeof profile.display_name === "string").map((profile) => [profile.id, profile.display_name])));
       }
       } catch { if (!cancelled && current === sequence) { setRows([]); setNotice("서버 기록 조회에 실패했습니다. 다시 확인해 주세요."); } }
     };

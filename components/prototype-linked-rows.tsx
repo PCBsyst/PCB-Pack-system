@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { prototypeCandidateId, prototypeJobId, prototypeWorkflowLabels, readPrototypeApplications, readPrototypeWorkflow, type PrototypeApplicationRecord } from "@/lib/prototype-storage";
 import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
+import { readBoundedRows } from "@/lib/bounded-row-reader";
 type LinkedJobRow = { id: string; job_no: string; management_no: number; standard: string; grade: string; certification_state: PrototypeApplicationRecord["certificationState"]; primary_owner_id: string | null };
 
 export function useLinkedRecordsState(revision = 0) {
@@ -17,17 +18,30 @@ export function useLinkedRecordsState(revision = 0) {
     const load = async () => {
       try {
       const supabase = createClient();
-      const { data, error } = await supabase.from("applications").select("*, candidates(id, name, name_en, birth_date, nationality, email, phone), jobs(id, job_no, management_no, standard, grade, certification_state, primary_owner_id)").order("received_at", { ascending: false });
-      if (error || !data) throw new Error("신청 조회 실패");
+      const data = await readBoundedRows((from, to) => supabase.from("applications").select("*, candidates(id, name, name_en, birth_date, nationality, email, phone), jobs(id, job_no, management_no, standard, grade, certification_state, primary_owner_id)", { count: "exact" }).order("received_at", { ascending: false }).order("id", { ascending: true }).range(from, to), row => row?.id, () => cancelled);
       if (cancelled) return;
+      if (!data) throw new Error("신청 조회 실패");
       const applicationIds = data.map((item) => item.id);
-      const { data: workspaceRows, error: workspaceError } = applicationIds.length ? await supabase.from("application_workspaces").select("application_id, state").in("application_id", applicationIds) : { data: [], error: null };
-      if (workspaceError) throw new Error("업무기록 조회 실패");
-      if (cancelled) return;
-      const workspaces = new Map((workspaceRows ?? []).map((workspace) => [workspace.application_id, workspace.state]));
+      const workspaces = new Map<string, PrototypeApplicationRecord["workflow"]>();
+      for (let start = 0; start < applicationIds.length; start += 100) {
+        const ids = applicationIds.slice(start, start + 100);
+        const workspaceRows = await readBoundedRows((from, to) => supabase.from("application_workspaces").select("application_id, state", { count: "exact" }).in("application_id", ids).order("application_id", { ascending: true }).range(from, to), row => ids.includes(row?.application_id) ? row.application_id : undefined, () => cancelled, ids.length);
+        if (cancelled) return;
+        if (!workspaceRows) throw new Error("업무기록 조회 실패");
+        workspaceRows.forEach(workspace => {
+          if (!workspace.state || typeof workspace.state !== "object" || Array.isArray(workspace.state)) throw new Error("업무기록 구성 확인 실패");
+          workspaces.set(workspace.application_id, workspace.state as PrototypeApplicationRecord["workflow"]);
+        });
+      }
       const ownerIds = [...new Set(data.flatMap((item) => ((Array.isArray(item.jobs) ? item.jobs : []) as LinkedJobRow[]).map((job) => job.primary_owner_id).filter((ownerId): ownerId is string => Boolean(ownerId))))];
-      const { data: profiles } = ownerIds.length ? await supabase.from("profiles").select("id, display_name").in("id", ownerIds) : { data: [] };
-      const ownerNames = new Map((profiles ?? []).map((profile) => [profile.id, profile.display_name]));
+      const ownerNames = new Map<string, string>();
+      for (let start = 0; start < ownerIds.length; start += 100) {
+        const ids = ownerIds.slice(start, start + 100);
+        const profiles = await readBoundedRows((from, to) => supabase.from("profiles").select("id, display_name", { count: "exact" }).in("id", ids).order("id", { ascending: true }).range(from, to), row => ids.includes(row?.id) ? row.id : undefined, () => cancelled, ids.length);
+        if (cancelled) return;
+        if (!profiles) throw new Error("담당자 조회 실패");
+        profiles.forEach(profile => ownerNames.set(profile.id, profile.display_name));
+      }
       const mapped: PrototypeApplicationRecord[] = data.flatMap((item) => {
         const candidate = Array.isArray(item.candidates) ? item.candidates[0] : item.candidates;
         const jobRows = (Array.isArray(item.jobs) ? item.jobs : []) as LinkedJobRow[];

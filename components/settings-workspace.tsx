@@ -9,6 +9,7 @@ import { DocumentRuleSettings } from "@/components/document-rule-settings";
 import { DocumentTemplateManager } from "@/components/document-template-manager";
 import { FeatureControlSettings } from "@/components/feature-control-settings";
 import { OperationsReadiness } from "@/components/operations-readiness";
+import { StorageBackupOverview } from "@/components/storage-backup-overview";
 import { AppearanceSettings } from "@/components/appearance-settings";
 import { cn, hasEnvVars } from "@/lib/utils";
 
@@ -55,6 +56,7 @@ export function SettingsWorkspace() {
       <OperationModeSettings />
       <FeatureControlSettings />
       <MfaPolicySettings />
+      <StorageBackupOverview sharedConfigured={Boolean(hasEnvVars)}/>
       {category === "security" && <OperationsReadiness />}
       <Link href="/security/access-logs" className="flex items-center gap-4 rounded-xl border border-blue-100 bg-white p-6 shadow-sm hover:border-blue-300"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-800"><ShieldCheck className="h-5 w-5"/></span><span className="flex-1"><span className="block font-semibold">개인정보 접근이력</span><span className="mt-1 block text-sm text-slate-500">후보자 상세 조회 및 Word·ZIP 생성 응답 이력을 확인합니다.</span></span><ArrowRight className="h-5 w-5 text-slate-400"/></Link>
 <section className="rounded-xl border bg-white p-6"><h3 className="font-semibold">현재 보안 적용 범위</h3><p className="mt-3 text-sm leading-7 text-slate-600">계정 승인·활성상태 검사와 최고관리자 권한 분리를 적용합니다. 접근이력은 현재 DB 후보자 상세 조회와 서버 문서 생성 경로에 연결되어 있습니다. MFA 요구 여부는 아래 최고관리자 설정에서 변경하며 DB 정책 적용이 필요합니다. 전체 화면 조회 추적, 신뢰 기기, 자동백업과 운영 보안 검증은 후속 항목입니다.</p><p className="mt-3 text-xs text-slate-500">보안 기능을 단순 표시만으로 적용 완료로 판단하지 않습니다.</p></section>

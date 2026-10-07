@@ -10,10 +10,11 @@ import { hasEnvVars } from "@/lib/utils";
 import { readBoundedRows } from "@/lib/bounded-row-reader";
 import { reconcileJobCertificate, reconciliationLabels, type RegistryCertificate } from "@/lib/job-certificate-reconciliation";
 import { useLinkedRecordsState } from "@/components/prototype-linked-rows";
-import { certificationStateLabels, getCandidate, getCurrentCycle, jobs, statusLabels } from "@/data/mock-data";
+import { certificationStateLabels, getCandidate, getCurrentCycle, jobs as sampleJobs, statusLabels } from "@/data/mock-data";
 import { prototypeJobId, prototypeWorkflowLabels, readPrototypeWorkflow } from "@/lib/prototype-storage";
 
 const controlClass = "h-9 rounded-md border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-blue-200";
+const jobs = hasEnvVars ? [] : sampleJobs;
 
 export function JobsTable() {
   const [revision, setRevision] = useState(0);

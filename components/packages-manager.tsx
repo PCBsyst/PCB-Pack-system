@@ -6,7 +6,7 @@ import { FileArchive, Files, Languages, RotateCcw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLinkedRecordsState } from "@/components/prototype-linked-rows";
 import { getCandidate, getJob } from "@/data/mock-data";
-import { packageDocuments } from "@/data/workflow-data";
+import { packageDocuments as samplePackageDocuments } from "@/data/workflow-data";
 import { prototypeJobId, prototypeWorkflowLabels, readPrototypeWorkflow } from "@/lib/prototype-storage";
 import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
@@ -15,6 +15,7 @@ import { packageListState, packageReceiptForJob, packageListLabels, type Package
 import { readPackageDocumentHistory, packageDocumentLanguageSummary, type PackageDocumentHistoryRow } from "@/lib/package-document-history";
 
 const controlClass = "h-9 rounded-md border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-blue-200";
+const packageDocuments = hasEnvVars ? [] : samplePackageDocuments;
 type PackageRow = PackageDocumentHistoryRow;
 type ActiveTemplateRow = { document_type: string; language: "KR" | "EN"; version: string; original_file_name: string; created_at: string };
 type PackageState = PackageListState;

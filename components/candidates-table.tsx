@@ -9,10 +9,12 @@ import { Button } from "@/components/ui/button";
 import { candidateRecordSummary } from "@/lib/candidate-list-summary";
 import { readBoundedRows } from "@/lib/bounded-row-reader";
 import { useLinkedRecordsState } from "@/components/prototype-linked-rows";
-import { candidates, certificationStateLabels, jobs } from "@/data/mock-data";
+import { candidates as sampleCandidates, certificationStateLabels, jobs as sampleJobs } from "@/data/mock-data";
 import { prototypeCandidateId, prototypeJobId, type PrototypeApplicationRecord } from "@/lib/prototype-storage";
 
 const controlClass = "h-9 rounded-md border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-blue-200";
+const candidates = hasEnvVars ? [] : sampleCandidates;
+const jobs = hasEnvVars ? [] : sampleJobs;
 type CandidateGroup = { id: string; name: string; nameEn: string; phone: string; email: string; nationality: string; records: PrototypeApplicationRecord[] };
 
 export function CandidatesTable() {

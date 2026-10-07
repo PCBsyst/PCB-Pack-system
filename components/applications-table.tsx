@@ -5,14 +5,18 @@ import { useMemo, useState } from "react";
 import { ArrowUpDown, FolderOpen, RotateCcw, Search } from "lucide-react";
 import { ApplicationStatusBadge } from "@/components/application-status-badge";
 import { Button } from "@/components/ui/button";
-import { getCandidate, jobs } from "@/data/mock-data";
-import { accreditationLabels, applicationStatusLabels, applications, businessAreaLabels } from "@/data/workflow-data";
+import { getCandidate, jobs as sampleJobs } from "@/data/mock-data";
+import { accreditationLabels, applicationStatusLabels, applications as sampleApplications, businessAreaLabels } from "@/data/workflow-data";
+import { hasEnvVars } from "@/lib/utils";
 import { prototypeApplicationStatus, prototypeCandidateId, prototypeJobId, readPrototypeWorkflow } from "@/lib/prototype-storage";
 import { useLinkedRecordsState } from "@/components/prototype-linked-rows";
 import { groupApplicationRecords, sortApplicationGroups, type ApplicationListSort } from "@/lib/application-list-groups";
 
 
 const controlClass = "h-9 rounded-md border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-blue-200";
+// Built-in examples are for local previews only; never use them as a DB-error fallback.
+const jobs = hasEnvVars ? [] : sampleJobs;
+const applications = hasEnvVars ? [] : sampleApplications;
 type SortKey = ApplicationListSort;
 
 

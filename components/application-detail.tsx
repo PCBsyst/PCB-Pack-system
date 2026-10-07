@@ -618,7 +618,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     { key: "decisionDate", label: "패널 심의일", value: demo.decisionDate, type: "date" },
     { key: "finalApprovalDate", label: "최종 승인일", value: demo.finalApprovalDate, type: "date" },
     ...linkedJobs.flatMap((job) => [
-      { key: `certificateNo:${job.id}`, label: `${job.jobNo} · 인증번호`, value: demo.certificates[job.id]?.certificationNo ?? "" },
+      { key: `certificationNo:${job.id}`, label: `${job.jobNo} · 인증번호`, value: demo.certificates[job.id]?.certificationNo ?? "" },
       { key: `expiryDate:${job.id}`, label: `${job.jobNo} · 만료일`, value: demo.certificates[job.id]?.expiryDate ?? "", type: "date" },
       { key: `draftIssuedAt:${job.id}`, label: `${job.jobNo} · 초안 발행일`, value: demo.certificates[job.id]?.draftIssuedAt ?? "", type: "date" },
       { key: `originalSentAt:${job.id}`, label: `${job.jobNo} · 원본 송부일`, value: demo.certificates[job.id]?.originalSentAt ?? "", type: "date" },
@@ -626,21 +626,35 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     ]),
   ];
   const selectedCorrection = correctionOptions.find((item) => item.key === correctionTarget) ?? correctionOptions[0];
-  const applyCorrection = () => {
-    const after = correctionValue.trim();
+  const applyCorrection = () => runFormalStep(async () => {
+    let after = correctionValue.trim();
     const before = selectedCorrection.value ?? "";
+    if (!correctionOptions.some((item) => item.key === correctionTarget)) { setNotice("정정 대상을 다시 선택해 주세요."); return; }
     if (!after || !correctionReason.trim()) { setNotice("정정값과 정정 사유를 모두 입력해 주세요."); return; }
+    if (correctionTarget === "review.result" && !["적합", "보완필요", "부적합"].includes(after) || correctionTarget === "review.verificationResult" && !["확인", "재검토요청"].includes(after)) { setNotice("해당 검토 항목의 선택 가능한 결과를 입력해 주세요."); return; }
+    if (selectedCorrection.type === "date") {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(after) || !Number.isFinite(Date.parse(after)) || new Date(after).toISOString().slice(0, 10) !== after) { setNotice("유효한 날짜를 입력해 주세요."); return; }
+      after = nextKoreanBusinessDay(after);
+    }
     if (after === before) { setNotice("변경 전과 다른 값을 입력해 주세요."); return; }
+    let actor = "로컬 테스트 사용자";
+    if (usesSupabaseWorkspace) {
+      const supabase = createClient();
+      const { data, error } = await supabase.auth.getUser();
+      if (error || !data.user) { setNotice("정정 작업자 확인에 실패했습니다. 다시 로그인해 주세요."); return; }
+      actor = data.user.id;
+    }
+    if (!downloadMounted.current || !saveAccess.current.canEdit || formalSnapshot.current !== JSON.stringify(latestDemo.current)) { setNotice("편집 권한 또는 입력값이 변경되어 정정을 중단했습니다."); return; }
     setDemo((current) => {
       let next = applyCorrectionValue(current, correctionTarget, after);
       const jobId = correctionTarget.includes(":") ? correctionTarget.split(":")[1] : "";
-      next = { ...next, dateAuditLogs: [...next.dateAuditLogs, createAuditLog("정정", jobId, selectedCorrection.label, before, after, correctionReason.trim(), application.primaryOwner)] };
+      next = { ...next, generated: false, packageGeneration: undefined, dateAuditLogs: [...next.dateAuditLogs, createAuditLog("정정", jobId, selectedCorrection.label, before, after, correctionReason.trim(), actor)] };
       return next;
     });
     setCorrectionValue("");
     setCorrectionReason("");
-    setNotice(`${selectedCorrection.label}을(를) 정정하고 변경이력을 기록했습니다.`);
-  };
+    setNotice(`${selectedCorrection.label}의 업무 입력값에 정정을 반영했습니다. 저장 상태를 확인하고 패키지를 다시 생성해 주세요. 정식 업무 테이블은 자동 변경하지 않습니다.`);
+  });
 
   return <div className="space-y-5">
     {usesSupabaseWorkspace && editLock === "CHECKING" && <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">편집 가능 여부를 확인하고 있습니다.</div>}
@@ -731,10 +745,10 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     </Section>}
 
     {active === "처리이력" && <div className="space-y-5">
-      <Section title="업무정보 정정" description="완료된 업무정보를 수정할 때 변경 전·후 값과 사유를 함께 보존합니다.">
+      <Section title="업무 입력 정정" description="업무 입력값과 패키지용 값을 정정하고 변경 전·후 값 및 사유를 보존합니다. 확정된 검토·청구·입금·심의·인증 DB 기록은 자동 변경하지 않습니다. 정정 후 공유 저장 상태를 확인하고 패키지를 다시 생성해 주세요.">
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p className="font-semibold">변경 불가 기준값</p><p className="mt-1">인증서 발행일은 확정 후 정정 대상에서 제외됩니다. 변경이 필요한 경우 신규 회차 또는 별도 승인 절차로 처리합니다.</p></div>
         <div className="mt-5 grid gap-4 lg:grid-cols-2"><Field label="정정 항목"><select className={controlClass} value={correctionTarget} onChange={(event) => { const target = event.target.value; setCorrectionTarget(target); setCorrectionValue(""); }}>{correctionOptions.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></Field><Field label="현재 값"><input className={`${controlClass} bg-slate-50`} readOnly value={selectedCorrection.value ?? ""}/></Field><Field label="정정 후 값"><input type={selectedCorrection.type ?? "text"} className={controlClass} value={correctionValue} onChange={(event) => setCorrectionValue(event.target.value)} placeholder="변경할 값을 입력"/></Field><Field label="정정 사유"><input className={controlClass} value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} placeholder="필수 입력"/></Field></div>
-        <div className="mt-5 flex justify-end"><Button disabled={!correctionValue.trim() || !correctionReason.trim()} onClick={applyCorrection}><Save/>정정 적용 및 이력 저장</Button></div>
+        <div className="mt-5 flex justify-end"><Button disabled={!correctionValue.trim() || !correctionReason.trim()} onClick={applyCorrection}><Save/>정정 입력 반영</Button></div>
       </Section>
       <Section title="처리·정정 이력" description="업무 단계 진행과 핵심정보 정정 내역을 시간순으로 추적합니다.">
         {demo.dateAuditLogs.length === 0 ? <div className="py-10 text-center text-sm text-slate-500">아직 기록된 처리이력이 없습니다.</div> : <div className="relative ml-2 border-l border-slate-200 pl-6">{demo.dateAuditLogs.slice().reverse().map((log) => <div key={log.id} className="relative pb-6 last:pb-0"><span className={`absolute -left-[31px] top-1 h-3 w-3 rounded-full ring-4 ring-white ${log.category === "정정" ? "bg-amber-500" : "bg-blue-700"}`}/><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${log.category === "정정" ? "bg-amber-100 text-amber-900" : "bg-blue-50 text-blue-800"}`}>{log.category}</span><p className="font-semibold">{log.field}</p>{log.jobId && <span className="text-xs text-slate-500">{linkedJobs.find((job) => job.id === log.jobId)?.jobNo}</span>}</div><p className="mt-2 text-sm"><span className="text-slate-500">변경 전 </span>{log.before || "미입력"}<span className="mx-2 text-slate-300">→</span><span className="text-slate-500">변경 후 </span>{log.after || "미입력"}</p><p className="mt-1 text-sm text-slate-700">{log.reason}</p><p className="mt-1 text-xs text-slate-500">{log.actor} · {log.occurredAt}</p></div>)}</div>}
@@ -799,7 +813,7 @@ function applyCorrectionValue(current: DemoState, key: string, value: string): D
   if (key === "invoiceNo") return { ...current, invoiceNo: value };
   if (key === "invoiceIssuedAt" || key === "paymentConfirmedAt" || key === "decisionDate" || key === "finalApprovalDate") return { ...current, [key]: nextKoreanBusinessDay(value) };
   const [field, jobId] = key.split(":");
-  if (!jobId || !current.certificates[jobId]) return current;
+  if (!jobId || !current.certificates[jobId] || !["certificationNo", "expiryDate", "draftIssuedAt", "originalSentAt", "trackingNumber"].includes(field)) return current;
   const adjusted = ["expiryDate", "draftIssuedAt", "originalSentAt"].includes(field) ? nextKoreanBusinessDay(value) : value;
   return { ...current, certificates: { ...current.certificates, [jobId]: { ...current.certificates[jobId], [field]: adjusted } } };
 }

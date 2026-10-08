@@ -46,6 +46,18 @@ for (const [route, template] of [
   const bytes = fs.readFileSync(new URL(`../templates/${template}`, import.meta.url)).toString("base64");
   deps["@/lib/server/document-template-loader"] = moduleUrl(`export async function loadDocumentTemplate(){return {bytes:Buffer.from('${bytes}','base64')};} export function templateLoadErrorResponse(){return new Response(null,{status:503});}`);
   const POST = await loadRoute(route);
+  // New catalog fields must flow into all three real DOCX generators without a hard-coded standard list.
+  const expandedJob = { ...job, jobNo: "ENMS260099", standard: "ISO 50001", currentGrade: "검증심사원" };
+  const expandedContext = { ...context, jobs: [expandedJob], certificates: { j1: { ...context.certificates.j1, certificationNo: "26850099" } } };
+  const expandedPOST = await loadRoute(route, { "@/lib/server/document-request-validation": moduleUrl(`export async function readValidatedDocumentRequest(request, language){return {ok:true,input:{context:${JSON.stringify(expandedContext)},job:${JSON.stringify(expandedJob)},language:(await request.json()).language||language}};}`) });
+  for (const language of ["KR", "EN"]) {
+    const response = await expandedPOST(request(language));
+    assert.equal(response.status, 200, `${route}/${language}: 신규 분야`);
+    const xml = new PizZip(await response.arrayBuffer()).file("word/document.xml").asText();
+    assert.ok(xml.includes(expandedJob.standard), `${route}: 신규 표준명 전달`);
+    assert.ok(xml.includes(expandedJob.jobNo), `${route}: 신규 Job 번호 전달`);
+    assert.ok(!xml.includes("{{"), `${route}: 미치환 항목 없음`);
+  }
   const incomplete = new PizZip(Buffer.from(bytes, "base64"));
   incomplete.file("word/document.xml", incomplete.file("word/document.xml").asText().replaceAll("{{candidateName}}", ""));
   const incompleteBytes = incomplete.generate({ type: "nodebuffer" }).toString("base64");

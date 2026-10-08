@@ -17,6 +17,7 @@ import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
 import { readStoredPartners, type PartnerItem } from "@/components/partners-manager";
 import { useCertificationFields } from "@/components/use-certification-fields";
+import { isAllocatedNumber } from "@/lib/allocated-number-validation";
 
 type CandidateOption = { id: string; name: string; name_en: string | null; birth_date: string | null; nationality: string | null; email: string | null; phone: string | null };
 type JobDraft = { id: string; standard: string; grade: string; previousJobId: string };
@@ -155,8 +156,8 @@ export function NewApplicationForm() {
           if (!rule?.verified || !rule.jobPrefix) throw new Error(`${records[index].standard}의 Job No. 규칙이 확정되지 않았습니다.`);
           const { data: allocatedJobNo, error: allocationError } = await supabase.rpc("allocate_job_number", { p_job_prefix: rule.jobPrefix, p_received_at: receivedAt });
           if (allocationError) throw allocationError;
-          if (!allocatedJobNo) throw new Error(`${records[index].standard} Job No.를 확보하지 못했습니다.`);
-          records[index] = { ...records[index], jobNo: String(allocatedJobNo) };
+          if (!isAllocatedNumber(allocatedJobNo, `${rule.jobPrefix}${receivedAt.slice(2, 4)}`)) throw new Error(`${records[index].standard} Job No. 응답이 접수연도·접두어·네 자리 순번 규칙과 일치하지 않습니다. 신청 저장 전에 번호를 확인해 주세요.`);
+          records[index] = { ...records[index], jobNo: allocatedJobNo };
         }
         const first = records[0];
         const { data, error } = await supabase.rpc("create_application_bundle_v2", { existing_candidate_id: candidateMode === "EXISTING" ? existingCandidateId : null, candidate_name: first.candidateName, candidate_name_en: first.candidateNameEn || "", candidate_birth_date: first.candidateBirthDate || null, candidate_nationality: first.candidateNationality || "", candidate_email: first.candidateEmail || "", candidate_phone: first.candidatePhone || "", application_no: first.applicationNo, received_at: first.receivedAt, business_area: first.businessArea, accreditation_scheme: first.scheme ?? "IAS", accreditation_track: first.accreditationTrack, accreditation_hidden: first.accreditationHidden, application_type: first.applicationType, partner_name: first.partnerCompany, management_no: first.managementNo, job_no: first.jobNo, standard: first.standard, grade: first.grade });

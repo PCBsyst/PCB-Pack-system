@@ -29,6 +29,7 @@ import { Field, controlClass, textareaClass } from "@/components/form-fields";
 import { buildDocuments, deliveryDocumentRows, downloadApplicationReviewDocx as downloadApplicationReviewFile, downloadCorporatePackageZip as downloadCorporatePackageFile, downloadDecisionReportDocx as downloadDecisionReportFile, downloadDeliveryConfirmationDocx as downloadDeliveryConfirmationFile, printAsPdf, type AssessmentResult, type DeliveryDocumentKey, type DemoAssessment, type DemoCertificate, type DemoDecision, type DemoDeliveryDocuments, type DemoEnglishText, type DemoPanelMember, type DemoReview, type DocumentApplicability, type DocumentLanguage } from "@/lib/prototype-package";
 import { getCertificationNumber, getCertificationNumberPrefix } from "@/lib/certification-number";
 import { useCertificationFields } from "@/components/use-certification-fields";
+import { isAllocatedNumber } from "@/lib/allocated-number-validation";
 import { defaultApplicability, profileKey, readStoredProfiles } from "@/lib/document-requirement-rules";
 import { addKoreanBusinessDays, nextKoreanBusinessDay } from "@/lib/business-days";
 import { jobs as allJobs } from "@/data/mock-data";
@@ -364,9 +365,10 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     if (!prefix) { setNotice(`${job.standard} · ${job.currentGrade}의 인증번호 규칙이 확정되지 않았습니다.`); return; }
     const scope = `${area}:${scheme}:${track}:${job.standard}:${job.currentGrade}:${issueDate.slice(0, 4)}`;
     const { data, error } = await createClient().rpc("allocate_certification_number", { p_number_prefix: prefix, p_sequence_scope: scope });
-    if (error || !data) { setNotice(`인증번호를 부여하지 못했습니다: ${error?.message ?? "번호 없음"}`); return; }
-    changeCertificate(job.id, "certificationNo", String(data), dateRules, setDemo);
-    setNotice(`${job.jobNo} 인증번호 ${String(data)}을(를) 확정했습니다. 예약된 번호는 재사용되지 않습니다.`);
+    if (error) { setNotice("인증번호 부여에 실패했습니다. 연결·권한과 번호 예약 상태를 확인해 주세요."); return; }
+    if (!isAllocatedNumber(data, prefix)) { setNotice("인증번호 응답이 분야·등급·발행연도·네 자리 순번 규칙과 일치하지 않아 입력에 적용하지 않았습니다. 번호 예약 상태를 확인해 주세요."); return; }
+    changeCertificate(job.id, "certificationNo", data, dateRules, setDemo);
+    setNotice(`${job.jobNo} 인증번호 ${data}을(를) 확정했습니다. 예약된 번호는 재사용되지 않습니다.`);
   };
 
   const finishReview = () => runFormalStep(async () => {

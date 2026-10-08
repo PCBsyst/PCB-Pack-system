@@ -29,5 +29,5 @@ export function getCertificationNumber(standard: string, grade: string, issueDat
     .filter(Number.isFinite)
     .reduce((maximum, sequence) => Math.max(maximum, sequence), 0);
 
-  return `${year}${standardCode}${gradeCode}${String(lastSequence + 1).padStart(4, "0")}`;
+  return lastSequence >= 9999 ? "" : `${year}${standardCode}${gradeCode}${String(lastSequence + 1).padStart(4, "0")}`;
 }

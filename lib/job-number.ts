@@ -13,10 +13,12 @@ export function getJobNumber(area: BusinessArea, scheme: NumberingScheme, track:
     .map((job) => job.jobNo.replace(/-/g, ""))
     .map((jobNo) => ({ raw: jobNo, comparablePrefix: prefix.replace(/-/g, "") }))
     .filter(({ raw, comparablePrefix }) => raw.startsWith(comparablePrefix))
-    .map(({ raw, comparablePrefix }) => Number(raw.slice(comparablePrefix.length)))
+    .map(({ raw, comparablePrefix }) => raw.slice(comparablePrefix.length))
+    .filter(sequence => /^\d{4,}$/.test(sequence))
+    .map(Number)
     .filter(Number.isFinite)
     .reduce((maximum, sequence) => Math.max(maximum, sequence), 0);
-  return `${rule.jobPrefix}${year}${String(lastSequence + 1).padStart(4, "0")}`;
+  return lastSequence >= 9999 ? "" : `${rule.jobPrefix}${year}${String(lastSequence + 1).padStart(4, "0")}`;
 }
 
 export function getIsoJobNumber(standard: string, receivedAt: string, existingJobs: Job[]) {

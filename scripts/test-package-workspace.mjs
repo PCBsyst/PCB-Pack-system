@@ -16,7 +16,7 @@ assert.equal(match(context, ["j1"], reordered), true);
 const extra = structuredClone(context); extra.stage = "COMPLETED"; extra.certificates.j2 = { issueDate: "other" };
 assert.equal(match(context, ["j1"], extra), true);
 const scheduled = structuredClone(context);
-scheduled.examSchedules = { j1: { providerType: "PARTNER", providerName: "시험 연수기관", trainingEndDate: "2026-09-01", examNoticeDate: "2026-08-25", examDate: "2026-09-01" } };
+scheduled.examSchedules = { j1: { providerType: "PARTNER", providerName: "시험 연수기관", providerInstitutionId: "org-1", providerDesignationNo: "TR-01", trainingEndDate: "2026-09-01", examNoticeDate: "2026-08-25", examDate: "2026-09-01" } };
 assert.equal(match(scheduled, ["j1"], structuredClone(scheduled)), true);
 assert.equal(match(context, ["j1"], scheduled), false);
 assert.equal(match(scheduled, ["j1"], context), false);

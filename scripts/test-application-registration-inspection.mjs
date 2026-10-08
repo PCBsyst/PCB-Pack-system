@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 const modules={};
-function load(name){if(modules[name])return modules[name];const exports={};modules[name]=exports;vm.runInNewContext(ts.transpileModule(readFileSync(`lib/${name}.ts`,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{exports,require:path=>load(path.replace('@/lib/',''))});return exports;}
+function load(name){if(modules[name])return modules[name];const exports={};modules[name]=exports;vm.runInNewContext(ts.transpileModule(readFileSync(`lib/${name}.ts`,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{exports,Error,require:path=>load(path.replace('@/lib/',''))});return exports;}
 const {summarizeRegistration:summarize,inspectApplicationRegistration:inspect}=load('application-registration-inspection');
 const id=n=>`${String(n).padStart(8,'0')}-1111-4111-8111-111111111111`;
 const application={id:id(1),application_no:'APP-ISO-2026-0001',candidate_id:id(2),received_at:'2026-10-08',application_type:'최초',management_no_from:1,management_no_to:2,primary_owner_id:id(3)};
@@ -34,9 +34,11 @@ result=await inspect(client({many:true}),application.application_no);assert.equa
 const source=readFileSync('components/application-registration-inspector.tsx','utf8'),tree=ts.createSourceFile('component.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);let handler;
 function visit(node){if(ts.isVariableDeclaration(node)&&node.name.getText(tree)==='inspect')handler=node.initializer.getText(tree);ts.forEachChild(node,visit);}
 visit(tree);
-function harness(options={}){const state={calls:0,result:null,notice:'',loading:false};const context={busy:{current:false},mounted:{current:true},revision:{current:0},hasEnvVars:!options.local,applicationNo:application.application_no,createClient:()=>({}),inspectApplicationRegistration:async()=>{state.calls++;if(options.gate)await options.gate;if(options.fail)throw Error('private');return {found:false};},setNotice:value=>state.notice=value,setLoading:value=>state.loading=value,setResult:value=>state.result=value};const run=vm.runInNewContext(ts.transpileModule(`(${handler})`,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,context);return {run,state,context};}
+function harness(options={}){const state={calls:0,result:null,notice:'',loading:false};const context={Error,busy:{current:false},mounted:{current:true},revision:{current:0},hasEnvVars:!options.local,applicationNo:application.application_no,expectedCount:options.expectedCount??"",expectedStandards:options.expectedStandards??"",...load("registration-expectation"),createClient:()=>({}),inspectApplicationRegistration:async()=>{state.calls++;if(options.gate)await options.gate;if(options.fail)throw Error('private');return options.found ? {found:true,jobs:[{standard:"ISO 9001"}]} : {found:false};},setNotice:value=>state.notice=value,setLoading:value=>state.loading=value,setResult:value=>state.result=value,setComparison:value=>state.comparison=value};const run=vm.runInNewContext(ts.transpileModule(`(${handler})`,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,context);return {run,state,context};}
 let h=harness({fail:true});await h.run();assert.equal(h.state.result,null);assert.match(h.state.notice,/조회 실패는 기록 없음/);assert.ok(!h.state.notice.includes('private'));
 h=harness({local:true});await h.run();assert.equal(h.state.calls,0);
+h=harness({found:true,expectedCount:'2',expectedStandards:'ISO 9001\nISO 50001'});await h.run();assert.equal(h.state.comparison.countMismatch,true);assert.deepEqual(Array.from(h.state.comparison.missingStandards),['ISO 50001']);
+h=harness({expectedCount:'3',expectedStandards:'ISO 9001\nISO 50001'});await h.run();assert.equal(h.state.calls,0);assert.match(h.state.notice,/줄 수가 다릅니다/);
 let release;const gate=new Promise(resolve=>release=resolve);h=harness({gate});const first=h.run();await h.run();assert.equal(h.state.calls,1);h.context.revision.current++;release();await first;assert.equal(h.state.result,null);assert.equal(h.state.loading,false);
 assert.ok(!/\.(insert|update|delete|upsert|rpc)\(/.test(readFileSync('lib/application-registration-inspection.ts','utf8')));
 console.log('신청 연결 점검: 읽기 전용·필요 최소 필드·501건·후보자/범위/회차·부분 조회 거절·중복/취소/조회 실패·로컬 대체 금지 검사 통과 (DB 모의)');

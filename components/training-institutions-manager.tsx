@@ -25,6 +25,7 @@ export function TrainingInstitutionsManager() {
   const [loadError, setLoadError] = useState("");
   const busy = useRef(false);
   const mounted = useRef(true);
+  const editingOriginal = useRef<TrainingInstitution | null>(null);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   useEffect(() => {
@@ -77,13 +78,15 @@ export function TrainingInstitutionsManager() {
     if (hasEnvVars) {
       const supabase = createClient();
       const payload = { name: record.name, designation_no: record.designationNo, valid_from: record.validFrom, valid_until: record.validUntil, standards: record.standards };
-      const result = draft.id ? await supabase.from("training_institutions").update(payload).eq("id", draft.id).select().single() : await supabase.from("training_institutions").insert(payload).select().single();
+      const original = editingOriginal.current;
+      if (draft.id && (!original || original.id !== draft.id || !original.updatedAt)) throw new Error("수정 기준 확인 실패");
+      const result = draft.id ? await supabase.from("training_institutions").update(payload).eq("id", draft.id).eq("updated_at", original!.updatedAt!).select().single() : await supabase.from("training_institutions").insert(payload).select().single();
       if (!mounted.current) return;
       if (result.error || !result.data) throw new Error("저장 응답 확인 실패");
       const saved = parseTrainingInstitutionRow(result.data);
       if ((draft.id && saved.id !== draft.id) || saved.name !== record.name || saved.designationNo !== record.designationNo || saved.validFrom !== record.validFrom || saved.validUntil !== record.validUntil || JSON.stringify(saved.standards) !== JSON.stringify(record.standards)) throw new Error("저장 응답 불일치");
       setInstitutions((items) => draft.id ? items.map((item) => item.id === draft.id ? saved : item) : [...items, saved].sort((a, b) => a.name.localeCompare(b.name, "ko")));
-      setDraft(emptyDraft);
+      editingOriginal.current = null; setDraft(emptyDraft);
       setNotice(draft.id ? "지정 연수기관 정보를 공유 DB에 수정했습니다." : "지정 연수기관을 공유 DB에 등록했습니다.");
       return;
     }
@@ -92,12 +95,13 @@ export function TrainingInstitutionsManager() {
     setInstitutions(next);
     setDraft(emptyDraft);
     setNotice(draft.id ? "지정 연수기관 정보를 수정했습니다." : "지정 연수기관을 등록했습니다.");
-    } catch { if (mounted.current) { setNotice("저장 결과를 확인하지 못했습니다. 입력은 유지됩니다. 중복 등록 전에 명단을 다시 조회해 주세요."); if (hasEnvVars) setLoadError("저장 결과 미확인: 다시 조회 후 등록·수정을 진행해 주세요."); } }
+    } catch { if (mounted.current) { setNotice("다른 직원의 변경 또는 저장 결과 미확인으로 저장을 확정하지 못했습니다. 입력은 유지됩니다. 명단을 재조회하고 해당 기관의 수정을 다시 열어 최신 정보와 대조해 주세요."); if (hasEnvVars) setLoadError("저장 결과 미확인: 다시 조회 후 등록·수정을 진행해 주세요."); } }
     finally { busy.current = false; if (mounted.current) setSaving(false); }
   };
 
   const edit = (item: TrainingInstitution) => {
     if (busy.current || !isAdmin || loading || loadError) return;
+    editingOriginal.current = { ...item, standards: [...item.standards] };
     setDraft({
     id: item.id, name: item.name, designationNo: item.designationNo,
     validFrom: item.validFrom, validUntil: item.validUntil, standards: item.standards.join(", "),
@@ -111,7 +115,8 @@ export function TrainingInstitutionsManager() {
     busy.current = true; setSaving(true);
     try {
     if (hasEnvVars) {
-      const { data, error } = await createClient().from("training_institutions").update({ active: !target.active }).eq("id", id).eq("active", target.active).select().single();
+      if (!target.updatedAt) throw new Error("상태 변경 기준 확인 실패");
+      const { data, error } = await createClient().from("training_institutions").update({ active: !target.active }).eq("id", id).eq("updated_at", target.updatedAt).eq("active", target.active).select().single();
       if (!mounted.current) return;
       if (error || !data) throw new Error("상태 변경 응답 확인 실패");
       const saved = parseTrainingInstitutionRow(data);

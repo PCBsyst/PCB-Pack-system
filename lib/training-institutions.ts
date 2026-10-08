@@ -8,6 +8,7 @@ export interface TrainingInstitution {
   validUntil: string;
   standards: string[];
   active: boolean;
+  updatedAt?: string;
 }
 
 export const defaultTrainingInstitutions: TrainingInstitution[] = [
@@ -69,5 +70,7 @@ export function parseTrainingInstitutionRow(value: unknown): TrainingInstitution
   const validFrom = date("valid_from"), validUntil = date("valid_until");
   if (validUntil < validFrom || typeof row.active !== "boolean" || !Array.isArray(row.standards) || row.standards.length > 100
     || row.standards.some(item => typeof item !== "string" || !item.trim() || item.length > 300 || /[\u0000-\u001f]/.test(item))) throw new Error("연수기관 유효기간·표준 오류");
-  return { id: text("id"), name: text("name"), designationNo: text("designation_no"), validFrom, validUntil, standards: row.standards as string[], active: row.active };
+  const updatedAt = row.updated_at === undefined ? undefined : text("updated_at");
+  if (updatedAt !== undefined && (!/^\d{4}-\d{2}-\d{2}T/.test(updatedAt) || !Number.isFinite(Date.parse(updatedAt)))) throw new Error("연수기관 변경 시각 오류");
+  return { id: text("id"), name: text("name"), designationNo: text("designation_no"), validFrom, validUntil, standards: row.standards as string[], active: row.active, ...(updatedAt ? { updatedAt } : {}) };
 }

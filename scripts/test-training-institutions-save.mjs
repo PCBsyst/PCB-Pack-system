@@ -6,21 +6,21 @@ import ts from 'typescript';
 const lib = { exports: {} };
 vm.runInNewContext(ts.transpileModule(readFileSync('lib/training-institutions.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: lib.exports });
 const parse = lib.exports.parseTrainingInstitutionRow;
-const row = { id: 'one', name: '시험기관', designation_no: 'TR-01', valid_from: '2026-01-01', valid_until: '2026-12-31', standards: ['ISO 9001'], active: true };
+const row = { id: 'one', name: '시험기관', designation_no: 'TR-01', valid_from: '2026-01-01', valid_until: '2026-12-31', standards: ['ISO 9001'], active: true, updated_at: '2026-10-08T00:00:00.000000+00:00' };
 assert.equal(parse(row).designationNo, 'TR-01');
 for (const changes of [{ active: 'true' }, { valid_from: '2026-02-30' }, { valid_until: '2025-12-31' }, { standards: [null] }, { id: '' }]) assert.throws(() => parse({ ...row, ...changes }));
 assert.equal(parse({ ...row, standards: [] }).standards.length, 0);
 const source = ts.createSourceFile('manager.tsx', readFileSync('components/training-institutions-manager.tsx', 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const handlers = {};
 function visit(node) {
-  if (ts.isVariableDeclaration(node) && ['save', 'toggle'].includes(node.name.getText(source))) handlers[node.name.getText(source)] = node.initializer.getText(source);
+  if (ts.isVariableDeclaration(node) && ['save', 'toggle', 'edit'].includes(node.name.getText(source))) handlers[node.name.getText(source)] = node.initializer.getText(source);
   ts.forEachChild(node, visit);
 }
 visit(source);
 function harness({ result = { data: row, error: null }, local = false, failLocal = false, pending = null } = {}) {
   const state = { saving: false, items: [parse(row)], notice: '', error: '', writes: 0, cache: 0, draftCleared: false, predicates: [] };
   const context = {
-    busy: { current: false }, mounted: { current: true }, isAdmin: true, loading: false, loadError: '', hasEnvVars: !local,
+    busy: { current: false }, mounted: { current: true }, editingOriginal: { current: parse(row) }, isAdmin: true, loading: false, loadError: '', hasEnvVars: !local,
     draft: { id: 'one', name: row.name, designationNo: row.designation_no, validFrom: row.valid_from, validUntil: row.valid_until, standards: 'ISO 9001' },
     institutions: state.items, emptyDraft: {}, parseTrainingInstitutionRow: parse,
     setSaving: v => state.saving = v, setNotice: v => state.notice = v, setLoadError: v => state.error = v,
@@ -28,7 +28,7 @@ function harness({ result = { data: row, error: null }, local = false, failLocal
     setInstitutions: v => state.items = typeof v === 'function' ? v(state.items) : v,
     saveTrainingInstitutions: () => { state.cache++; if (failLocal) throw Error('storage'); },
     createClient: () => ({ from: () => {
-      const chain = { update: () => { state.writes++; return chain; }, insert: () => { state.writes++; return chain; }, eq: (k, v) => { state.predicates.push([k,v]); return chain; }, select: () => chain, single: async () => { if (pending) await pending; if (result instanceof Error) throw result; return result; } };
+      const chain = { update: () => { state.writes++; return chain; }, insert: () => { state.writes++; return chain; }, eq: (k, v) => { state.predicates.push([k,v]); return chain; }, select: () => chain, single: async () => { if (pending) await pending; if (result instanceof Error) throw result; return typeof result === 'function' ? result(state) : result; } };
       return chain;
     } }),
   };
@@ -36,6 +36,7 @@ function harness({ result = { data: row, error: null }, local = false, failLocal
   return { state, context };
 }
 let h = harness(); await h.context.save(); assert.equal(h.state.draftCleared, true); assert.equal(h.state.saving, false); assert.equal(h.state.cache, 0);
+assert.ok(h.state.predicates.some(([key, value]) => key === 'updated_at' && value === row.updated_at));
 for (const result of [Error('network private details'), { data: null, error: null }, { data: { ...row, id: 'wrong' }, error: null }]) {
   h = harness({ result }); await h.context.save(); assert.equal(h.state.draftCleared, false); assert.equal(h.state.saving, false); assert.ok(h.state.error); assert.ok(!h.state.notice.includes('private details'));
 }
@@ -46,4 +47,24 @@ let release; const pending = new Promise(resolve => release = resolve);
 h = harness({ pending }); const first = h.context.save(); await h.context.save(); assert.equal(h.state.writes, 1); release(); await first;
 h = harness(); h.context.isAdmin = false; await h.context.save(); await h.context.toggle('one'); assert.equal(h.state.writes, 0);
 h = harness(); h.context.draft.validFrom = '2026-02-30'; await h.context.save(); assert.equal(h.state.writes, 0); assert.equal(h.state.error, '');
+h = harness(); h.context.editingOriginal.current = null; await h.context.save(); assert.equal(h.state.writes, 0); assert.equal(h.state.draftCleared, false);
+h = harness(); delete h.context.editingOriginal.current.updatedAt; await h.context.save(); assert.equal(h.state.writes, 0);
+h = harness(); h.context.editingOriginal.current.updatedAt = 'old-version'; await h.context.save(); assert.ok(h.state.predicates.some(([key,value]) => key === 'updated_at' && value === 'old-version'));
+let databaseVersion = row.updated_at;
+const compareAndSave = state => {
+  const expected = state.predicates.find(([key]) => key === 'updated_at')?.[1];
+  if (expected !== databaseVersion) return { data: null, error: { code: 'PGRST116' } };
+  databaseVersion = '2026-10-08T01:00:00.000000+00:00';
+  return { data: { ...row, updated_at: databaseVersion }, error: null };
+};
+const firstEditor = harness({ result: compareAndSave }), secondEditor = harness({ result: compareAndSave });
+await firstEditor.context.save(); await secondEditor.context.save();
+assert.equal(firstEditor.state.draftCleared, true);
+assert.equal(secondEditor.state.draftCleared, false);
+assert.ok(secondEditor.state.error);
+assert.equal(databaseVersion, '2026-10-08T01:00:00.000000+00:00');
+h = harness({ result: { data: { ...row, active: false }, error: null } }); await h.context.toggle('one'); assert.ok(h.state.predicates.some(([key,value]) => key === 'updated_at' && value === row.updated_at));
+h = harness(); const editingRow = parse(row); h.context.edit(editingRow); editingRow.updatedAt = 'changed-after-opening'; editingRow.standards.push('ISO 14001');
+assert.equal(h.context.editingOriginal.current.updatedAt, row.updated_at);
+assert.equal(h.context.editingOriginal.current.standards.length, 1);
 console.log('지정 연수기관 응답 검증·저장·상태 변경·중복 클릭 검사 통과');

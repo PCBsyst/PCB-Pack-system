@@ -29,6 +29,14 @@ export function saveTrainingInstitutions(items: TrainingInstitution[]) {
   window.localStorage.setItem(TRAINING_INSTITUTIONS_KEY, JSON.stringify(items));
 }
 
+/** Name-only legacy records cannot identify one of several identically named institutions. */
+export function unambiguousTrainingInstitutions(items: TrainingInstitution[]): TrainingInstitution[] {
+  const names = new Map<string, number>();
+  const key = (item: TrainingInstitution) => item.name.trim().normalize("NFC");
+  for (const item of items) names.set(key(item), (names.get(key(item)) ?? 0) + 1);
+  return items.filter(item => names.get(key(item)) === 1);
+}
+
 export function parseTrainingInstitutionRow(value: unknown): TrainingInstitution {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("연수기관 응답 구성 오류");
   const row = value as Record<string, unknown>;

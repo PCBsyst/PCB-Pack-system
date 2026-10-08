@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, CheckCircle2, FolderPlus, Plus, Save, Trash2 } from "lucide-react";
 import { jobs } from "@/data/mock-data";
@@ -18,6 +18,8 @@ import { hasEnvVars } from "@/lib/utils";
 import { readStoredPartners, type PartnerItem } from "@/components/partners-manager";
 import { useCertificationFields } from "@/components/use-certification-fields";
 import { isAllocatedNumber } from "@/lib/allocated-number-validation";
+import { readApplicationBundle, hasUniqueRegistrationIds } from "@/lib/application-registration-checks";
+import { hasExactRecordValues } from "@/lib/workflow-record-checks";
 
 type CandidateOption = { id: string; name: string; name_en: string | null; birth_date: string | null; nationality: string | null; email: string | null; phone: string | null };
 type JobDraft = { id: string; standard: string; grade: string; previousJobId: string };
@@ -53,6 +55,9 @@ export function NewApplicationForm() {
   const [storedCount, setStoredCount] = useState(0);
   const [storedApplications, setStoredApplications] = useState<PrototypeApplicationRecord[]>([]);
   const [saving, setSaving] = useState(false);
+  const registrationBusy = useRef(false);
+  const registrationUncertain = useRef(false);
+  const [registrationNeedsReview, setRegistrationNeedsReview] = useState(false);
   const rules = useMemo(() => getNumberingRules(businessArea, scheme, accreditationTrack, catalog), [businessArea, scheme, accreditationTrack, catalog]);
   const selectedRule = getNumberingRule(businessArea, scheme, accreditationTrack, standard, catalog) ?? rules[0];
   const activeStandard = selectedRule?.field ?? "";
@@ -123,6 +128,8 @@ export function NewApplicationForm() {
   }
 
   async function registerApplication() {
+    if (registrationBusy.current) return;
+    if (registrationUncertain.current) { setNotice("일부 저장 가능성이 있어 재등록을 중단합니다. 신청관리에서 기존 등록 여부와 연결 기록을 확인해 주세요."); return; }
     if (fieldsLoading || fieldsError) { setNotice(fieldsError || "인증분야 설정을 불러오는 중입니다."); return; }
     if (!candidateName.trim()) {
       setNotice("후보자 이름을 입력해 주세요.");
@@ -135,14 +142,17 @@ export function NewApplicationForm() {
       setNotice("접수일을 확인하고 신청 세부 분야를 한 개 이상 추가해 주세요.");
       return;
     }
+    registrationBusy.current = true;
     const sharedId = `local-${Date.now()}`;
     const ownerName = staffOptions.find((staff) => staff.id === primaryOwnerId)?.display_name ?? "김담당";
     const records: PrototypeApplicationRecord[] = jobEntries.map((entry) => ({ id: sharedId, applicationNo, receivedAt, candidateName: candidateName.trim(), candidateNameEn: candidateNameEn.trim(), candidateBirthDate, candidateNationality: candidateNationality.trim(), candidateEmail: candidateEmail.trim(), candidatePhone: candidatePhone.trim(), businessArea, scheme, accreditationTrack, accreditationHidden, applicationType, managementNo: entry.managementNo, jobNo: entry.jobNo, standard: entry.standard, grade: entry.grade, partnerCompany, primaryOwner: ownerName, status: "INTAKE_REVIEW", createdAt: new Date().toISOString() }));
     if (hasEnvVars) {
       setSaving(true);
+      let bundleAttempted = false;
       try {
         const supabase = createClient();
-        const { data: userData } = await supabase.auth.getUser();
+        const { data: userData, error: authError } = await supabase.auth.getUser();
+        if (authError || !userData.user) throw new Error("직원 인증 확인 실패");
         const ownerId = primaryOwnerId || userData.user?.id;
         const [{ data: allocatedApplicationNo, error: applicationNoError }, { data: allocatedManagementStart, error: managementNoError, legacy: legacyManagement }] = await Promise.all([
           supabase.rpc("allocate_application_number", { p_business_area: businessArea, p_received_at: receivedAt }),
@@ -160,39 +170,50 @@ export function NewApplicationForm() {
           records[index] = { ...records[index], jobNo: allocatedJobNo };
         }
         const first = records[0];
+        bundleAttempted = true;
         const { data, error } = await supabase.rpc("create_application_bundle_v2", { existing_candidate_id: candidateMode === "EXISTING" ? existingCandidateId : null, candidate_name: first.candidateName, candidate_name_en: first.candidateNameEn || "", candidate_birth_date: first.candidateBirthDate || null, candidate_nationality: first.candidateNationality || "", candidate_email: first.candidateEmail || "", candidate_phone: first.candidatePhone || "", application_no: first.applicationNo, received_at: first.receivedAt, business_area: first.businessArea, accreditation_scheme: first.scheme ?? "IAS", accreditation_track: first.accreditationTrack, accreditation_hidden: first.accreditationHidden, application_type: first.applicationType, partner_name: first.partnerCompany, management_no: first.managementNo, job_no: first.jobNo, standard: first.standard, grade: first.grade });
         if (error) throw error;
-        const bundle = data as { application_id?: string; candidate_id?: string; job_id?: string } | null;
-        const applicationId = String(bundle?.application_id ?? sharedId);
+        const bundle = readApplicationBundle(data, candidateMode === "EXISTING" ? existingCandidateId : undefined);
+        const applicationId = bundle.application_id;
         records[0] = { ...records[0], id: applicationId, candidateId: bundle?.candidate_id, jobId: bundle?.job_id };
         if (ownerId) {
-          const [{ error: applicationOwnerError }, { error: jobOwnerError }] = await Promise.all([supabase.from("applications").update({ primary_owner_id: ownerId }).eq("id", applicationId), supabase.from("jobs").update({ primary_owner_id: ownerId, previous_job_id: jobEntries[0]?.previousJobId || null }).eq("id", bundle?.job_id)]);
+          const [{ data: savedApplication, error: applicationOwnerError }, { data: savedJob, error: jobOwnerError }] = await Promise.all([supabase.from("applications").update({ primary_owner_id: ownerId }).eq("id", applicationId).select("id, primary_owner_id").single(), supabase.from("jobs").update({ primary_owner_id: ownerId, previous_job_id: jobEntries[0]?.previousJobId || null }).eq("id", bundle.job_id).eq("application_id", applicationId).eq("candidate_id", bundle.candidate_id).select("id, primary_owner_id, previous_job_id").single()]);
           if (applicationOwnerError || jobOwnerError) throw applicationOwnerError ?? jobOwnerError;
+          if (!hasExactRecordValues([savedApplication], [{ id: applicationId, primary_owner_id: ownerId }], ["id", "primary_owner_id"]) || !hasExactRecordValues([savedJob], [{ id: bundle.job_id, primary_owner_id: ownerId, previous_job_id: jobEntries[0]?.previousJobId || null }], ["id", "primary_owner_id", "previous_job_id"])) throw new Error("담당자·기존 인증 연결 저장 응답 미확인");
         }
         if (records.length > 1) {
           const extraRows = records.slice(1).map((record, index) => ({ application_id: applicationId, candidate_id: bundle?.candidate_id, previous_job_id: jobEntries[index + 1]?.previousJobId || null, job_no: record.jobNo, management_no: record.managementNo, business_area: record.businessArea, accreditation_track: record.accreditationTrack, standard: record.standard, grade: record.grade, primary_owner_id: ownerId ?? null }));
-          const { data: extraJobs, error: jobsError } = await supabase.from("jobs").insert(extraRows).select("id, job_no");
+          const { data: extraJobs, error: jobsError } = await supabase.from("jobs").insert(extraRows).select("id, application_id, candidate_id, previous_job_id, job_no, management_no, business_area, accreditation_track, standard, grade, primary_owner_id");
           if (jobsError) throw jobsError;
-          const { error: cyclesError } = await supabase.from("processing_cycles").insert((extraJobs ?? []).map((job) => ({ job_id: job.id, sequence: 1, application_type: applicationType, status: "DOCUMENT_REVIEW", application_date: receivedAt })));
+          if (!hasUniqueRegistrationIds(extraJobs, [bundle.job_id]) || !hasExactRecordValues(extraJobs, extraRows, Object.keys(extraRows[0]))) throw new Error("추가 Job 저장 응답 미확인");
+          const expectedCycles = extraJobs.map((job) => ({ job_id: job.id, sequence: 1, application_type: applicationType, status: "DOCUMENT_REVIEW", application_date: receivedAt }));
+          const { data: savedCycles, error: cyclesError } = await supabase.from("processing_cycles").insert(expectedCycles).select("id, job_id, sequence, application_type, status, application_date");
           if (cyclesError) throw cyclesError;
+          if (!hasUniqueRegistrationIds(savedCycles) || !hasExactRecordValues(savedCycles, expectedCycles, Object.keys(expectedCycles[0]))) throw new Error("처리 회차 저장 응답 미확인");
           const jobIdByNo = new Map((extraJobs ?? []).map((job) => [job.job_no, job.id]));
           records.splice(1, records.length - 1, ...records.slice(1).map((record) => ({ ...record, id: applicationId, candidateId: bundle?.candidate_id, jobId: jobIdByNo.get(record.jobNo) })));
-          const { error: rangeError } = await supabase.from("applications").update({ management_no_to: records.at(-1)?.managementNo ?? first.managementNo }).eq("id", applicationId);
+          const managementEnd = records.at(-1)?.managementNo ?? first.managementNo;
+          const { data: savedRange, error: rangeError } = await supabase.from("applications").update({ management_no_to: managementEnd }).eq("id", applicationId).select("id, management_no_to").single();
           if (rangeError) throw rangeError;
+          if (!hasExactRecordValues([savedRange], [{ id: applicationId, management_no_to: managementEnd }], ["id", "management_no_to"])) throw new Error("관리번호 범위 저장 응답 미확인");
         }
         setStoredApplications((current) => [...records, ...current]);
         setStoredCount((count) => count + 1);
         setNotice(`${records[0].applicationNo} 신청과 Job ${records.length}건이 등록되었습니다. 관리 No. ${records[0].managementNo}${records.length > 1 ? `~${records.at(-1)?.managementNo}` : ""} · 최종 Job No.: ${records.map((record) => record.jobNo).join(", ")}${legacyManagement ? " · DB 변경 028 미적용: 기존 공통 관리번호를 사용했습니다." : ""}`);
         return;
-      } catch (error) {
-        setNotice(`DB 등록에 실패했습니다: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+      } catch {
+        if (bundleAttempted) { registrationUncertain.current = true; setRegistrationNeedsReview(true); }
+        setNotice(bundleAttempted ? `신청 ${records[0].applicationNo}의 저장 결과를 확인하지 못했습니다. 일부 자료가 저장됐을 수 있어 재등록을 중단합니다. 신청관리에서 후보자·Job·회차·담당자 연결을 확인해 주세요. 예약 번호는 재사용하지 않습니다.` : "신청 등록 전 인증 또는 번호 확보에 실패했습니다. 연결·권한·예약 번호 상태를 확인해 주세요.");
         return;
-      } finally { setSaving(false); }
+      } finally { registrationBusy.current = false; setSaving(false); }
     }
-    records.slice().reverse().forEach(savePrototypeApplication);
-    setStoredApplications((current) => [...records, ...current]);
-    setStoredCount((count) => count + 1);
-    setNotice(`${applicationNo} 신청과 Job ${records.length}건이 브라우저에 등록되었습니다.`);
+    try {
+      records.slice().reverse().forEach(savePrototypeApplication);
+      setStoredApplications((current) => [...records, ...current]);
+      setStoredCount((count) => count + 1);
+      setNotice(`${applicationNo} 신청과 Job ${records.length}건이 브라우저에 등록되었습니다.`);
+    } catch { registrationUncertain.current = true; setRegistrationNeedsReview(true); setNotice("브라우저 저장 결과를 확인하지 못했습니다. 일부 기록이 남았을 수 있어 기존 신청 확인 전에는 재등록하지 않습니다."); }
+    finally { registrationBusy.current = false; }
   }
 
   return <div className="max-w-5xl"><Link href="/applications" className="mb-4 inline-flex items-center gap-1 text-sm text-slate-500"><ArrowLeft className="h-4 w-4"/>신청 목록으로</Link>
@@ -207,8 +228,8 @@ export function NewApplicationForm() {
       </div></section>
       {(applicationType === "갱신" || applicationType === "등급변경") && <section className="rounded-lg border border-amber-200 bg-amber-50 shadow-sm"><div className="border-b border-amber-200 px-6 py-5"><h2 className="font-semibold text-amber-950">기존 완료 인증 연결</h2><p className="mt-1 text-sm text-amber-800">각 신규 Job과 같은 분야의 기존 완료 인증을 연결해야 등록할 수 있습니다.</p></div><div className="space-y-3 p-6">{jobEntries.length === 0 && <p className="text-sm text-amber-800">먼저 신청 세부 분야를 추가해 주세요.</p>}{jobEntries.map((entry) => { const options = previousJobs.filter((item) => item.standard === entry.standard); return <Field key={entry.id} label={`${entry.standard} · ${entry.grade}`} required><select className={controlClass} value={entry.previousJobId} onChange={(event) => setJobDrafts((current) => current.map((item) => item.id === entry.id ? { ...item, previousJobId: event.target.value } : item))}><option value="">완료된 기존 인증 선택</option>{options.map((item) => <option key={item.id} value={item.id}>{item.jobNo} · 인증번호 {item.certificationNo} · {item.grade} · {item.issueDate}</option>)}</select>{options.length === 0 && <p className="mt-1 text-xs text-rose-700">이 후보자에게 연결 가능한 완료 인증이 없습니다.</p>}</Field>; })}</div></section>}
       <section className="rounded-lg border border-blue-100 bg-blue-50 p-5"><div className="flex items-start gap-3"><FolderPlus className="mt-0.5 h-5 w-5 text-blue-800"/><div className="min-w-0 flex-1"><p className="font-semibold text-blue-950">권장 Dropbox 폴더명</p><p className="mt-2 break-words rounded-md bg-white px-4 py-3 font-mono text-sm text-slate-800">{jobEntries.length ? `${jobEntries[0].managementNo}${jobEntries.length > 1 ? `~${jobEntries.at(-1)?.managementNo}` : ""} ${candidateName.trim() || "후보자명"} (${jobEntries.map((item) => `${item.grade} ${item.standard}`).join(", ")} ${applicationType})` : "세부 분야를 추가하면 폴더명이 생성됩니다."}</p><p className="mt-2 text-xs text-blue-700">여러 Job을 동시에 신청한 경우에도 신청자료는 하나의 공통 폴더에 보관합니다.</p></div></div></section>
-      {notice && <div role="status" className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900"><CheckCircle2 className="h-4 w-4"/>{notice}{notice.includes("등록되었습니다") && <Link href="/applications" className="ml-auto underline">목록에서 확인</Link>}</div>}
-      <div className="flex justify-end gap-2"><Button variant="outline" asChild><Link href="/applications">취소</Link></Button><Button type="button" disabled={saving} className="bg-blue-800 hover:bg-blue-900" onClick={registerApplication}><Save/>{saving ? "DB 저장 중..." : "번호 확정 및 신청 등록"}</Button></div>
+      {notice && <div role={registrationNeedsReview ? "alert" : "status"} className={`flex flex-wrap items-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium ${registrationNeedsReview ? "border-amber-300 bg-amber-50 text-amber-950" : "bg-card text-foreground"}`}>{notice.includes("등록되었습니다") && <CheckCircle2 className="h-4 w-4"/>}{notice}{(notice.includes("등록되었습니다") || registrationNeedsReview) && <Link href="/applications" className="ml-auto underline">{registrationNeedsReview ? "신청관리에서 기존 기록 확인" : "목록에서 확인"}</Link>}</div>}
+      <div className="flex justify-end gap-2"><Button variant="outline" asChild><Link href="/applications">취소</Link></Button><Button type="button" disabled={saving || registrationNeedsReview} className="bg-blue-800 hover:bg-blue-900" onClick={registerApplication}><Save/>{saving ? "DB 저장 중..." : "번호 확정 및 신청 등록"}</Button></div>
     </form>
   </div>;
 }

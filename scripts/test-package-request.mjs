@@ -44,6 +44,22 @@ function scheduledFixture() {
   return value;
 }
 assert.equal(validate(scheduledFixture()), null);
+const identified = scheduledFixture();
+Object.assign(identified.context.examSchedules.j1, { providerInstitutionId: "org-1", providerDesignationNo: "TR-01" });
+assert.equal(validate(identified), null);
+for (const change of [
+  schedule => schedule.providerInstitutionId = null,
+  schedule => schedule.providerDesignationNo = 123,
+  schedule => schedule.providerInstitutionId = "x".repeat(501),
+  schedule => schedule.providerDesignationNo = "TR\u0000-01",
+  schedule => delete schedule.providerDesignationNo,
+  schedule => delete schedule.providerInstitutionId,
+  schedule => schedule.providerType = "NON_PARTNER",
+  schedule => schedule.providerName = "",
+]) { const value = structuredClone(identified); change(value.context.examSchedules.j1); assert.ok(validate(value)); }
+const cleared = structuredClone(identified);
+Object.assign(cleared.context.examSchedules.j1, { providerType: "NON_PARTNER", providerInstitutionId: "", providerDesignationNo: "" });
+assert.equal(validate(cleared), null);
 const emptySchedule = scheduledFixture();
 Object.assign(emptySchedule.context.examSchedules.j1, { providerName: "", trainingEndDate: "", examNoticeDate: "", examDate: "" });
 assert.equal(validate(emptySchedule), null); // 미입력은 사실을 만들어 채우지 않는다.

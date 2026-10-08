@@ -70,6 +70,10 @@ export function validatePackageRequest(value: unknown): string | null {
         || ![schedule.trainingEndDate, schedule.examNoticeDate, schedule.examDate].every(optionalDate)) {
         return "교육기관 구분·명칭과 시험 일정의 날짜를 확인해 주세요.";
       }
+      const identity = [schedule.providerInstitutionId, schedule.providerDesignationNo];
+      if (identity.some(value => value !== undefined && value !== "" && !text(value))) return "연수기관 ID와 지정번호의 입력 형식을 확인해 주세요.";
+      if (identity.some(value => value !== undefined && value !== "")
+        && (schedule.providerType !== "PARTNER" || !text(schedule.providerName) || !identity.every(text))) return "지정 연수기관의 ID·지정번호·기관명을 함께 확인해 주세요.";
     }
     if (ids.has(job.id) || paths.has(path)) return "Job 또는 문서 파일명이 중복됩니다. 번호를 확인해 주세요.";
     ids.add(job.id); paths.add(path);

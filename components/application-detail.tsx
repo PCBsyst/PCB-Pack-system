@@ -28,6 +28,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Field, controlClass, textareaClass } from "@/components/form-fields";
 import { buildDocuments, deliveryDocumentRows, downloadApplicationReviewDocx as downloadApplicationReviewFile, downloadCorporatePackageZip as downloadCorporatePackageFile, downloadDecisionReportDocx as downloadDecisionReportFile, downloadDeliveryConfirmationDocx as downloadDeliveryConfirmationFile, printAsPdf, type AssessmentResult, type DeliveryDocumentKey, type DemoAssessment, type DemoCertificate, type DemoDecision, type DemoDeliveryDocuments, type DemoEnglishText, type DemoPanelMember, type DemoReview, type DocumentApplicability, type DocumentLanguage } from "@/lib/prototype-package";
 import { getCertificationNumber, getCertificationNumberPrefix } from "@/lib/certification-number";
+import { useCertificationFields } from "@/components/use-certification-fields";
 import { defaultApplicability, profileKey, readStoredProfiles } from "@/lib/document-requirement-rules";
 import { addKoreanBusinessDays, nextKoreanBusinessDay } from "@/lib/business-days";
 import { jobs as allJobs } from "@/data/mock-data";
@@ -113,6 +114,7 @@ function makeInitial(application: CertificationApplication, jobs: Job[]): DemoSt
 }
 
 export function ApplicationDetail({ application, candidate, linkedJobs, invoices }: { application: CertificationApplication; candidate: Candidate; linkedJobs: Job[]; invoices: Invoice[] }) {
+  const { catalog, loading: fieldsLoading, error: fieldsError } = useCertificationFields();
   const [active, setActive] = useState<Tab>("신청 개요");
   const [demo, setDemo] = useState(() => makeInitial(application, linkedJobs));
   const [languages, setLanguages] = useState<Record<DocumentLanguage, boolean>>({ KR: true, EN: false });
@@ -351,13 +353,14 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
   const move = (stage: DemoStage, tab: Tab, message: string, patch: Partial<DemoState> = {}) => { if (!downloadMounted.current || !saveAccess.current.canEdit) return; if (formalSnapshot.current && formalSnapshot.current !== JSON.stringify(latestDemo.current)) { setNotice("저장 중 업무 입력이 변경되어 다음 단계로 이동하지 않았습니다. 일부 정식 기록은 저장됐을 수 있으니 대조 후 다시 진행해 주세요."); return; } setDemo((current) => ({ ...current, ...patch, stage, dateAuditLogs: [...current.dateAuditLogs, createAuditLog("처리", "", "업무 단계", stageLabels[current.stage], stageLabels[stage], message, application.primaryOwner)] })); setActive(tab); setNotice(message); };
   const reset = () => { setDemo(makeInitial(application, linkedJobs)); window.localStorage.removeItem(storageKey); setActive("서류검토"); setNotice("샘플 진행상태를 처음으로 되돌렸습니다."); };
   const allocateCertificationNo = async (job: Job) => {
+    if (fieldsLoading || fieldsError) { setNotice(fieldsError || "인증분야 설정을 불러오는 중입니다."); return; }
     const issueDate = demo.certificates[job.id]?.issueDate;
     if (!issueDate) { setNotice("인증번호를 부여하기 전에 전자본 발행일을 입력해 주세요."); return; }
     if (!usesSupabaseWorkspace) { setNotice("공유 DB 신청에서만 인증번호 순번을 확정할 수 있습니다."); return; }
     const scheme = application.scheme ?? "IAS";
     const area = job.businessArea ?? application.businessArea;
     const track = job.accreditationTrack ?? application.accreditationTrack;
-    const prefix = getCertificationNumberPrefix(area, scheme, track, job.standard, job.currentGrade, issueDate);
+    const prefix = getCertificationNumberPrefix(area, scheme, track, job.standard, job.currentGrade, issueDate, catalog);
     if (!prefix) { setNotice(`${job.standard} · ${job.currentGrade}의 인증번호 규칙이 확정되지 않았습니다.`); return; }
     const scope = `${area}:${scheme}:${track}:${job.standard}:${job.currentGrade}:${issueDate.slice(0, 4)}`;
     const { data, error } = await createClient().rpc("allocate_certification_number", { p_number_prefix: prefix, p_sequence_scope: scope });
@@ -506,13 +509,14 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
     move("CERTIFICATION_INFO_PENDING", "Job·패키지", "초안 발행을 기록했습니다. 인증번호와 전자본 PDF 발행정보를 입력하세요.");
   };
   const finishCertification = () => runFormalStep(async () => {
+    if (fieldsLoading || fieldsError) { setNotice(fieldsError || "인증분야 설정을 불러오는 중입니다."); return; }
     if (!canRunWorkflowAction(demo.stage, "certification")) { setNotice("초안 발행 완료 후 전자본 발행 단계에서만 인증정보를 확정할 수 있습니다."); return; }
     const approved = linkedJobs.filter((job) => ["승인", "재승인"].includes(demo.decisions[job.id]?.result));
     if (!approved.length) { setNotice("승인된 Job이 없어 패키지 생성 단계로 진행할 수 없습니다."); return; }
     if (approved.some((job) => !demo.certificates[job.id]?.certificationNo || !demo.certificates[job.id]?.issueDate || !demo.certificates[job.id]?.expiryDate)) { setNotice("승인 Job의 인증번호·발행일·만료일을 입력해 주세요."); return; }
     const dateIssues = approved.flatMap(job => certificateDateIssues(demo.certificates[job.id]));
     if (dateIssues.length) { setNotice(dateIssues.join(" ")); return; }
-    if (approved.some((job) => { const certificate = demo.certificates[job.id]; const prefix = getCertificationNumberPrefix(job.businessArea ?? application.businessArea, application.scheme ?? "IAS", job.accreditationTrack ?? application.accreditationTrack, job.standard, job.currentGrade, certificate?.issueDate ?? ""); return !prefix || !new RegExp(`^${escapeRegExp(prefix)}\\d{4}$`).test(certificate?.certificationNo ?? ""); })) { setNotice("인증번호가 해당 분야·등급·발행연도의 규칙과 일치하지 않습니다."); return; }
+    if (approved.some((job) => { const certificate = demo.certificates[job.id]; const prefix = getCertificationNumberPrefix(job.businessArea ?? application.businessArea, application.scheme ?? "IAS", job.accreditationTrack ?? application.accreditationTrack, job.standard, job.currentGrade, certificate?.issueDate ?? "", catalog); return !prefix || !new RegExp(`^${escapeRegExp(prefix)}\\d{4}$`).test(certificate?.certificationNo ?? ""); })) { setNotice("인증번호가 해당 분야·등급·발행연도의 규칙과 일치하지 않습니다."); return; }
     if (usesSupabaseWorkspace) {
       if (approved.some((job) => !cycleIds[job.id])) { setNotice("Job 처리 회차를 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요."); return; }
       if (new Set(approved.map(job => cycleIds[job.id])).size !== approved.length) { setNotice("승인 Job의 처리 회차가 중복되어 발행을 기록하지 않습니다."); return; }

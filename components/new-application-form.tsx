@@ -16,6 +16,7 @@ import type { ApplicationType } from "@/types/certification";
 import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
 import { readStoredPartners, type PartnerItem } from "@/components/partners-manager";
+import { useCertificationFields } from "@/components/use-certification-fields";
 
 type CandidateOption = { id: string; name: string; name_en: string | null; birth_date: string | null; nationality: string | null; email: string | null; phone: string | null };
 type JobDraft = { id: string; standard: string; grade: string; previousJobId: string };
@@ -23,6 +24,7 @@ type StaffOption = { id: string; display_name: string; role: "STAFF" | "ADMIN" }
 type PreviousJobOption = { id: string; jobNo: string; standard: string; grade: string; certificationNo: string; issueDate: string };
 
 export function NewApplicationForm() {
+  const { catalog, loading: fieldsLoading, error: fieldsError } = useCertificationFields();
   const [receivedAt, setReceivedAt] = useState("2026-09-02");
   const [businessArea, setBusinessArea] = useState<BusinessArea>("ISO");
   const [scheme, setScheme] = useState<NumberingScheme>("IAS");
@@ -50,29 +52,30 @@ export function NewApplicationForm() {
   const [storedCount, setStoredCount] = useState(0);
   const [storedApplications, setStoredApplications] = useState<PrototypeApplicationRecord[]>([]);
   const [saving, setSaving] = useState(false);
-  const rules = useMemo(() => getNumberingRules(businessArea, scheme, accreditationTrack), [businessArea, scheme, accreditationTrack]);
-  const selectedRule = getNumberingRule(businessArea, scheme, accreditationTrack, standard) ?? rules[0];
+  const rules = useMemo(() => getNumberingRules(businessArea, scheme, accreditationTrack, catalog), [businessArea, scheme, accreditationTrack, catalog]);
+  const selectedRule = getNumberingRule(businessArea, scheme, accreditationTrack, standard, catalog) ?? rules[0];
   const activeStandard = selectedRule?.field ?? "";
   const existingJobNumbers = useMemo(() => [...jobs, ...storedApplications.map((record) => ({ jobNo: record.jobNo }))], [storedApplications]);
-  const jobNo = useMemo(() => getJobNumber(businessArea, scheme, accreditationTrack, activeStandard, receivedAt, existingJobNumbers), [businessArea, scheme, accreditationTrack, activeStandard, receivedAt, existingJobNumbers]);
+  const jobNo = useMemo(() => fieldsLoading || fieldsError ? "" : getJobNumber(businessArea, scheme, accreditationTrack, activeStandard, receivedAt, existingJobNumbers, catalog), [businessArea, scheme, accreditationTrack, activeStandard, receivedAt, existingJobNumbers, catalog, fieldsLoading, fieldsError]);
   const sequence = selectedRule && jobNo ? jobNo.replace(selectedRule.jobPrefix, "").slice(2) : "";
   const managementNo = Math.max(0, ...jobs.filter(record => record.businessArea === businessArea).map(record => record.managementNo ?? 0), ...sampleApplications.filter(record => record.businessArea === businessArea).map(record => record.managementNoTo), ...storedApplications.filter(record => record.businessArea === businessArea).map(record => record.managementNo)) + 1;
   const jobEntries = useMemo(() => {
     const assigned: Array<JobDraft & { managementNo: number; jobNo: string }> = [];
     for (const [index, draft] of jobDrafts.entries()) {
-      const generated = getJobNumber(businessArea, scheme, accreditationTrack, draft.standard, receivedAt, [...existingJobNumbers, ...assigned.map((item) => ({ jobNo: item.jobNo }))]);
+      const generated = getJobNumber(businessArea, scheme, accreditationTrack, draft.standard, receivedAt, [...existingJobNumbers, ...assigned.map((item) => ({ jobNo: item.jobNo }))], catalog);
       assigned.push({ ...draft, managementNo: managementNo + index, jobNo: generated });
     }
     return assigned;
-  }, [accreditationTrack, businessArea, existingJobNumbers, jobDrafts, managementNo, receivedAt, scheme]);
+  }, [accreditationTrack, businessArea, existingJobNumbers, jobDrafts, managementNo, receivedAt, scheme, catalog]);
   const applicationNo = `APP-${businessArea === "ISO" ? "ISO" : "KB"}-${receivedAt.slice(0, 4)}-${String(82 + storedCount).padStart(3, "0")}`;
 
   function changeRuleContext(area: BusinessArea, nextScheme: NumberingScheme, track: "ACCREDITED" | "NON_ACCREDITED") {
-    const nextRules = getNumberingRules(area, nextScheme, track);
+    const nextRules = getNumberingRules(area, nextScheme, track, catalog);
     setBusinessArea(area); setScheme(nextScheme); setAccreditationTrack(track); setStandard(nextRules[0]?.field ?? ""); setJobDrafts([]);
   }
 
   function addJob() {
+    if (fieldsLoading || fieldsError) { setNotice(fieldsError || "인증분야 설정을 불러오는 중입니다."); return; }
     if (!selectedRule?.verified || !jobNo) { setNotice("확정된 번호 규칙이 있는 세부 분야만 추가할 수 있습니다."); return; }
     if (jobDrafts.some((item) => item.standard === activeStandard)) { setNotice("같은 세부 분야는 한 신청에 중복 추가할 수 없습니다."); return; }
     const previousJobId = previousJobs.find((item) => item.standard === activeStandard)?.id ?? "";
@@ -119,6 +122,7 @@ export function NewApplicationForm() {
   }
 
   async function registerApplication() {
+    if (fieldsLoading || fieldsError) { setNotice(fieldsError || "인증분야 설정을 불러오는 중입니다."); return; }
     if (!candidateName.trim()) {
       setNotice("후보자 이름을 입력해 주세요.");
       return;
@@ -147,7 +151,7 @@ export function NewApplicationForm() {
         if (managementNoError || typeof allocatedManagementStart !== "number" || !Number.isInteger(allocatedManagementStart) || allocatedManagementStart < 1 || allocatedManagementStart + records.length - 1 > 2147483647) throw managementNoError ?? new Error("관리번호를 확보하지 못했습니다.");
         for (let index = 0; index < records.length; index += 1) records[index] = { ...records[index], applicationNo: String(allocatedApplicationNo), managementNo: Number(allocatedManagementStart) + index };
         for (let index = 0; index < records.length; index += 1) {
-          const rule = getNumberingRule(businessArea, scheme, accreditationTrack, records[index].standard);
+          const rule = getNumberingRule(businessArea, scheme, accreditationTrack, records[index].standard, catalog);
           if (!rule?.verified || !rule.jobPrefix) throw new Error(`${records[index].standard}의 Job No. 규칙이 확정되지 않았습니다.`);
           const { data: allocatedJobNo, error: allocationError } = await supabase.rpc("allocate_job_number", { p_job_prefix: rule.jobPrefix, p_received_at: receivedAt });
           if (allocationError) throw allocationError;

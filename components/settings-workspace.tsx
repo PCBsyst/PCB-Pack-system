@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, Building2, CalendarDays, FileArchive, Monitor, ShieldCheck, UserCog, UsersRound } from "lucide-react";
 import { GeneralSettings } from "@/components/general-settings";
+import { CertificationFieldsManager } from "@/components/certification-fields-manager";
 import { DocumentRuleSettings } from "@/components/document-rule-settings";
 import { DocumentTemplateManager } from "@/components/document-template-manager";
 import { FeatureControlSettings } from "@/components/feature-control-settings";
@@ -16,7 +17,7 @@ import { cn, hasEnvVars } from "@/lib/utils";
 const categories = [
   { id: "appearance", label: "화면 설정", icon: Monitor, description: "다크모드와 화이트 모드를 선택합니다." },
   { id: "users", label: "사용자·권한", icon: UserCog, description: "직원 계정, 초대 및 승인·활성상태를 관리합니다." },
-  { id: "directory", label: "기준정보", icon: UsersRound, description: "심의위원과 파트너사 명단을 관리합니다." },
+  { id: "directory", label: "기준정보", icon: UsersRound, description: "인증분야·표준, 심의위원과 파트너사 명단을 관리합니다." },
   { id: "workflow", label: "업무규칙", icon: CalendarDays, description: "업무일자 계산, 정지·철회 사유와 제출서류 적용 규칙을 설정합니다." },
   { id: "documents", label: "문서양식", icon: FileArchive, description: "국문·영문 원본 양식과 개정 버전을 관리합니다." },
   { id: "security", label: "보안·이력", icon: ShieldCheck, description: "개인정보 접근 추적과 현재 적용된 보안 범위를 확인합니다." },
@@ -48,6 +49,7 @@ export function SettingsWorkspace() {
     <div hidden={category !== "appearance"} role="tabpanel" id="settings-panel-appearance" aria-labelledby="settings-tab-appearance"><AppearanceSettings/></div>
     <div hidden={!(["users", "directory", "workflow"] as string[]).includes(category)} role="tabpanel" id={`settings-panel-${["users", "directory", "workflow"].includes(category) ? category : "general"}`} aria-labelledby={`settings-tab-${category}`}>
       <GeneralSettings category={category === "appearance" ? "users" : category}/>
+      <div hidden={category !== "directory"}><CertificationFieldsManager/></div>
       <div hidden={category !== "directory"}><Link href="/training-institutions" className="mt-5 flex items-center justify-between rounded-xl border bg-white p-5 text-sm font-medium text-blue-800"><span className="inline-flex items-center gap-2"><Building2 className="h-4 w-4"/>지정 연수기관 관리로 이동</span><ArrowRight className="h-4 w-4"/></Link></div>
       <div hidden={category !== "workflow"}><DocumentRuleSettings/><p className="mt-3 text-xs text-slate-500">업무일자·표준 사유는 {hasEnvVars ? "공유 DB" : "이 브라우저"}에 저장됩니다. 분야별 제출서류 적용 규칙은 현재 브라우저 저장 방식입니다.</p></div>
     </div>

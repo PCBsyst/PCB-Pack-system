@@ -29,6 +29,7 @@ function fixture(query, { editable = true, local = false, confirmed = true, reas
   } };
   const deps = { demo, latestDemo, formalRunning: running, formalSnapshot: snapshot, downloadMounted: mounted, saveAccess: { current: { canEdit: editable } }, setFormalSaving: value => busy.push(value), setNotice: value => notices.push(value), setDemo: update => { const state = update(demo); states.push(state); stages.push(state.stage); }, setActive() {}, stageLabels: { PAYMENT_PENDING: "입금대기", DECISION_PENDING: "심의대기", INVOICE_PENDING: "청구대기" }, createAuditLog: () => ({}), application: { primaryOwner: "담당자" }, usesSupabaseWorkspace: !local, linkedJobs: [{ id: "j" }], cycleIds: { j: "c" }, createClient: () => client, ...checks };
   deps.window = { confirm: () => confirmed, prompt: () => reason };
+  deps.fieldsLoading = false; deps.fieldsError = ""; deps.catalog = [];
   deps.assessmentItems = ["지식"];
   deps.panelMemberIds = { "위원1": "p1", "위원2": "p2", "위원3": "p3" };
   deps.linkedJobs[0].previousJobId = previousJobId;

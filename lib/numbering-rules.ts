@@ -54,10 +54,10 @@ export const gradeCodes: Record<string, string> = {
   "Pre-master": "1", Master: "2", "Global Master": "3",
 };
 
-export function getNumberingRules(area: BusinessArea, scheme: NumberingScheme, track: AccreditationTrack) {
-  return numberingRules.filter((rule) => rule.businessArea === area && rule.scheme === scheme && (!rule.accreditationTrack || rule.accreditationTrack === track));
+export function getNumberingRules(area: BusinessArea, scheme: NumberingScheme, track: AccreditationTrack, catalog: NumberingRule[] = numberingRules) {
+  return catalog.filter((rule) => rule.businessArea === area && rule.scheme === scheme && (!rule.accreditationTrack || rule.accreditationTrack === track));
 }
 
-export function getNumberingRule(area: BusinessArea, scheme: NumberingScheme, track: AccreditationTrack, field: string) {
-  return getNumberingRules(area, scheme, track).find((rule) => rule.field === field);
+export function getNumberingRule(area: BusinessArea, scheme: NumberingScheme, track: AccreditationTrack, field: string, catalog: NumberingRule[] = numberingRules) {
+  return getNumberingRules(area, scheme, track, catalog).find((rule) => rule.field === field);
 }

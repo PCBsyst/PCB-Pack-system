@@ -1,11 +1,11 @@
 import type { Job } from "@/types/certification";
 import type { AccreditationTrack, BusinessArea } from "@/types/certification";
-import { getNumberingRule, numberingRules, type NumberingScheme } from "@/lib/numbering-rules";
+import { getNumberingRule, numberingRules, type NumberingScheme, type NumberingRule } from "@/lib/numbering-rules";
 
 export const isoStandardCodes: Record<string, string> = Object.fromEntries(numberingRules.filter((rule) => rule.businessArea === "ISO" && rule.scheme === "IAS").map((rule) => [rule.field, rule.jobPrefix]));
 
-export function getJobNumber(area: BusinessArea, scheme: NumberingScheme, track: AccreditationTrack, field: string, receivedAt: string, existingJobs: Pick<Job, "jobNo">[]) {
-  const rule = getNumberingRule(area, scheme, track, field);
+export function getJobNumber(area: BusinessArea, scheme: NumberingScheme, track: AccreditationTrack, field: string, receivedAt: string, existingJobs: Pick<Job, "jobNo">[], catalog: NumberingRule[] = numberingRules) {
+  const rule = getNumberingRule(area, scheme, track, field, catalog);
   const year = receivedAt.slice(2, 4);
   if (!rule?.verified || !/^\d{2}$/.test(year)) return "";
   const prefix = `${rule.jobPrefix}${year}`;

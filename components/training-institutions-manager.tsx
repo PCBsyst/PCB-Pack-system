@@ -8,6 +8,7 @@ import { readTrainingInstitutions, saveTrainingInstitutions, parseTrainingInstit
 import { readBoundedRows } from "@/lib/bounded-row-reader";
 import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
+import { TrainingStandardPicker } from "@/components/training-standard-picker";
 
 const emptyDraft = { id: "", name: "", designationNo: "", validFrom: "", validUntil: "", standards: "" };
 
@@ -153,6 +154,7 @@ export function TrainingInstitutionsManager() {
         <Field label="유효기간 종료"><input type="date" className={controlClass} value={draft.validUntil} onChange={(event) => setDraft({ ...draft, validUntil: event.target.value })}/></Field>
         <Field label="신청표준"><input className={controlClass} value={draft.standards} onChange={(event) => setDraft({ ...draft, standards: event.target.value })} placeholder="ISO 9001, ISO 14001"/></Field>
       </div>
+      <TrainingStandardPicker value={draft.standards} onChange={standards => setDraft(current => ({ ...current, standards }))}/>
       <div className="mt-3 flex justify-end gap-2">{draft.id && <Button variant="outline" disabled={saving} onClick={() => setDraft(emptyDraft)}>수정 취소</Button>}<Button disabled={saving} onClick={save}><Plus/>{saving ? "저장 중..." : draft.id ? "수정 저장" : "연수기관 등록"}</Button></div>
     </fieldset>}
     <section className="overflow-hidden rounded-lg border bg-white shadow-sm">

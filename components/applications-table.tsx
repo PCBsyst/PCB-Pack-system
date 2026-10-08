@@ -11,6 +11,7 @@ import { hasEnvVars } from "@/lib/utils";
 import { prototypeApplicationStatus, prototypeCandidateId, prototypeJobId, readPrototypeWorkflow } from "@/lib/prototype-storage";
 import { useLinkedRecordsState } from "@/components/prototype-linked-rows";
 import { groupApplicationRecords, sortApplicationGroups, type ApplicationListSort } from "@/lib/application-list-groups";
+import { ApplicationRegistrationInspector } from "@/components/application-registration-inspector";
 
 
 const controlClass = "h-9 rounded-md border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-blue-200";
@@ -73,6 +74,7 @@ export function ApplicationsTable() {
   const reset = () => { setQuery(""); setArea("ALL"); setStandard("ALL"); setGrade("ALL"); setPartner("ALL"); setTrack("ALL"); setStatus("ALL"); setSort("received-desc"); };
 
   return <section className="overflow-hidden rounded-lg border bg-white shadow-sm">
+    <ApplicationRegistrationInspector/>
     <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-card p-4"><p role="status" className="text-sm text-muted-foreground">{notice || "신청 단위로 표시합니다. 복수 Job은 한 신청 행에 함께 표시됩니다."}</p><Button type="button" variant="outline" onClick={() => setRevision((value) => value + 1)}><RotateCcw/>서버 기록 다시 조회</Button></div>
     <div className="border-b bg-slate-50/70 p-4">
       <div className="flex flex-col gap-3 lg:flex-row"><label className="relative flex-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400"/><input className={`${controlClass} w-full pl-9`} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="신청번호, 후보자, 파트너사, Job No. 검색"/></label><label className="flex items-center gap-2 text-xs font-medium text-slate-500"><ArrowUpDown className="h-4 w-4"/><select className={controlClass} value={sort} onChange={(event) => setSort(event.target.value as SortKey)}><option value="received-desc">접수일 최신순</option><option value="received-asc">접수일 오래된순</option><option value="candidate">후보자명순</option><option value="standard">표준명순</option><option value="partner">파트너사순</option><option value="status">상태명순</option></select></label><Button type="button" variant="outline" onClick={reset}><RotateCcw/>초기화</Button></div>

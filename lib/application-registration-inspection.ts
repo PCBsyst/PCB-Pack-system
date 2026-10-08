@@ -20,12 +20,24 @@ export function summarizeRegistration(application: ApplicationRow, candidatePres
   if (!application.primary_owner_id) issues.push("신청 주 담당자가 지정되지 않았습니다.");
   const expectedCount = application.management_no_to - application.management_no_from + 1;
   const numbers = jobs.map(job => job.management_no);
+  const jobNumberCounts = new Map<string, number>();
+  for (const job of jobs) {
+    const key = job.job_no.trim().normalize("NFC").toUpperCase();
+    jobNumberCounts.set(key, (jobNumberCounts.get(key) ?? 0) + 1);
+  }
   if (jobs.length !== expectedCount || new Set(numbers).size !== jobs.length || numbers.some(no => no < application.management_no_from || no > application.management_no_to)) issues.push("현재 신청의 관리번호 범위와 Job 수·번호가 일치하지 않습니다.");
   const jobChecks = jobs.map(job => {
     const notes: string[] = [];
+    if ((jobNumberCounts.get(job.job_no.trim().normalize("NFC").toUpperCase()) ?? 0) > 1) notes.push("현재 신청 내 Job 번호 중복");
     if (job.candidate_id !== application.candidate_id) notes.push("후보자 연결 불일치");
     if (!job.primary_owner_id) notes.push("주 담당자 미지정");
     const initial = cycles.filter(cycle => cycle.job_id === job.id && cycle.sequence === 1);
+    const sequences = new Set<number>();
+    if (cycles.some(cycle => {
+      if (cycle.job_id !== job.id || cycle.sequence === 1) return false;
+      if (sequences.has(cycle.sequence)) return true;
+      sequences.add(cycle.sequence); return false;
+    })) notes.push("후속 회차 번호 중복");
     if (initial.length !== 1) notes.push(initial.length ? "초기 회차 중복" : "초기 회차 미조회");
     else if (initial[0].application_type !== application.application_type || initial[0].application_date !== application.received_at) notes.push("초기 회차의 신청구분·접수일 불일치");
     for (const note of notes) issues.push(`${job.job_no}: ${note}`);

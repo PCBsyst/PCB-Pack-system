@@ -19,6 +19,14 @@ assert.match(summarize(application,true,[{...jobs[0],primary_owner_id:null},jobs
 assert.match(summarize(application,true,jobs,[{...cycles[0],application_date:'2026-10-07'},cycles[1]]).jobs[0].notes[0],/접수일/);
 assert.throws(()=>summarize({...application,received_at:'2026-02-30'},true,jobs,cycles));
 assert.throws(()=>summarize(application,true,[{...jobs[0],application_id:id(99)},jobs[1]],cycles));
+const duplicatedJobs=[jobs[0],{...jobs[1],job_no:` ${jobs[0].job_no.toLowerCase()} `}];
+const duplicateResult=summarize(application,true,duplicatedJobs,cycles);
+assert.equal(duplicateResult.jobs.filter(job=>job.notes.includes('현재 신청 내 Job 번호 중복')).length,2);
+assert.equal(duplicatedJobs[1].job_no,` ${jobs[0].job_no.toLowerCase()} `);
+const followup={...cycles[0],id:id(91),sequence:2};
+assert.ok(summarize(application,true,jobs,[...cycles,followup,{...followup,id:id(92)}]).jobs[0].notes.includes('후속 회차 번호 중복'));
+assert.equal(summarize(application,true,jobs,[...cycles,followup,{...followup,id:id(92),job_id:jobs[1].id}]).issues.length,0);
+assert.equal(summarize(application,true,jobs,[...cycles,followup,{...followup,id:id(92),sequence:3}]).issues.length,0);
 function client(options={}){
  const calls=[];
  return {calls,from(table){const chain={filters:[],select(columns){calls.push([table,columns]);assert.ok(!/\b(name|email|phone|birth_date)\b/.test(columns));return this;},eq(key,value){this.filters.push([key,value]);return this;},in(key,value){this.filters.push([key,value]);return this;},order(){return this;},async maybeSingle(){if(options.fail===table)return {data:null,error:{message:'private'}};return {data:table==='applications'?(options.missing?null:application):(options.candidateMissing?null:{id:id(2)}),error:null};},async range(from,to){if(options.fail===table)throw Error('network');const rows=table==='jobs'?(options.many?Array.from({length:501},(_,i)=>({...jobs[0],id:id(100+i),job_no:`T${i}`,management_no:i+1})):jobs):cycles.filter(cycle=>this.filters.find(([key])=>key==='job_id')?.[1].includes(cycle.job_id));return {data:rows.slice(from,to+1),count:options.truncated?rows.length+1:rows.length,error:null};}};return chain;}};

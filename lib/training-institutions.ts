@@ -47,6 +47,12 @@ export function resolveTrainingInstitution(items: TrainingInstitution[], record:
   return unambiguousTrainingInstitutions(items).find(item => item.name.trim().normalize("NFC") === key);
 }
 
+export function trainingInstitutionRecordComparison(record: { providerInstitutionId?: string; providerName: string; providerDesignationNo?: string }, current: TrainingInstitution | undefined): "LEGACY" | "MISSING" | "CHANGED" | "SAME" {
+  if (!record.providerInstitutionId) return "LEGACY";
+  if (!current || current.id !== record.providerInstitutionId) return "MISSING";
+  return record.providerName !== current.name || record.providerDesignationNo !== current.designationNo ? "CHANGED" : "SAME";
+}
+
 export function parseTrainingInstitutionRow(value: unknown): TrainingInstitution {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("연수기관 응답 구성 오류");
   const row = value as Record<string, unknown>;

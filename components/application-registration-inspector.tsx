@@ -6,6 +6,7 @@ import { hasEnvVars } from "@/lib/utils";
 import { inspectApplicationRegistration } from "@/lib/application-registration-inspection";
 import { parseRegistrationExpectation, compareRegistrationExpectation } from "@/lib/registration-expectation";
 import { Button } from "@/components/ui/button";
+import { registrationInspectionVerdict } from "@/lib/registration-inspection-verdict";
 import { controlClass } from "@/components/form-fields";
 type Inspection = Awaited<ReturnType<typeof inspectApplicationRegistration>>;
 
@@ -29,6 +30,7 @@ export function ApplicationRegistrationInspector() {
     catch { if(!cancelled()) { setResult(null); setNotice("조회 결과를 확인하지 못했습니다. 연결·권한을 확인하고 다시 조회하세요. 조회 실패는 기록 없음이 아닙니다."); } }
     finally { busy.current = false; if(mounted.current) setLoading(false); }
   };
+  const verdict = result?.found ? registrationInspectionVerdict(result.issues, comparison) : null;
   return <div className="border-b bg-card p-4"><details open={Boolean(applicationNo)}><summary className="cursor-pointer text-sm font-semibold">신청 저장·연결 점검 (읽기 전용)</summary>
     <p className="mt-2 text-xs text-muted-foreground">부분 저장 경고의 신청번호로 후보자 연결·Job·초기 회차·담당자 지정 여부를 확인합니다. 자동 수정·삭제·재등록은 하지 않습니다.</p>
     <div className="mt-3 flex flex-wrap gap-2"><input aria-label="연결 점검 신청번호" className={controlClass} placeholder="신청번호 입력" value={applicationNo} maxLength={100} onChange={event => { revision.current++; setApplicationNo(event.target.value); setExpectedCount(""); setExpectedStandards(""); setResult(null); setComparison(null); setNotice(""); }}/><Button type="button" variant="outline" disabled={loading} onClick={inspect}>{loading ? "점검 중..." : "저장 연결 확인"}</Button></div>
@@ -37,7 +39,8 @@ export function ApplicationRegistrationInspector() {
     {notice && <p role="status" className="mt-2 text-sm">{notice}</p>}
     {result?.found && <div className="mt-3 space-y-3"><p className="text-sm">{result.applicationNo} · 관리번호 {result.managementFrom}~{result.managementTo} · 조회 Job {result.jobs.length}건 · 후보자 연결 {result.candidatePresent ? "확인" : "미조회"}</p>
       <div className="rounded-md border p-3 text-sm">{comparison ? <><p>원 신청 참고값 {comparison.expectedCount}건 / 조회 Job {comparison.actualCount}건 · {comparison.countMismatch ? "건수 불일치" : "건수 일치"}</p>{comparison.missingStandards.length > 0 && <p className="mt-1 text-amber-800 dark:text-amber-300">조회되지 않은 표준: {comparison.missingStandards.join(", ")}</p>}{comparison.unexpectedStandards.length > 0 && <p className="mt-1 text-amber-800 dark:text-amber-300">참고 목록에 없는 표준: {comparison.unexpectedStandards.join(", ")}</p>}<p className="mt-1 text-xs text-muted-foreground">{comparison.standardsProvided ? "입력 표준명과 대조했습니다. 등급·증빙자료까지 확인한 것은 아닙니다." : "Job 건수만 비교했습니다. 표준 목록 대조는 미입력입니다."}</p></> : <p>원 신청 참고값 미입력: 원래 신청한 Job 수·분야의 누락 여부는 판단하지 않았습니다.</p>}</div>
-      {result.issues.length ? <ul className="list-disc space-y-1 pl-5 text-sm text-amber-800 dark:text-amber-300">{result.issues.map((issue,index) => <li key={index}>{issue}</li>)}</ul> : <p className="text-sm">조회 범위에서 연결 불일치가 발견되지 않았습니다.</p>}
+      {verdict && <div role="status" className={`rounded-md border p-3 text-sm ${verdict.status === "REVIEW" ? "border-amber-500 text-amber-800 dark:text-amber-300" : "bg-muted"}`}><p className="font-semibold">{verdict.title}</p><p className="mt-1">{verdict.guidance}</p></div>}
+      {result.issues.length > 0 && <ul className="list-disc space-y-1 pl-5 text-sm text-amber-800 dark:text-amber-300">{result.issues.map((issue,index) => <li key={index}>{issue}</li>)}</ul>}
       <div className="overflow-auto"><table className="w-full text-left text-sm"><thead><tr>{["Job 번호","표준·등급","관리번호","초기 회차","확인사항"].map(label => <th key={label} className="p-2">{label}</th>)}</tr></thead><tbody>{result.jobs.map(job => <tr key={job.id} className="border-t"><td className="p-2"><Link className="underline" href={`/jobs/${job.id}`}>{job.jobNo}</Link></td><td className="p-2">{job.standard} · {job.grade}</td><td className="p-2">{job.managementNo}</td><td className="p-2">{job.initialCycles}건</td><td className="p-2">{job.notes.join(" · ") || "조회 연결 일치"}</td></tr>)}</tbody></table></div>
       <p className="text-xs text-muted-foreground">관리번호 범위 자체가 저장되지 않았거나 원래 신청한 분야가 누락된 경우에는 이 점검만으로 알 수 없습니다. 원 신청 내역과 대조하세요. 여러 조회 시점이 달라 동시에 변경된 자료는 다시 확인해야 합니다.</p><Link className="text-sm underline" href={`/applications/${result.applicationId}`}>신청 처리화면 열기</Link>
     </div>}

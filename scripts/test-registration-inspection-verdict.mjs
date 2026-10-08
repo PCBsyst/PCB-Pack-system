@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+const exports={};vm.runInNewContext(ts.transpileModule(readFileSync('lib/registration-inspection-verdict.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports});
+const verdict=exports.registrationInspectionVerdict;
+const count={matched:true,standardsProvided:false};
+assert.equal(verdict([],null).status,'UNCOMPARED');
+assert.equal(verdict([],count).status,'COUNT_ONLY');
+assert.equal(verdict([],{...count,standardsProvided:true}).status,'MATCHED');
+for(const comparison of [null,count,{...count,standardsProvided:true}])assert.equal(verdict(['후보자 연결 오류'],comparison).status,'REVIEW');
+assert.equal(verdict([],{...count,matched:false}).status,'REVIEW');
+assert.match(verdict([],count).guidance,/분야/);
+assert.match(verdict([],{...count,standardsProvided:true}).guidance,/보증하는 결과는 아닙니다/);
+const ui=readFileSync('components/application-registration-inspector.tsx','utf8');
+assert.match(ui,/registrationInspectionVerdict\(result.issues, comparison\)/);
+assert.doesNotMatch(ui,/조회 범위에서 연결 불일치가 발견되지 않았습니다/);
+console.log('신청 점검 판정: 연결 오류 우선·참고값 없음·건수만 대조·표준 대조·불일치 시 재등록 금지 안내 통과');

@@ -10,6 +10,16 @@ for(const prefix of ['ENMS26','2685','KB-26-SMP3','PL-Q26']){
  for(const value of [null,1234,{},prefix,prefix+'001',prefix+'10000',prefix+'0001 ',prefix+'1e03',' '+prefix+'0001','OTHER0001'])assert.equal(valid(value,prefix),false);
 }
 assert.equal(valid('0001',''),false);
+const {isAllocatedApplicationNumber:applicationNumber,isRegistrationDate:receiptDate}=load('allocated-number-validation');
+for(const [area,code] of [['ISO','ISO'],['K_BEAUTY','KB']]){
+ for(const sequence of ['001','099','999'])assert.equal(applicationNumber(`APP-${code}-2026-${sequence}`,area,'2026-10-12'),true);
+ for(const value of [null,{},1,`APP-${code}-2026-000`,`APP-${code}-2026-0001`,`APP-${code}-2025-001`,`APP-${code}-2026-001 `])assert.equal(applicationNumber(value,area,'2026-10-12'),false);
+}
+assert.equal(applicationNumber('APP-KB-2026-001','ISO','2026-10-12'),false);
+assert.equal(applicationNumber('APP-ISO-2026-001','OTHER','2026-10-12'),false);
+for(const date of ['2026-02-30','2026-13-01','2026-1-01',''])assert.equal(receiptDate(date),false);
+assert.equal(receiptDate('2024-02-29'),true);
+assert.equal(receiptDate('2026-02-29'),false);
 const {getJobNumber:job}=load('job-number');
 assert.equal(job('ISO','IAS','ACCREDITED','ISO 9001','2026-10-08',[{jobNo:'QMS269998'}]),'QMS269999');
 assert.equal(job('ISO','IAS','ACCREDITED','ISO 9001','2026-10-08',[{jobNo:'QMS269999'}]),'');

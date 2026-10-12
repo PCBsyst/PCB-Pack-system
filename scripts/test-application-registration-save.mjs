@@ -18,7 +18,7 @@ function fixture(options={}){
  const state={requests:[],stored:[],count:0,notice:'',saving:false,needsReview:false,localWrites:0};
  const client={auth:{getUser:async()=>{state.requests.push(['auth']);if(options.gate)await options.gate;return {data:{user:options.authFail?null:{id:'staff'}},error:null};}},rpc:async(name,args)=>{
  state.requests.push([name,args]);
- if(name==='allocate_application_number')return {data:'APP-ISO-2026-0001',error:null};
+ if(name==='allocate_application_number')return {data:Object.hasOwn(options,'applicationNumber')?options.applicationNumber:'APP-ISO-2026-001',error:null};
  if(name==='allocate_job_number')return {data:options.badNumber?'wrong':`${args.p_job_prefix}260001`,error:null};
  if(name==='create_application_bundle_v2')return {data:options.badBundle?null:bundle,error:null};
  throw Error('unexpected RPC');},from(table){
@@ -48,6 +48,12 @@ for(const options of [{badBundle:true},{fail:'applications:update'},{fail:'jobs:
  f=fixture(options);await f.register();assert.equal(f.state.stored.length,0);assert.equal(f.state.count,0);assert.equal(f.state.needsReview,true);assert.equal(f.state.checkCount,2);assert.match(f.state.notice,/일부 자료가 저장/);assert.ok(!f.state.notice.includes('private details'));const count=f.state.requests.length;await f.register();assert.equal(f.state.requests.length,count);assert.equal(f.context.registrationBusy.current,false);
 }
 for(const options of [{authFail:true},{badNumber:true}]){f=fixture(options);await f.register();assert.equal(f.state.stored.length,0);assert.equal(f.state.needsReview,false);assert.ok(!f.state.requests.some(([name])=>name==='create_application_bundle_v2'));}
+for(const applicationNumber of [null,{},123,'APP-ISO-2026-0001','APP-KB-2026-001','APP-ISO-2025-001','APP-ISO-2026-000','APP-ISO-2026-001 ']){
+ f=fixture({applicationNumber});await f.register();assert.equal(f.state.stored.length,0);assert.equal(f.state.needsReview,false);assert.ok(!f.state.requests.some(([name])=>name==='create_application_bundle_v2'||name==='allocate_job_number'));assert.equal(f.context.registrationBusy.current,false);
+}
+for(const date of ['2026-02-30','2026-13-01','2026-1-01','']){
+ f=fixture();f.context.receivedAt=date;await f.register();assert.equal(f.state.requests.length,0);assert.equal(f.state.stored.length,0);
+}
 f=fixture({local:true});await f.register();assert.equal(f.state.stored.length,2);assert.equal(f.state.localWrites,2);
 f=fixture({local:true,localFail:true});await f.register();assert.equal(f.state.stored.length,0);assert.equal(f.state.needsReview,true);assert.equal(f.context.registrationBusy.current,false);
 let release;const gate=new Promise(resolve=>release=resolve);f=fixture({gate});const first=f.register();await f.register();assert.equal(f.state.requests.filter(([name])=>name==='auth').length,1);release();await first;assert.equal(f.state.count,1);

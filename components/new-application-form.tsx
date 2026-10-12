@@ -17,7 +17,7 @@ import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
 import { readStoredPartners, type PartnerItem } from "@/components/partners-manager";
 import { useCertificationFields } from "@/components/use-certification-fields";
-import { isAllocatedNumber } from "@/lib/allocated-number-validation";
+import { isAllocatedNumber, isAllocatedApplicationNumber, isRegistrationDate } from "@/lib/allocated-number-validation";
 import { readApplicationBundle, hasUniqueRegistrationIds } from "@/lib/application-registration-checks";
 import { hasExactRecordValues } from "@/lib/workflow-record-checks";
 
@@ -140,7 +140,7 @@ export function NewApplicationForm() {
     if (candidateMode === "EXISTING" && !existingCandidateId) { setNotice("기등록 후보자를 선택해 주세요."); return; }
     const requiresPrevious = applicationType === "갱신" || applicationType === "등급변경";
     if (requiresPrevious && (candidateMode !== "EXISTING" || jobEntries.some((item) => !item.previousJobId))) { setNotice("갱신·등급변경은 기등록 후보자의 완료된 기존 인증 Job을 분야별로 선택해야 합니다."); return; }
-    if (!receivedAt || jobEntries.length === 0 || jobEntries.some((item) => !item.jobNo)) {
+    if (!isRegistrationDate(receivedAt) || jobEntries.length === 0 || jobEntries.some((item) => !item.jobNo)) {
       setNotice("접수일을 확인하고 신청 세부 분야를 한 개 이상 추가해 주세요.");
       return;
     }
@@ -160,9 +160,9 @@ export function NewApplicationForm() {
           supabase.rpc("allocate_application_number", { p_business_area: businessArea, p_received_at: receivedAt }),
           allocateAreaManagementNumbers(supabase, businessArea, records.length),
         ]);
-        if (applicationNoError || !allocatedApplicationNo) throw applicationNoError ?? new Error("신청번호를 확보하지 못했습니다.");
+        if (applicationNoError || !isAllocatedApplicationNumber(allocatedApplicationNo, businessArea, receivedAt)) throw new Error("신청번호 응답이 분야·접수연도·세 자리 순번 규칙과 일치하지 않습니다.");
         if (managementNoError || typeof allocatedManagementStart !== "number" || !Number.isInteger(allocatedManagementStart) || allocatedManagementStart < 1 || allocatedManagementStart + records.length - 1 > 2147483647) throw managementNoError ?? new Error("관리번호를 확보하지 못했습니다.");
-        for (let index = 0; index < records.length; index += 1) records[index] = { ...records[index], applicationNo: String(allocatedApplicationNo), managementNo: Number(allocatedManagementStart) + index };
+        for (let index = 0; index < records.length; index += 1) records[index] = { ...records[index], applicationNo: allocatedApplicationNo, managementNo: allocatedManagementStart + index };
         for (let index = 0; index < records.length; index += 1) {
           const rule = getNumberingRule(businessArea, scheme, accreditationTrack, records[index].standard, catalog);
           if (!rule?.verified || !rule.jobPrefix) throw new Error(`${records[index].standard}의 Job No. 규칙이 확정되지 않았습니다.`);

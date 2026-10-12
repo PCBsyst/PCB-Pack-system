@@ -21,6 +21,7 @@ import { isAllocatedNumber, isAllocatedApplicationNumber, isRegistrationDate } f
 import { readApplicationBundle, hasUniqueRegistrationIds } from "@/lib/application-registration-checks";
 import { hasExactRecordValues } from "@/lib/workflow-record-checks";
 import { readBoundedRows } from "@/lib/bounded-row-reader";
+import { readRegistrationDirectories } from "@/lib/registration-directories";
 
 type CandidateOption = { id: string; name: string; name_en: string | null; birth_date: string | null; nationality: string | null; email: string | null; phone: string | null };
 type JobDraft = { id: string; standard: string; grade: string; previousJobId: string };
@@ -48,6 +49,7 @@ export function NewApplicationForm() {
   const [partnerCompany, setPartnerCompany] = useState("직접접수");
   const [partnerOptions, setPartnerOptions] = useState<PartnerItem[]>([]);
   const [staffOptions, setStaffOptions] = useState<StaffOption[]>([]);
+  const [directoriesLoading, setDirectoriesLoading] = useState(Boolean(hasEnvVars)), [directoriesError, setDirectoriesError] = useState("");
   const [primaryOwnerId, setPrimaryOwnerId] = useState("");
   const [grade, setGrade] = useState("Auditor");
   const [jobDrafts, setJobDrafts] = useState<JobDraft[]>([]);
@@ -96,12 +98,19 @@ export function NewApplicationForm() {
 
   useEffect(() => {
     const records = readPrototypeApplications(); setStoredApplications(records); setStoredCount(new Set(records.map((record) => record.id)).size);
-    setPartnerOptions(readStoredPartners().filter((partner) => partner.active));
-    if (!hasEnvVars) return;
-    const supabase = createClient();
-    void supabase.from("candidates").select("id, name, name_en, birth_date, nationality, email, phone").order("name").then(({ data }) => { if (data) setCandidateOptions(data as CandidateOption[]); });
-    void supabase.from("partners").select("id, name, active").eq("active", true).order("name").then(({ data }) => { if (data) setPartnerOptions(data as PartnerItem[]); });
-    void Promise.all([supabase.auth.getUser(), supabase.from("profiles").select("id, display_name, role").eq("active", true).order("display_name")]).then(([authResult, profileResult]) => { const options = (profileResult.data ?? []) as StaffOption[]; setStaffOptions(options); setPrimaryOwnerId(authResult.data.user?.id ?? options[0]?.id ?? ""); });
+    if (!hasEnvVars) { setPartnerOptions(readStoredPartners().filter((partner) => partner.active)); return; }
+    let cancelled = false;
+    setDirectoriesLoading(true); setDirectoriesError("");
+    setCandidateOptions([]); setPartnerOptions([]); setStaffOptions([]); setPrimaryOwnerId("");
+    void (async () => {
+      try {
+        const directories = await readRegistrationDirectories(createClient(), () => cancelled);
+        if (cancelled || !directories) return;
+        setCandidateOptions(directories.candidates as CandidateOption[]); setPartnerOptions(directories.partners as PartnerItem[]); setStaffOptions(directories.staff as StaffOption[]); setPrimaryOwnerId(directories.ownerId);
+      } catch { if (!cancelled) setDirectoriesError("후보자·파트너사·담당자 목록을 확인하지 못했습니다. 샘플로 대체하지 않습니다. 페이지를 다시 불러와 주세요."); }
+      finally { if (!cancelled) setDirectoriesLoading(false); }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   async function chooseExistingCandidate(id: string) {
@@ -147,6 +156,8 @@ export function NewApplicationForm() {
   async function registerApplication() {
     if (registrationBusy.current) return;
     if (registrationUncertain.current) { setNotice("일부 저장 가능성이 있어 재등록을 중단합니다. 신청관리에서 기존 등록 여부와 연결 기록을 확인해 주세요."); return; }
+    if (hasEnvVars && (directoriesLoading || directoriesError)) { setNotice(directoriesError || "신청 선택 목록을 불러오는 중입니다."); return; }
+    if (hasEnvVars && !staffOptions.some(staff => staff.id === primaryOwnerId)) { setNotice("조회된 활성 주 담당자를 선택해 주세요."); return; }
     if (fieldsLoading || fieldsError) { setNotice(fieldsError || "인증분야 설정을 불러오는 중입니다."); return; }
     if (!candidateName.trim()) {
       setNotice("후보자 이름을 입력해 주세요.");
@@ -241,6 +252,7 @@ export function NewApplicationForm() {
 
   return <div className="max-w-5xl"><Link href="/applications" className="mb-4 inline-flex items-center gap-1 text-sm text-slate-500"><ArrowLeft className="h-4 w-4"/>신청 목록으로</Link>
     <form className="space-y-5">
+      {hasEnvVars && (directoriesLoading || directoriesError) && <p role="status" className="rounded-md border p-3 text-sm">{directoriesError || "후보자·파트너사·담당자 목록을 불러오는 중입니다."}{directoriesError && <Button type="button" variant="outline" className="ml-2" onClick={() => window.location.reload()}>페이지 다시 불러오기</Button>}</p>}
       <section className="rounded-lg border border-blue-100 bg-blue-50 p-5"><Field label="주 담당자" required><select className={controlClass} value={primaryOwnerId} onChange={(event) => setPrimaryOwnerId(event.target.value)} disabled={!hasEnvVars}><option value="">담당자를 선택하세요</option>{staffOptions.map((staff) => <option key={staff.id} value={staff.id}>{staff.display_name} · {staff.role === "ADMIN" ? "관리자" : "실무자"}</option>)}{!hasEnvVars && <option value="local">김담당 · 프로토타입</option>}</select></Field><p className="mt-2 text-xs text-blue-800">주 담당자를 지정해도 활성 실무자는 모두 이 업무를 조회하고 처리할 수 있습니다.</p></section>
       <section className="rounded-lg border bg-white shadow-sm"><div className="border-b px-6 py-5"><h2 className="font-semibold">후보자 기본정보</h2><p className="mt-1 text-sm text-slate-500">기등록 후보자는 기존 정보에 신청과 Job만 추가되며 중복 후보자로 생성되지 않습니다.</p></div><div className="border-b px-6 py-4"><div className="inline-flex rounded-md border bg-slate-50 p-1"><button type="button" onClick={() => changeCandidateMode("NEW")} className={`rounded px-4 py-2 text-sm font-medium ${candidateMode === "NEW" ? "bg-white text-blue-800 shadow-sm" : "text-slate-500"}`}>신규 후보자</button><button type="button" onClick={() => changeCandidateMode("EXISTING")} className={`rounded px-4 py-2 text-sm font-medium ${candidateMode === "EXISTING" ? "bg-white text-blue-800 shadow-sm" : "text-slate-500"}`}>기등록 후보자</button></div></div>{candidateMode === "EXISTING" && <div className="border-b bg-blue-50 px-6 py-4"><Field label="기등록 후보자 선택" required><select className={controlClass} value={existingCandidateId} onChange={(event) => chooseExistingCandidate(event.target.value)}><option value="">후보자를 선택하세요</option>{candidateOptions.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}{candidate.name_en ? ` (${candidate.name_en})` : ""}</option>)}</select></Field></div>}<div className="grid gap-5 p-6 sm:grid-cols-2"><Field label="후보자명" required><input className={controlClass} value={candidateName} onChange={(event) => setCandidateName(event.target.value)} disabled={candidateMode === "EXISTING"} placeholder="예: 홍길동"/></Field><Field label="영문명"><input className={controlClass} value={candidateNameEn} onChange={(event) => setCandidateNameEn(event.target.value)} disabled={candidateMode === "EXISTING"} placeholder="예: HONG GIL DONG"/></Field><Field label="생년월일"><input type="date" className={controlClass} value={candidateBirthDate} onChange={(event) => setCandidateBirthDate(event.target.value)} disabled={candidateMode === "EXISTING"}/></Field><Field label="국적"><input className={controlClass} value={candidateNationality} onChange={(event) => setCandidateNationality(event.target.value)} disabled={candidateMode === "EXISTING"} placeholder="예: 대한민국"/></Field><Field label="이메일"><input type="email" className={controlClass} value={candidateEmail} onChange={(event) => setCandidateEmail(event.target.value)} disabled={candidateMode === "EXISTING"} placeholder="name@example.com"/></Field><Field label="전화번호"><input type="tel" className={controlClass} value={candidatePhone} onChange={(event) => setCandidatePhone(event.target.value)} disabled={candidateMode === "EXISTING"} placeholder="010-0000-0000"/></Field></div>{candidateMode === "EXISTING" && <p className="mx-6 mb-6 rounded-md bg-slate-50 px-4 py-3 text-xs text-slate-600">후보자 정보 변경은 후보자 상세화면에서 변경 사유와 함께 처리합니다.</p>}</section>
       <section className="rounded-lg border bg-white shadow-sm"><div className="border-b px-6 py-5"><h2 className="font-semibold">접수 기본정보</h2><p className="mt-1 text-sm text-slate-500">최초 자료가 대표메일에 도착한 날짜를 접수일로 사용합니다.</p></div><div className="grid gap-5 p-6 sm:grid-cols-2"><Field label="공식 접수일" required><input type="date" className={controlClass} value={receivedAt} onChange={(event) => setReceivedAt(event.target.value)}/></Field><Field label="발행 분야" required><select className={controlClass} value={businessArea} onChange={(event) => { const value = event.target.value as BusinessArea; changeRuleContext(value, scheme, accreditationTrack); setGrade(value === "ISO" ? "Auditor" : "Pre-master"); }}><option value="ISO">ISO 경영시스템 심사원</option><option value="K_BEAUTY">K-Beauty 전문가 자격</option></select></Field><Field label="인정기구" required><select className={controlClass} value={scheme} onChange={(event) => changeRuleContext(businessArea, event.target.value as NumberingScheme, accreditationTrack)}><option value="IAS">IAS</option><option value="PJLA">PJLA</option></select></Field><Field label="인정 구분" required><div className="space-y-3"><select className={controlClass} value={accreditationTrack} onChange={(event) => { const value = event.target.value as "ACCREDITED" | "NON_ACCREDITED"; changeRuleContext(businessArea, scheme, value); if (value === "NON_ACCREDITED") setAccreditationHidden(false); }}><option value="ACCREDITED">인정</option><option value="NON_ACCREDITED">비인정</option></select>{accreditationTrack === "ACCREDITED" && <label className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><input type="checkbox" className="mt-0.5 h-4 w-4" checked={accreditationHidden} onChange={(event) => setAccreditationHidden(event.target.checked)}/><span><strong>인정 표시 숨김</strong><span className="mt-1 block text-xs text-amber-800">인정 고객으로 관리하되 외부 표시와 생성 문서에서는 인정 정보를 숨깁니다.</span></span></label>}</div></Field><Field label="신청구분" required><select className={controlClass} value={applicationType} onChange={(event) => changeApplicationType(event.target.value as ApplicationType)}><option>최초</option><option>갱신</option><option>등급변경</option><option>전환</option><option>기타</option></select></Field><Field label="파트너사"><select className={controlClass} value={partnerCompany} onChange={(event) => setPartnerCompany(event.target.value)}><option>직접접수</option>{partnerOptions.map((partner) => <option key={partner.id} value={partner.name}>{partner.name}</option>)}</select></Field></div>{accreditationTrack === "ACCREDITED" && accreditationHidden && <div className="mx-6 mb-6 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900">내부 분류: 인정 · 표시 방식: 숨김</div>}</section>

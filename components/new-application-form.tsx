@@ -20,6 +20,7 @@ import { useCertificationFields } from "@/components/use-certification-fields";
 import { isAllocatedNumber, isAllocatedApplicationNumber, isRegistrationDate } from "@/lib/allocated-number-validation";
 import { readApplicationBundle, hasUniqueRegistrationIds } from "@/lib/application-registration-checks";
 import { hasExactRecordValues } from "@/lib/workflow-record-checks";
+import { readBoundedRows } from "@/lib/bounded-row-reader";
 
 type CandidateOption = { id: string; name: string; name_en: string | null; birth_date: string | null; nationality: string | null; email: string | null; phone: string | null };
 type JobDraft = { id: string; standard: string; grade: string; previousJobId: string };
@@ -56,6 +57,8 @@ export function NewApplicationForm() {
   const [storedApplications, setStoredApplications] = useState<PrototypeApplicationRecord[]>([]);
   const [saving, setSaving] = useState(false);
   const registrationBusy = useRef(false);
+  const candidateLookupVersion = useRef(0);
+  useEffect(() => () => { candidateLookupVersion.current++; }, []);
   const registrationUncertain = useRef(false);
   const [registrationNeedsReview, setRegistrationNeedsReview] = useState(false);
   const [registrationCheckNo, setRegistrationCheckNo] = useState("");
@@ -102,14 +105,23 @@ export function NewApplicationForm() {
   }, []);
 
   async function chooseExistingCandidate(id: string) {
+    const version = ++candidateLookupVersion.current;
+    const cancelled = () => candidateLookupVersion.current !== version;
     setExistingCandidateId(id);
     setPreviousJobs([]);
+    setJobDrafts(current => current.map(item => ({ ...item, previousJobId: "" })));
+    setCandidateName(""); setCandidateNameEn(""); setCandidateBirthDate(""); setCandidateNationality(""); setCandidateEmail(""); setCandidatePhone("");
+    setNotice("");
     const candidate = candidateOptions.find((item) => item.id === id);
     if (!candidate) return;
     setCandidateName(candidate.name); setCandidateNameEn(candidate.name_en ?? ""); setCandidateBirthDate(candidate.birth_date ?? ""); setCandidateNationality(candidate.nationality ?? ""); setCandidateEmail(candidate.email ?? ""); setCandidatePhone(candidate.phone ?? "");
     if (hasEnvVars) {
-      const { data } = await createClient().from("jobs").select("id, job_no, standard, grade, certification_records(certification_no, issue_date, history_state), processing_cycles(status)").eq("candidate_id", id);
-      const options = (data ?? []).flatMap((row) => {
+      try {
+      const client = createClient();
+      const data = await readBoundedRows((from,to) => client.from("jobs").select("id, candidate_id, job_no, standard, grade, certification_records(certification_no, issue_date, history_state), processing_cycles(status)", {count:"exact"}).eq("candidate_id", id).order("id").range(from,to), row => row?.candidate_id === id ? row.id : undefined, cancelled, 1000);
+      if (cancelled()) return;
+      if (!data) throw new Error("이전 Job 조회 실패");
+      const options = data.flatMap((row) => {
         const certificates = Array.isArray(row.certification_records) ? row.certification_records : [];
         const cycles = Array.isArray(row.processing_cycles) ? row.processing_cycles : [];
         const certificate = certificates.find((item) => item.history_state === "CURRENT");
@@ -117,10 +129,13 @@ export function NewApplicationForm() {
         return [{ id: row.id, jobNo: row.job_no, standard: row.standard, grade: row.grade, certificationNo: certificate.certification_no, issueDate: certificate.issue_date }];
       });
       setPreviousJobs(options);
+      } catch { if (!cancelled()) { setPreviousJobs([]); setNotice("이전 Job을 확인하지 못했습니다. 조회 실패는 이전 인증 없음이 아닙니다. 후보자를 다시 선택해 주세요."); } }
     }
   }
 
   function changeCandidateMode(mode: "NEW" | "EXISTING") {
+    candidateLookupVersion.current++;
+    setJobDrafts(current => current.map(item => ({ ...item, previousJobId: "" })));
     setCandidateMode(mode); setExistingCandidateId(""); setPreviousJobs([]); setCandidateName(""); setCandidateNameEn(""); setCandidateBirthDate(""); setCandidateNationality(mode === "NEW" ? "대한민국" : ""); setCandidateEmail(""); setCandidatePhone("");
   }
 

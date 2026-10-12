@@ -144,6 +144,12 @@ export function NewApplicationForm() {
       setNotice("접수일을 확인하고 신청 세부 분야를 한 개 이상 추가해 주세요.");
       return;
     }
+    const normalizedStandards = jobEntries.map(item => item.standard.trim().normalize("NFC").toUpperCase());
+    if (new Set(normalizedStandards).size !== jobEntries.length) { setNotice("같은 세부 분야가 중복되었습니다. 신청 목록을 확인해 주세요."); return; }
+    if (requiresPrevious && jobEntries.some(item => !previousJobs.some(previous => previous.id === item.previousJobId && previous.standard === item.standard))) { setNotice("이전 Job이 현재 후보자의 조회된 분야 목록과 일치하지 않습니다. 후보자와 이전 Job을 다시 선택해 주세요."); return; }
+    const registrationRules = jobEntries.map(item => getNumberingRule(businessArea, scheme, accreditationTrack, item.standard, catalog));
+    const invalidRuleIndex = registrationRules.findIndex(rule => !rule?.verified || !rule.jobPrefix);
+    if (invalidRuleIndex >= 0) { setNotice(`${jobEntries[invalidRuleIndex].standard}의 번호 규칙을 확인해 주세요. 번호 확보 및 신청 저장을 시작하지 않았습니다.`); return; }
     registrationBusy.current = true;
     const sharedId = `local-${Date.now()}`;
     const ownerName = staffOptions.find((staff) => staff.id === primaryOwnerId)?.display_name ?? "김담당";
@@ -164,7 +170,7 @@ export function NewApplicationForm() {
         if (managementNoError || typeof allocatedManagementStart !== "number" || !Number.isInteger(allocatedManagementStart) || allocatedManagementStart < 1 || allocatedManagementStart + records.length - 1 > 2147483647) throw managementNoError ?? new Error("관리번호를 확보하지 못했습니다.");
         for (let index = 0; index < records.length; index += 1) records[index] = { ...records[index], applicationNo: allocatedApplicationNo, managementNo: allocatedManagementStart + index };
         for (let index = 0; index < records.length; index += 1) {
-          const rule = getNumberingRule(businessArea, scheme, accreditationTrack, records[index].standard, catalog);
+          const rule = registrationRules[index];
           if (!rule?.verified || !rule.jobPrefix) throw new Error(`${records[index].standard}의 Job No. 규칙이 확정되지 않았습니다.`);
           const { data: allocatedJobNo, error: allocationError } = await supabase.rpc("allocate_job_number", { p_job_prefix: rule.jobPrefix, p_received_at: receivedAt });
           if (allocationError) throw allocationError;

@@ -54,6 +54,14 @@ for(const applicationNumber of [null,{},123,'APP-ISO-2026-0001','APP-KB-2026-001
 for(const date of ['2026-02-30','2026-13-01','2026-1-01','']){
  f=fixture();f.context.receivedAt=date;await f.register();assert.equal(f.state.requests.length,0);assert.equal(f.state.stored.length,0);
 }
+for(const standard of ['UNKNOWN',' iso 50001 ']){
+ f=fixture();f.context.jobEntries[1].standard=standard;await f.register();assert.equal(f.state.requests.length,0);assert.equal(f.state.localWrites,0);assert.equal(f.context.registrationBusy.current,false);
+}
+f=fixture();f.context.catalog=f.context.catalog.map(rule=>rule.field==='ISO 9001'?{...rule,verified:false}:rule);await f.register();assert.equal(f.state.requests.length,0);
+for(const previousJobs of [[],[{id:ids.first,standard:'ISO 45001'}]]){
+ f=fixture();f.context.candidateMode='EXISTING';f.context.existingCandidateId=ids.candidate;f.context.applicationType='갱신';f.context.previousJobs=previousJobs;for(const item of f.context.jobEntries)item.previousJobId=ids.first;await f.register();assert.equal(f.state.requests.length,0);assert.match(f.state.notice,/이전 Job/);
+}
+f=fixture();f.context.candidateMode='EXISTING';f.context.existingCandidateId=ids.candidate;f.context.applicationType='갱신';f.context.previousJobs=f.context.jobEntries.map((item,index)=>({id:index?ids.extra:ids.first,standard:item.standard}));f.context.jobEntries.forEach((item,index)=>item.previousJobId=f.context.previousJobs[index].id);await f.register();assert.equal(f.state.stored.length,2);
 f=fixture({local:true});await f.register();assert.equal(f.state.stored.length,2);assert.equal(f.state.localWrites,2);
 f=fixture({local:true,localFail:true});await f.register();assert.equal(f.state.stored.length,0);assert.equal(f.state.needsReview,true);assert.equal(f.context.registrationBusy.current,false);
 let release;const gate=new Promise(resolve=>release=resolve);f=fixture({gate});const first=f.register();await f.register();assert.equal(f.state.requests.filter(([name])=>name==='auth').length,1);release();await first;assert.equal(f.state.count,1);

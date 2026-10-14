@@ -25,6 +25,8 @@ import { readRegistrationDirectories } from "@/lib/registration-directories";
 import { registrationCandidateIssue, registrationCandidateIssues, registrationCandidateFieldProps, type RegistrationCandidate } from "@/lib/registration-candidate-validation";
 import { RegistrationCandidateFeedback } from "@/components/registration-candidate-feedback";
 import { readRegistrationCandidate } from "@/lib/registration-candidate-read";
+import { candidateProfileReady, candidatePreviousJobsReady, type CandidateReadState } from "@/lib/registration-candidate-state";
+import { RegistrationCandidateStatus } from "@/components/registration-candidate-status";
 
 type CandidateOption = { id: string; name: string; name_en: string | null };
 type JobDraft = { id: string; standard: string; grade: string; previousJobId: string };
@@ -58,6 +60,7 @@ export function NewApplicationForm() {
   const [grade, setGrade] = useState("Auditor");
   const [jobDrafts, setJobDrafts] = useState<JobDraft[]>([]);
   const [previousJobs, setPreviousJobs] = useState<PreviousJobOption[]>([]);
+  const [candidateReadState, setCandidateReadState] = useState<CandidateReadState>({id:"",status:"IDLE"});
   const [notice, setNotice] = useState("");
   const [storedCount, setStoredCount] = useState(0);
   const [storedApplications, setStoredApplications] = useState<PrototypeApplicationRecord[]>([]);
@@ -123,6 +126,7 @@ export function NewApplicationForm() {
   }
 
   async function chooseExistingCandidate(id: string) {
+    if (registrationBusy.current) return;
     const version = ++candidateLookupVersion.current;
     const cancelled = () => candidateLookupVersion.current !== version;
     setExistingCandidateId(id);
@@ -130,19 +134,22 @@ export function NewApplicationForm() {
     setJobDrafts(current => current.map(item => ({ ...item, previousJobId: "" })));
     setCandidateName(""); setCandidateNameEn(""); setCandidateBirthDate(""); setCandidateNationality(""); setCandidateEmail(""); setCandidatePhone("");
     setNotice("");
+    setCandidateReadState({id,status:"IDLE"});
     const candidate = candidateOptions.find((item) => item.id === id);
     if (!candidate) return;
     let profile;
     if (hasEnvVars) {
       try {
         setNotice("조회 이력을 기록하며 후보자 상세정보를 확인하고 있습니다.");
+        setCandidateReadState({id,status:"PROFILE_LOADING"});
         profile = await readRegistrationCandidate(createClient(), id, cancelled);
         if (cancelled() || !profile) return;
         setNotice("");
-      } catch { if (!cancelled()) setNotice("후보자 상세정보와 조회 이력을 확인하지 못했습니다. 개인정보를 적용하지 않습니다. 권한·연결을 확인하고 후보자를 다시 선택해 주세요."); return; }
+      } catch { if (!cancelled()) { setCandidateReadState({id,status:"PROFILE_ERROR"}); setNotice("후보자 상세정보와 조회 이력을 확인하지 못했습니다. 개인정보를 적용하지 않습니다. 권한·연결을 확인하고 후보자를 다시 조회해 주세요."); } return; }
     } else profile = {...candidate,birth_date:null,nationality:null,email:null,phone:null};
     setCandidateName(profile.name); setCandidateNameEn(profile.name_en ?? ""); setCandidateBirthDate(profile.birth_date ?? ""); setCandidateNationality(profile.nationality ?? ""); setCandidateEmail(profile.email ?? ""); setCandidatePhone(profile.phone ?? "");
     if (hasEnvVars) {
+      setCandidateReadState({id,status:"JOBS_LOADING"});
       try {
       const client = createClient();
       const data = await readBoundedRows((from,to) => client.from("jobs").select("id, candidate_id, job_no, standard, grade, certification_records(certification_no, issue_date, history_state), processing_cycles(status)", {count:"exact"}).eq("candidate_id", id).order("id").range(from,to), row => row?.candidate_id === id ? row.id : undefined, cancelled, 1000);
@@ -156,11 +163,14 @@ export function NewApplicationForm() {
         return [{ id: row.id, jobNo: row.job_no, standard: row.standard, grade: row.grade, certificationNo: certificate.certification_no, issueDate: certificate.issue_date }];
       });
       setPreviousJobs(options);
-      } catch { if (!cancelled()) { setPreviousJobs([]); setNotice("이전 Job을 확인하지 못했습니다. 조회 실패는 이전 인증 없음이 아닙니다. 후보자를 다시 선택해 주세요."); } }
-    }
+      setCandidateReadState({id,status:"READY"});
+      } catch { if (!cancelled()) { setCandidateReadState({id,status:"JOBS_ERROR"}); setPreviousJobs([]); setNotice("이전 Job을 확인하지 못했습니다. 조회 실패는 이전 인증 없음이 아닙니다. 후보자를 다시 조회해 주세요."); } }
+    } else setCandidateReadState({id,status:"READY"});
   }
 
   function changeCandidateMode(mode: "NEW" | "EXISTING") {
+    if (registrationBusy.current) return;
+    setCandidateReadState({id:"",status:"IDLE"});
     candidateLookupVersion.current++;
     setJobDrafts(current => current.map(item => ({ ...item, previousJobId: "" })));
     setCandidateMode(mode); setExistingCandidateId(""); setPreviousJobs([]); setCandidateName(""); setCandidateNameEn(""); setCandidateBirthDate(""); setCandidateNationality(mode === "NEW" ? "대한민국" : ""); setCandidateEmail(""); setCandidatePhone("");
@@ -177,6 +187,7 @@ export function NewApplicationForm() {
     if (hasEnvVars && (directoriesLoading || directoriesError)) { setNotice(directoriesError || "신청 선택 목록을 불러오는 중입니다."); return; }
     if (hasEnvVars && !staffOptions.some(staff => staff.id === primaryOwnerId)) { setNotice("조회된 활성 주 담당자를 선택해 주세요."); return; }
     if (hasEnvVars && candidateMode === "EXISTING" && !candidateOptions.some(candidate => candidate.id === existingCandidateId)) { setNotice("현재 조회 목록의 기등록 후보자를 다시 선택해 주세요."); return; }
+    if (hasEnvVars && candidateMode === "EXISTING" && !candidateProfileReady(candidateReadState,existingCandidateId)) { setNotice("선택한 후보자 상세정보가 아직 확인되지 않았습니다. 조회 완료 후 등록하거나 다시 조회해 주세요."); return; }
     if (hasEnvVars && partnerCompany !== "직접접수" && !partnerOptions.some(partner => partner.active && partner.name === partnerCompany)) { setNotice("현재 조회 목록의 활성 파트너사를 다시 선택해 주세요."); return; }
     if (fieldsLoading || fieldsError) { setNotice(fieldsError || "인증분야 설정을 불러오는 중입니다."); return; }
     if (!candidateName.trim()) {
@@ -189,6 +200,7 @@ export function NewApplicationForm() {
     }
     if (candidateMode === "EXISTING" && !existingCandidateId) { setNotice("기등록 후보자를 선택해 주세요."); return; }
     const requiresPrevious = applicationType === "갱신" || applicationType === "등급변경";
+    if (hasEnvVars && requiresPrevious && !candidatePreviousJobsReady(candidateReadState,existingCandidateId)) { setNotice("이전 Job 목록을 확인한 뒤 갱신·등급변경을 등록할 수 있습니다. 후보자를 다시 조회해 주세요."); return; }
     if (requiresPrevious && (candidateMode !== "EXISTING" || jobEntries.some((item) => !item.previousJobId))) { setNotice("갱신·등급변경은 기등록 후보자의 완료된 기존 인증 Job을 분야별로 선택해야 합니다."); return; }
     if (!isRegistrationDate(receivedAt) || jobEntries.length === 0 || jobEntries.some((item) => !item.jobNo)) {
       setNotice("접수일을 확인하고 신청 세부 분야를 한 개 이상 추가해 주세요.");
@@ -278,6 +290,7 @@ export function NewApplicationForm() {
   const candidateField = (field: keyof RegistrationCandidate) => registrationCandidateFieldProps(field, candidateIssues);
   return <div className="max-w-5xl"><Link href="/applications" className="mb-4 inline-flex items-center gap-1 text-sm text-slate-500"><ArrowLeft className="h-4 w-4"/>신청 목록으로</Link>
     <form className="space-y-5">
+      {candidateMode === "EXISTING" && <RegistrationCandidateStatus state={candidateReadState} saving={saving} onRetry={() => { void chooseExistingCandidate(existingCandidateId); }}/>}
       <RegistrationCandidateFeedback input={{name:candidateName,nameEn:candidateNameEn,birthDate:candidateBirthDate,nationality:candidateNationality,email:candidateEmail,phone:candidatePhone}} receivedAt={receivedAt} existing={candidateMode === "EXISTING"}/>
       {hasEnvVars && (directoriesLoading || directoriesError) && <p role="status" className="rounded-md border p-3 text-sm">{directoriesError || "후보자·파트너사·담당자 목록을 불러오는 중입니다."}{directoriesError && <Button type="button" variant="outline" className="ml-2" disabled={directoriesLoading || saving} onClick={retryDirectories}>입력 유지하고 목록 재조회</Button>}</p>}
       <section className="rounded-lg border border-blue-100 bg-blue-50 p-5"><Field label="주 담당자" required><select className={controlClass} value={primaryOwnerId} onChange={(event) => setPrimaryOwnerId(event.target.value)} disabled={!hasEnvVars}><option value="">담당자를 선택하세요</option>{staffOptions.map((staff) => <option key={staff.id} value={staff.id}>{staff.display_name} · {staff.role === "ADMIN" ? "관리자" : "실무자"}</option>)}{!hasEnvVars && <option value="local">김담당 · 프로토타입</option>}</select></Field><p className="mt-2 text-xs text-blue-800">주 담당자를 지정해도 활성 실무자는 모두 이 업무를 조회하고 처리할 수 있습니다.</p></section>

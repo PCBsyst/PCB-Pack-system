@@ -21,3 +21,8 @@ export function registrationCandidateIssues(input: RegistrationCandidate, receiv
 export function registrationCandidateIssue(input: RegistrationCandidate, receivedAt: string): string | null {
   return registrationCandidateIssues(input, receivedAt)[0]?.message ?? null;
 }
+
+export function registrationCandidateFieldProps(field: keyof RegistrationCandidate, issues: ReturnType<typeof registrationCandidateIssues>) {
+  const descriptions = issues.flatMap((issue,index) => issue.field === field ? [`registration-candidate-error-${index}`] : []);
+  return { id: `registration-candidate-${field}`, "aria-invalid": descriptions.length > 0, "aria-describedby": descriptions.join(" ") || undefined };
+}

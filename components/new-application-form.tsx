@@ -24,8 +24,9 @@ import { readBoundedRows } from "@/lib/bounded-row-reader";
 import { readRegistrationDirectories } from "@/lib/registration-directories";
 import { registrationCandidateIssue, registrationCandidateIssues, registrationCandidateFieldProps, type RegistrationCandidate } from "@/lib/registration-candidate-validation";
 import { RegistrationCandidateFeedback } from "@/components/registration-candidate-feedback";
+import { readRegistrationCandidate } from "@/lib/registration-candidate-read";
 
-type CandidateOption = { id: string; name: string; name_en: string | null; birth_date: string | null; nationality: string | null; email: string | null; phone: string | null };
+type CandidateOption = { id: string; name: string; name_en: string | null };
 type JobDraft = { id: string; standard: string; grade: string; previousJobId: string };
 type StaffOption = { id: string; display_name: string; role: "STAFF" | "ADMIN" };
 type PreviousJobOption = { id: string; jobNo: string; standard: string; grade: string; certificationNo: string; issueDate: string };
@@ -131,7 +132,16 @@ export function NewApplicationForm() {
     setNotice("");
     const candidate = candidateOptions.find((item) => item.id === id);
     if (!candidate) return;
-    setCandidateName(candidate.name); setCandidateNameEn(candidate.name_en ?? ""); setCandidateBirthDate(candidate.birth_date ?? ""); setCandidateNationality(candidate.nationality ?? ""); setCandidateEmail(candidate.email ?? ""); setCandidatePhone(candidate.phone ?? "");
+    let profile;
+    if (hasEnvVars) {
+      try {
+        setNotice("조회 이력을 기록하며 후보자 상세정보를 확인하고 있습니다.");
+        profile = await readRegistrationCandidate(createClient(), id, cancelled);
+        if (cancelled() || !profile) return;
+        setNotice("");
+      } catch { if (!cancelled()) setNotice("후보자 상세정보와 조회 이력을 확인하지 못했습니다. 개인정보를 적용하지 않습니다. 권한·연결을 확인하고 후보자를 다시 선택해 주세요."); return; }
+    } else profile = {...candidate,birth_date:null,nationality:null,email:null,phone:null};
+    setCandidateName(profile.name); setCandidateNameEn(profile.name_en ?? ""); setCandidateBirthDate(profile.birth_date ?? ""); setCandidateNationality(profile.nationality ?? ""); setCandidateEmail(profile.email ?? ""); setCandidatePhone(profile.phone ?? "");
     if (hasEnvVars) {
       try {
       const client = createClient();

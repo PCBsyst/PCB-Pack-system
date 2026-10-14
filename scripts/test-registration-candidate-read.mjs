@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+const exports={};vm.runInNewContext(ts.transpileModule(readFileSync('lib/registration-candidate-read.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports});
+const read=exports.readRegistrationCandidate,id='11111111-1111-4111-8111-111111111111';
+const profile={id,name:'가상 후보자',name_en:null,birth_date:null,nationality:null,email:'sample@example.test',phone:null,address:'출력하지 않을 항목'};
+const calls=[];const client=data=>({rpc:async(name,args)=>{calls.push([name,args]);return {data,error:null};}});
+let result=await read(client(profile),id,()=>false);assert.equal(result.email,'sample@example.test');assert.equal(result.address,undefined);assert.equal(calls[0][0],'read_candidate_with_access_log');assert.equal(calls[0][1].target_id,id);
+for(const data of [null,[],{}, {...profile,id:'other'},{...profile,name:''},{...profile,email:123},{...profile,phone:undefined}])await assert.rejects(()=>read(client(data),id,()=>false));
+await assert.rejects(()=>read({rpc:async()=>({data:profile,error:{message:'private'}})},id,()=>false));
+await assert.rejects(()=>read(client(profile),'local',()=>false));
+const before=calls.length;assert.equal(await read(client(profile),id,()=>true),null);assert.equal(calls.length,before);
+let done=false;assert.equal(await read({rpc:async()=>{done=true;return {data:profile,error:null};}},id,()=>done),null);
+const directories=readFileSync('lib/registration-directories.ts','utf8');assert.match(directories,/from\("candidates"\).select\("id, name, name_en"/);assert.ok(!directories.includes('birth_date'));assert.ok(!directories.includes('email'));
+const form=readFileSync('components/new-application-form.tsx','utf8');assert.match(form,/await readRegistrationCandidate\(createClient\(\), id, cancelled\)/);
+console.log('기등록 후보자 개인정보: 이름 목록 최소 조회·선택 시 감사 RPC·응답 ID/형식 대조·감사 실패 미적용·취소·추가 개인정보 미반환 검사 통과 (DB 모의)');

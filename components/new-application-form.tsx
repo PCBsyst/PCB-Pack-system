@@ -22,6 +22,7 @@ import { readApplicationBundle, hasUniqueRegistrationIds } from "@/lib/applicati
 import { hasExactRecordValues } from "@/lib/workflow-record-checks";
 import { readBoundedRows } from "@/lib/bounded-row-reader";
 import { readRegistrationDirectories } from "@/lib/registration-directories";
+import { registrationCandidateIssue } from "@/lib/registration-candidate-validation";
 
 type CandidateOption = { id: string; name: string; name_en: string | null; birth_date: string | null; nationality: string | null; email: string | null; phone: string | null };
 type JobDraft = { id: string; standard: string; grade: string; previousJobId: string };
@@ -170,6 +171,10 @@ export function NewApplicationForm() {
     if (!candidateName.trim()) {
       setNotice("후보자 이름을 입력해 주세요.");
       return;
+    }
+    if (candidateMode === "NEW") {
+      const issue = registrationCandidateIssue({ name: candidateName, nameEn: candidateNameEn, birthDate: candidateBirthDate, nationality: candidateNationality, email: candidateEmail, phone: candidatePhone }, receivedAt);
+      if (issue) { setNotice(issue); return; }
     }
     if (candidateMode === "EXISTING" && !existingCandidateId) { setNotice("기등록 후보자를 선택해 주세요."); return; }
     const requiresPrevious = applicationType === "갱신" || applicationType === "등급변경";

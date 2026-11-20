@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import vm from 'node:vm';import ts from 'typescript';
+const exports={};vm.runInNewContext(ts.transpileModule(readFileSync('lib/application-intake-job.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,Map,Error});
+const {extractJobSource:read,matchIntakeStandard:standard,matchIntakeGrade:grade,validateIntakeJob:validate}=exports;
+assert.equal(read('신청표준\tISO 45001\n신청등급: 선임심사원').standard.value,'ISO 45001');assert.equal(read('Standard: ISO/IEC 27001\nGrade: Auditor').grade.value,'Auditor');
+assert.equal(read('신청표준: ISO 9001\n신청표준: ISO 14001').standard.conflict,true);assert.equal(read('등급: 심사원\n등급: 검증심사원').grade.value,'');
+assert.equal(read('경력으로 ISO 9001 심사원 경험 보유').standard.value,'');assert.equal(standard('ISO9001',['ISO 9001']),'ISO 9001');assert.equal(standard('9001',['ISO 9001']),'');assert.equal(standard('ISO 9001/14001',['ISO 9001','ISO 14001']),'');assert.equal(standard('ISO 9001',['ISO 9001','ISO9001']),'');
+assert.equal(standard('맞춤 표준',['맞춤 표준']),'맞춤 표준');assert.equal(grade('선임심사원','ISO'),'Lead Auditor');assert.equal(grade('선임심사원','K_BEAUTY'),'');assert.equal(grade('global master','K_BEAUTY'),'Global Master');assert.equal(grade('Auditor','K_BEAUTY'),'');
+for(const args of [['ISO 9001','Auditor','ISO',[],[],true],['ISO 9001','Master','ISO',['ISO 9001'],[],true],['ISO 9001','Auditor','ISO',['ISO 9001'],['ISO 9001'],true],['ISO 9001','Auditor','ISO',['ISO 9001'],[],false]])assert.throws(()=>validate(...args));
+assert.equal(validate('ISO 45001','Lead Auditor','ISO',['ISO 45001'],[],true).grade,'Lead Auditor');assert.throws(()=>read('x'.repeat(1_000_001)));
+console.log('신청표준·등급: 라벨 한정·복수 값 보류·전체 표준 일치·사용자 추가 분야·국영문 등급·분야 혼용/미등록/중복/미승인 차단 통과');

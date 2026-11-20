@@ -1,0 +1,26 @@
+{
+  "manualPageReview": true,
+  "notes": [
+    "기본 렌더러는 LibreOffice 미설치로 실행되지 않아 설치된 Word로 PDF 출력 후 PNG 전체 확인",
+    "일반/미확인 각 2쪽 및 장문 8쪽",
+    "서버 PDF 변환 기능을 추가한 것은 아님"
+  ],
+  "cases": [
+    {
+      "name": "normal",
+      "pages": 2
+    },
+    {
+      "name": "long",
+      "pages": 8
+    },
+    {
+      "name": "missing",
+      "pages": 2
+    }
+  ],
+  "reviewedAt": "2026-11-20",
+  "templateSha256": "aaf22a2b05f2ac0bf82a9677c7ca203c9973e9981df810e544e6396432a90e39",
+  "renderer": "Microsoft Word",
+  "sourceSha256": "f5e82f137213ec68ba2545a7c8628262222504dabfb1438a5d1b2645a119b855"
+}

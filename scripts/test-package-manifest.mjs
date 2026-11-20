@@ -56,8 +56,10 @@ async function generate(languages, registered = []) {
   assert.match(response.headers.get("Cache-Control"), /no-store/);
   return { json, response, text };
 }
-const partial = await generate(["KR"]);
-assert.equal(partial.json.documentCount, 2); assert.equal(partial.json.complete, false); assert.equal(partial.json.missing.length, 1); assert.equal(partial.json.missing[0].documentType, "DELIVERY_CONFIRMATION"); assert.equal(partial.response.headers.get("X-Package-Complete"), "false");
+const korean = await generate(["KR"]);
+assert.equal(korean.json.documentCount, 3); assert.equal(korean.json.complete, true); assert.equal(korean.json.missing.length, 0); assert.equal(korean.response.headers.get("X-Package-Complete"), "true");
+const partial = await generate(["KR","EN"]);
+assert.equal(partial.json.documentCount, 4); assert.equal(partial.json.complete, false); assert.equal(partial.json.missing.length, 2); assert.ok(partial.json.missing.every(row=>row.language==="EN")); assert.equal(partial.response.headers.get("X-Package-Complete"), "false");
 const complete = await generate(["KR", "EN"], ["DELIVERY_CONFIRMATION:KR", "APPLICATION_REVIEW:EN", "CERTIFICATION_DECISION_REPORT:EN"]);
 assert.equal(complete.json.documentCount, 6); assert.equal(complete.json.complete, true); assert.deepEqual(complete.json.missing, []); assert.equal(complete.response.headers.get("X-Package-Complete"), "true");
 assert.doesNotMatch(complete.text, /양식 미등록/);

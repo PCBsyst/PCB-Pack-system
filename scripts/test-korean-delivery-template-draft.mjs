@@ -28,5 +28,5 @@ for (const row of body.matchAll(/<w:tr(?:\s[^>]*)?>[\s\S]*?<\/w:tr>/g)) {
 for (const [name, bytes] of unchanged) assert.deepEqual(zip.file(name).asUint8Array(), bytes, `머릿글·바닥글·로고·관계 보존: ${name}`);
 assert.throws(() => prepare(new PizZip()), /원본 본문/);
 const registry = fs.readFileSync(new URL("../lib/document-template-registry.ts", import.meta.url), "utf8");
-assert.match(registry.split(/\r?\n/).find((line) => line.includes('id: "delivery-confirmation-kr"')), /available: false/, "렌더링 전에는 정식 양식으로 표시하지 않습니다.");
-console.log("국문 문서전달확인서 제작 코드: 원본 항목·국문 제목·항목별 비고·머릿글/바닥글/로고 보존 통과 (파일 미배포, 출력 검증 대기)");
+assert.match(registry.split(/\r?\n/).find((line) => line.includes('id: "delivery-confirmation-kr"')), /available: true/, "정식 양식과 이전 검토용 초안의 경로를 분리합니다.");
+console.log("국문 문서전달확인서 제작 코드: 원본 항목·국문 제목·항목별 비고·머릿글/바닥글/로고 보존 통과 (기존 초안 유지, 정식 국문 양식 별도)");

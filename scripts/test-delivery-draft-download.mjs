@@ -30,7 +30,7 @@ await assert.rejects(download(context, job, () => false), /업무 입력이나 �
 assert.equal(saved.length, 1);
 assert.ok(ui.includes("downloadDeliveryConfirmationDraftDocx(packageContext, job)"));
 const registry = fs.readFileSync(new URL("../lib/document-template-registry.ts", import.meta.url), "utf8");
-assert.match(registry.split(/\r?\n/).find((line) => line.includes('id: "delivery-confirmation-kr"')), /available: false/);
+assert.match(registry.split(/\r?\n/).find((line) => line.includes('id: "delivery-confirmation-kr"')), /available: true/);
 const packageRoute = fs.readFileSync(new URL("../app/api/documents/package/route.ts", import.meta.url), "utf8");
 assert.ok(!packageRoute.includes("delivery-confirmation-draft"));
 console.log("국문 초안 다운로드: 별도 경로·초안 표시/무결성 실패 시 미저장·정식 ZIP 제외 검사 통과");

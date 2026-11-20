@@ -27,7 +27,7 @@ let code = compile("../app/api/documents/package/route.ts");
 for (const [name, module] of Object.entries(dependencies)) code = code.replaceAll(JSON.stringify(name), JSON.stringify(module));
 const { POST } = await import(url(code));
 const job = { id: "j1", jobNo: "QMS260001", candidateId: "c1", applicationId: "a1", standard: "ISO 9001", currentGrade: "심사원" };
-const input = { context: { application: { id: "a1", applicationNo: "APP001", candidateId: "c1", jobIds: ["j1"] }, candidate: { id: "c1", name: "가상 후보자" }, jobs: [job], review: {}, certificates: {}, decisions: {}, deliveryDocuments: {}, assessment: {}, panelMembers: [] }, jobs: [job], languages: ["KR"] };
+const input = { context: { application: { id: "a1", applicationNo: "APP001", candidateId: "c1", jobIds: ["j1"] }, candidate: { id: "c1", name: "가상 후보자" }, jobs: [job], review: {}, certificates: {}, decisions: {}, deliveryDocuments: {}, assessment: {}, panelMembers: [] }, jobs: [job], languages: ["KR", "EN"] };
 for (const [mode, expectedStatus] of [["denied",403],["invalid-json",400],["initial-change",409],["loader-throw",503],["child-failure",400],["child-throw",503],["corrupt",503],["provenance",503],["final-change",409],["access-failure",503],["receipt-failure",503],["receipt-throw",503]]) {
   Object.assign(state, { mode, documentCalls: 0, recordChecks: 0, accessCalls: 0, receiptCalls: 0 });
   const response = await POST(new Request("https://example.com/package", { method: "POST", body: mode === "invalid-json" ? "invalid" : JSON.stringify(input) }));

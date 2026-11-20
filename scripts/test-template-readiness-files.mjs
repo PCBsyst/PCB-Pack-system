@@ -16,13 +16,13 @@ function fixture({ authError = null, keys = new Set(), fail = false, changed = f
   return { GET, calls };
 }
 let f = fixture(); let response = await f.GET();
-assert.equal(response.status, 200); assert.equal(f.calls.length, 3);
+assert.equal(response.status, 200); assert.equal(f.calls.length, 4);
 assert.ok(f.calls.every((call) => call.fallback?.endsWith(".docx")));
 assert.equal((await response.json()).templates.length, 6);
 assert.equal(response.headers.get("Cache-Control"), "private, no-store");
 f = fixture({ keys: new Set(["DELIVERY_CONFIRMATION:KR"]) }); response = await f.GET();
 assert.equal(response.status, 200); assert.equal(f.calls.length, 4);
-assert.equal(f.calls.find((call) => call.type === "DELIVERY_CONFIRMATION" && call.language === "KR").fallback, undefined);
+assert.equal(f.calls.find((call) => call.type === "DELIVERY_CONFIRMATION" && call.language === "KR").fallback, "FGPC-012-03-delivery-confirmation-kr.docx");
 for (const options of [{ fail: true }, { changed: true }]) {
   f = fixture(options); response = await f.GET(); assert.equal(response.status, 503);
   assert.ok(!(await response.text()).includes("private storage path"));

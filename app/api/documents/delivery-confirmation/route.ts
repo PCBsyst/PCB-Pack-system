@@ -56,8 +56,9 @@ async function createDocumentResponse(request: Request) {
   }
 
   let template;
-  try { template = await loadDocumentTemplate("DELIVERY_CONFIRMATION", language, language === "EN" ? "FGPC-012-03-delivery-confirmation-en.docx" : undefined); }
+  try { template = await loadDocumentTemplate("DELIVERY_CONFIRMATION", language, language === "EN" ? "FGPC-012-03-delivery-confirmation-en.docx" : "FGPC-012-03-delivery-confirmation-kr.docx"); }
   catch { return templateLoadErrorResponse(); }
+  if(language==="KR"&&template.source==="BUILT_IN")values.note=documentTrainingSummary(context.examSchedules?.[job.id],language)||"교육 및 시험 기록 미입력";
   let zip;
   try { zip = new PizZip(template.bytes); }
   catch { return invalidDocxResponse(); }

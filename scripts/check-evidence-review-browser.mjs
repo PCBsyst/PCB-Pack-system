@@ -1,0 +1,37 @@
+import {createRequire} from 'node:module';
+import {spawn} from 'node:child_process';
+import {openSync,mkdirSync} from 'node:fs';
+import assert from 'node:assert/strict';
+import PizZip from 'pizzip';
+const require=createRequire(import.meta.url),{chromium}=require('C:/Users/N2411-S05/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+assert.ok(!process.env.NEXT_PUBLIC_SUPABASE_URL,'가상 데이터 전용 검사입니다.');
+mkdirSync('../output/evidence-review/qa',{recursive:true});
+const log=openSync('../output/evidence-review/qa/server.log','w');
+const server=spawn(process.execPath,['--no-experimental-strip-types','node_modules/next/dist/bin/next','dev','--webpack','--port','3004'],{stdio:['ignore',log,log],windowsHide:true,env:{...process.env,NODE_OPTIONS:`${process.env.NODE_OPTIONS??''} --no-experimental-strip-types`.trim()}});
+let browser;
+try {
+ let ready=false;for(let i=0;i<60;i++){try{if((await fetch('http://localhost:3004/',{signal:AbortSignal.timeout(3000)})).ok){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,1000));}assert.ok(ready,'가상 데이터 서버 준비 실패');
+ browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
+ const page=await browser.newPage({viewport:{width:1440,height:1100}}),outbound=[];page.on('request',r=>{if(!new URL(r.url()).hostname.match(/^(localhost|127\.0\.0\.1)$/))outbound.push(r.url());});
+ await page.goto('http://localhost:3004/applications/app-003?tab=review',{waitUntil:'networkidle',timeout:120000});
+ const panel=page.locator('section').filter({has:page.getByRole('heading',{name:'증빙 대조·경력·심사이력 분석',exact:true})}).last();
+ await panel.getByRole('button',{name:'가상 예제 보기 (저장 안 함)',exact:true}).click();
+ await panel.getByText(/유효 입력 기간 396일/).waitFor();
+ assert.ok((await panel.innerText()).includes('불일치 · 확인 필요'));
+ assert.ok((await panel.innerText()).includes('원문 대조·일정 확인 1건 · 0.5일'));
+ await panel.screenshot({path:'../output/evidence-review/qa/sample-analysis.png'});
+ await panel.getByRole('button',{name:'업무 기록으로 돌아가기',exact:true}).click();
+ assert.equal(await panel.getByText('가상 신청서',{exact:true}).count(),0);
+ const zip=new PizZip();zip.file('[Content_Types].xml','<Types/>');zip.file('word/document.xml','<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:p><w:r><w:t>성명</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>가상업로드후보</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>이메일: sample@example.test</w:t></w:r></w:p></w:body></w:document>');
+ await panel.getByLabel('증빙 Word 파일',{exact:true}).setInputFiles({name:'가상신청서.docx',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',buffer:zip.generate({type:'nodebuffer',compression:'DEFLATE'})});
+ await panel.getByText('문서를 연결했습니다.',{exact:false}).waitFor({timeout:30000});
+ assert.ok((await panel.innerText()).includes('가상업로드후보'));
+ assert.equal(await panel.locator('input').filter({hasText:'가상업로드후보'}).count(),0); // Values are inputs, not injected markup.
+ await page.waitForFunction(()=>Object.entries(localStorage).some(([key,value])=>key.startsWith('certification-demo:v4:')&&JSON.parse(value).evidenceReview?.documents.length===1));
+ const stored=await page.evaluate(()=>Object.entries(localStorage).find(([key])=>key.startsWith('certification-demo:v4:'))?.[1]);assert.ok(stored.includes('sample@example.test'));assert.ok(!stored.includes('w:document'));
+ await page.reload({waitUntil:'networkidle'});
+ await panel.getByText('신청서 · 가상신청서.docx',{exact:true}).waitFor();
+ assert.equal(await panel.getByText('읽은 Word 본문 확인 (이 화면에서만 보관)',{exact:true}).count(),0);
+ assert.equal(outbound.length,0);
+ console.log('가상 브라우저: 불일치·중첩·중복·겹침 예제 격리 / 압축 DOCX 읽기·표 값 추출 / 업무 저장·새로고침 복원 / 원문 미저장·외부 전송 0건 통과 (운영 DB 검증 별도)');
+} finally {await browser?.close();server.kill();}

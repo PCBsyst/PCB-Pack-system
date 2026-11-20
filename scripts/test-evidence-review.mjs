@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+const cache={};function load(name){if(cache[name])return cache[name];const exports={};cache[name]=exports;vm.runInNewContext(ts.transpileModule(readFileSync(`lib/${name}.ts`,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{exports,require:p=>load(p.replace('@/lib/','')),Date,Map,Set,JSON,Error});return exports;}
+const {analyzeEvidence:analyze,readEvidenceReview:read,emptyEvidenceReview:empty,unionEvidenceDays:union}=load('evidence-review');
+const {evidenceReviewSample:sample}=load('evidence-review-sample');
+const {extractApplicationSuggestions:extract}=load('application-intake');
+const expected={name:'가상후보',birthDate:'1990-01-01'},asOf='2026-11-20';
+let state=sample(),result=analyze(state,expected,asOf);
+assert.equal(result.careerDays,396);assert.equal(result.confirmedCareerDays,396);assert.equal(result.careerOverlaps.length,1);
+assert.equal(result.comparisons.find(r=>r.field==='trainingCompletedAt').status,'MISMATCH');
+assert.equal(result.duplicateAuditGroups.length,1);assert.equal(result.auditUniqueCount,3);assert.equal(result.auditOverlaps.length,1);assert.equal(result.confirmedAuditDays,0.5);assert.equal(result.confirmedAuditCount,1);
+assert.ok(result.overlappingAuditIds.includes('audit-duplicate'));
+assert.equal(result.comparisons.find(r=>r.field==='name').status,'MATCH');assert.equal(result.comparisons.find(r=>r.field==='email').status,'UNKNOWN');
+assert.equal(union([{start:1,end:1},{start:1,end:1},{start:2,end:3},{start:10,end:10}]),4);
+assert.equal(union([]),0);
+state=sample();state.documents[2].fields.name='다른후보';result=analyze(state,expected,asOf);assert.equal(result.confirmedCareerDays,0);assert.equal(result.confirmedAuditDays,0);assert.ok(result.foreignDocumentIds.includes('sample-career'));
+state=sample();state.documents[2].fields.birthDate='1991-01-01';assert.equal(analyze(state,expected,asOf).confirmedCareerDays,0);
+state=sample();delete state.documents[2].fields.name;assert.equal(analyze(state,expected,asOf).confirmedCareerDays,0);
+state=sample();state.careers[0].confirmed=false;state.careers[1].confirmed=false;assert.equal(analyze(state,expected,asOf).confirmedCareerDays,0);
+state=sample();state.careers=[{...state.careers[0],start:'2024-02-28',end:'2024-03-01'}];assert.equal(analyze(state,expected,asOf).confirmedCareerDays,3);
+for(const patch of [{start:'2026-02-30'},{start:'2026-12-01'},{end:'2024-01-01'},{documentId:'missing'},{reference:''}]){state=sample();state.careers=[{...state.careers[0],...patch}];assert.equal(analyze(state,expected,asOf).confirmedCareerDays,0);}
+state=sample();state.careers=[{...state.careers[0],start:asOf,end:'',ongoing:true}];assert.equal(analyze(state,expected,asOf).confirmedCareerDays,1);
+state=sample();state.audits=state.audits.slice(0,2);result=analyze(state,expected,asOf);assert.equal(result.confirmedAuditDays,2);assert.equal(result.confirmedAuditCount,1);
+state.audits[1].days='1';assert.equal(analyze(state,expected,asOf).confirmedAuditDays,0);assert.equal(analyze(state,expected,asOf).duplicateAuditGroups[0].conflictingDays,true);
+for(const days of ['','0','-1','NaN','Infinity','3']){state=sample();state.audits=[{...state.audits[0],days}];assert.equal(analyze(state,expected,asOf).confirmedAuditDays,0);}
+assert.equal(analyze(empty(),expected,asOf).confirmedAuditDays,0);assert.equal(analyze(sample(),expected,'bad').confirmedCareerDays,0);
+for(const value of [null,{}, {...sample(),version:2},{...sample(),documents:[...sample().documents,sample().documents[0]]},{...sample(),audits:[{...sample().audits[0],confirmed:'true'}]},{...sample(),documents:[{...sample().documents[0],fields:{unknown:'x'}}]}])assert.equal(read(value),null);
+assert.ok(read(undefined));assert.ok(read(sample()));
+assert.equal(read({...sample(),rawText:'do not retain'}),null);
+assert.equal(read({...sample(),documents:[{...sample().documents[0],fields:{constructor:'invalid'}}]}),null);
+const suggestions=extract('성명\t가상후보\n생년월일: 1990년 1월 1일\n이메일: sample@example.test\n전화번호: 010-1234-5678');
+assert.equal(suggestions.find(r=>r.field==='birthDate').value,'1990-01-01');assert.equal(suggestions.find(r=>r.field==='name').value,'가상후보');
+assert.equal(extract('성명: 가상 A\n성명: 가상 B')[0].conflict,true);assert.equal(extract('이메일: bad').length,0);assert.equal(extract('생년월일: 2026-02-30').length,0);
+const panel=readFileSync('components/evidence-review-panel.tsx','utf8'),host=readFileSync('components/application-detail.tsx','utf8');
+assert.ok(host.includes('value={demo.evidenceReview}'));assert.ok(host.includes('evidenceReview:value'));assert.ok(panel.includes('latest.current.value!==started.value'));assert.ok(panel.includes('confirmed:false'));
+assert.ok(host.includes('(Boolean(hasEnvVars) && !usesSupabaseWorkspace)'));assert.ok(panel.includes('실제 고객 서류나 개인정보를 입력하지 마세요'));
+assert.ok(!/\bfetch\(|localStorage|sessionStorage|dangerouslySetInnerHTML|console\.log/.test(panel));assert.ok(panel.includes('readApplicationDocx(file)'));assert.ok(panel.includes('AI/OCR 전송은 비활성'));assert.ok(panel.includes('example?evidenceReviewSample():state'));
+console.log('증빙 대조·경력·심사이력: 불일치/미확인·타 후보자 제외·윤년/중첩/재직·중복/일수충돌/일정겹침·잘못된 기록·추출·저장 연결 검사 통과 (운영 DB/OCR 검증 별도)');

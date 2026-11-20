@@ -28,6 +28,8 @@ import { readRegistrationCandidate } from "@/lib/registration-candidate-read";
 import { candidateProfileReady, candidatePreviousJobsReady, type CandidateReadState } from "@/lib/registration-candidate-state";
 import { RegistrationCandidateStatus } from "@/components/registration-candidate-status";
 import { koreaToday } from "@/lib/certification-expiry";
+import { ApplicationIntakePanel } from "@/components/application-intake-panel";
+import { approvedIntakePatch, type IntakeApproval } from "@/lib/application-intake-apply";
 
 type CandidateOption = { id: string; name: string; name_en: string | null };
 type JobDraft = { id: string; standard: string; grade: string; previousJobId: string };
@@ -289,10 +291,17 @@ export function NewApplicationForm() {
     finally { registrationBusy.current = false; }
   }
 
-  const candidateIssues = candidateMode === "NEW" ? registrationCandidateIssues({name:candidateName,nameEn:candidateNameEn,birthDate:candidateBirthDate,nationality:candidateNationality,email:candidateEmail,phone:candidatePhone}, receivedAt) : [];
+  const intakeCurrent={name:candidateName,nameEn:candidateNameEn,birthDate:candidateBirthDate,nationality:candidateNationality,email:candidateEmail,phone:candidatePhone};
+  function applyIntake(baseline:RegistrationCandidate,rows:IntakeApproval[]){
+    if(candidateMode!=="NEW"||registrationBusy.current||registrationNeedsReview)throw Error("현재 신청 상태에서는 반영할 수 없습니다.");
+    const patch=approvedIntakePatch(intakeCurrent,baseline,rows,receivedAt);
+    if(patch.name!==undefined)setCandidateName(patch.name);if(patch.nameEn!==undefined)setCandidateNameEn(patch.nameEn);if(patch.birthDate!==undefined)setCandidateBirthDate(patch.birthDate);if(patch.nationality!==undefined)setCandidateNationality(patch.nationality);if(patch.email!==undefined)setCandidateEmail(patch.email);if(patch.phone!==undefined)setCandidatePhone(patch.phone);
+  }
+  const candidateIssues = candidateMode === "NEW" ? registrationCandidateIssues(intakeCurrent, receivedAt) : [];
   const candidateField = (field: keyof RegistrationCandidate) => registrationCandidateFieldProps(field, candidateIssues);
   return <div className="max-w-5xl"><Link href="/applications" className="mb-4 inline-flex items-center gap-1 text-sm text-slate-500"><ArrowLeft className="h-4 w-4"/>신청 목록으로</Link>
     <form className="space-y-5">
+      {candidateMode==="NEW"&&<ApplicationIntakePanel current={intakeCurrent} receivedAt={receivedAt} disabled={saving||registrationNeedsReview} onApply={applyIntake}/>}
       {candidateMode === "EXISTING" && <RegistrationCandidateStatus state={candidateReadState} saving={saving} onRetry={() => { void chooseExistingCandidate(existingCandidateId); }}/>}
       <RegistrationCandidateFeedback input={{name:candidateName,nameEn:candidateNameEn,birthDate:candidateBirthDate,nationality:candidateNationality,email:candidateEmail,phone:candidatePhone}} receivedAt={receivedAt} existing={candidateMode === "EXISTING"}/>
       {hasEnvVars && (directoriesLoading || directoriesError) && <p role="status" className="rounded-md border p-3 text-sm">{directoriesError || "후보자·파트너사·담당자 목록을 불러오는 중입니다."}{directoriesError && <Button type="button" variant="outline" className="ml-2" disabled={directoriesLoading || saving} onClick={retryDirectories}>입력 유지하고 목록 재조회</Button>}</p>}

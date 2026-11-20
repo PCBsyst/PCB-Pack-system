@@ -54,6 +54,10 @@ for (const [route, template] of [
     const evidencePOST=await loadRoute(route,{'@/lib/server/document-request-validation':moduleUrl(`export async function readValidatedDocumentRequest(request,language){return {ok:true,input:{context:${JSON.stringify(evidenceContext)},job:${JSON.stringify(job)},language:(await request.json()).language||language}};}`)});
     const evidenceResponse=await evidencePOST(request());assert.equal(evidenceResponse.status,200);
     const body=new PizZip(await evidenceResponse.arrayBuffer()).file('word/document.xml').asText();
+    assert.ok(body.includes('<w:pageBreakBefore/><w:keepNext/>'),'근거 부록 제목에서 새 페이지 시작');
+    const templateBody=new PizZip(Buffer.from(bytes,'base64')).file('word/document.xml').asText();
+    assert.equal((body.match(/<w:br w:type="page"\/>/g)||[]).length,(templateBody.match(/<w:br w:type="page"\/>/g)||[]).length,'부록에 별도 나눔 문단을 추가하지 않음');
+    assert.ok(body.includes('<w:keepLines/>'),'요건별 근거 묶음 유지');
     for(const value of ['요건별 검토 근거','가상교육증빙.pdf','1쪽 수료일','근거 확인: 확인됨','증빙 대조 &amp; &lt;시험&gt; 확인','학력요건 / 검토 결과: 미확인 / 근거 연결 미기록'])assert.ok(body.includes(value),value);
     assert.equal((await evidencePOST(request('EN'))).status,422,'번역되지 않은 증빙 근거를 영문에서 누락하지 않음');
   }

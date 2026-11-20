@@ -56,7 +56,9 @@ async function createDocumentResponse(request: Request) {
   const evidence=language==="KR"?documentEvidenceSummary(context):"";
   if(evidence){
     const content=zip.file("word/document.xml")?.asText();if(!content)return invalidDocxResponse();
-    const appendix='<w:p><w:r><w:br w:type="page"/></w:r></w:p>'+evidence.split("\n").map((line,index)=>`<w:p><w:pPr><w:spacing w:after="100"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Malgun Gothic" w:eastAsia="맑은 고딕"/>${index===0?"<w:b/>":""}<w:sz w:val="20"/></w:rPr><w:t xml:space="preserve">${xml(line)}</w:t></w:r></w:p>`).join("");
+    // Break on the appendix heading itself: a separate break-only paragraph
+    // can create an empty page when the preceding table fills the page.
+    const appendix=evidence.split("\n\n").map((block,index)=>`<w:p><w:pPr>${index===0?"<w:pageBreakBefore/><w:keepNext/>":index===1?"<w:keepNext/>":"<w:keepLines/>"}<w:spacing w:after="100" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Malgun Gothic" w:eastAsia="맑은 고딕"/>${index===0?"<w:b/>":""}<w:sz w:val="20"/></w:rPr><w:t xml:space="preserve">${xml(block)}</w:t></w:r></w:p>`).join("");
     const finalSection=content.match(/<w:sectPr\b[^>]*>(?:(?!<w:sectPr\b)[\s\S])*?<\/w:sectPr>\s*(?=<\/w:body>)|<w:sectPr\b[^>]*\/>\s*(?=<\/w:body>)/);
     if(finalSection){const position=finalSection.index!;zip.file("word/document.xml",content.slice(0,position)+appendix+content.slice(position));}
     else if(!content.includes("<w:sectPr")&&content.includes("</w:body>"))zip.file("word/document.xml",content.replace("</w:body>",appendix+"</w:body>"));

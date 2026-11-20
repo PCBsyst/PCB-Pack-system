@@ -5,21 +5,42 @@ export type EvidenceField = keyof typeof evidenceFields;
 export type EvidenceDocument = {id:string;kind:string;fileName:string;sha256:string;reference:string;fields:Partial<Record<EvidenceField,string>>};
 export type CareerEvidence = {id:string;documentId:string;organization:string;role:string;start:string;end:string;ongoing:boolean;reference:string;confirmed:boolean};
 export type AuditEvidence = {id:string;documentId:string;client:string;standard:string;role:string;start:string;end:string;days:string;reference:string;confirmed:boolean};
-export type EvidenceReviewState = {version:1;documents:EvidenceDocument[];careers:CareerEvidence[];audits:AuditEvidence[]};
+export const evidenceRequirements=["교육요건","학력요건","업무경력요건","심사·실무경력요건"] as const;
+export type RequirementEvidenceLink={requirement:typeof evidenceRequirements[number];documentIds:string[];reference:string;note:string;confirmed:boolean;result:string};
+export type EvidenceReviewState = {version:1;documents:EvidenceDocument[];careers:CareerEvidence[];audits:AuditEvidence[];links?:RequirementEvidenceLink[]};
 export const emptyEvidenceReview = ():EvidenceReviewState=>({version:1,documents:[],careers:[],audits:[]});
 const object=(value:unknown):value is Record<string,unknown>=>Boolean(value)&&typeof value==="object"&&!Array.isArray(value);
 const str=(value:unknown,max=500):value is string=>typeof value==="string"&&value.length<=max&&!/[\u0000-\u001f\u007f]/.test(value);
 const keys=(value:Record<string,unknown>,allowed:string[])=>Object.keys(value).every(key=>allowed.includes(key));
 export function readEvidenceReview(value:unknown):EvidenceReviewState|null {
   if(value===undefined)return emptyEvidenceReview();
-  if(!object(value)||value.version!==1||!keys(value,["version","documents","careers","audits"]))return null;
+  if(!object(value)||value.version!==1||!keys(value,["version","documents","careers","audits","links"]))return null;
   const {documents,careers,audits}=value;
   if(!Array.isArray(documents)||!Array.isArray(careers)||!Array.isArray(audits)||documents.length>100||careers.length>500||audits.length>500)return null;
   for(const list of [documents,careers,audits])if(list.some(row=>!object(row)||!str(row.id,100)||!row.id)||new Set(list.map(row=>row.id)).size!==list.length)return null;
   if(documents.some(d=>!keys(d,["id","kind","fileName","sha256","reference","fields"])||!["kind","fileName","sha256","reference"].every(key=>str(d[key]))||!object(d.fields)||Object.entries(d.fields).some(([key,v])=>!Object.hasOwn(evidenceFields,key)||!str(v))||d.sha256!==""&&!/^[a-f0-9]{64}$/.test(d.sha256)))return null;
   if(careers.some(r=>!keys(r,["id","documentId","organization","role","start","end","reference","ongoing","confirmed"])||!["documentId","organization","role","start","end","reference"].every(key=>str(r[key]))||typeof r.ongoing!=="boolean"||typeof r.confirmed!=="boolean"))return null;
   if(audits.some(r=>!keys(r,["id","documentId","client","standard","role","start","end","days","reference","confirmed"])||!["documentId","client","standard","role","start","end","days","reference"].every(key=>str(r[key]))||typeof r.confirmed!=="boolean"))return null;
+  if(value.links!==undefined){
+    if(!Array.isArray(value.links)||value.links.length>4||new Set(value.links.map(r=>object(r)?r.requirement:null)).size!==value.links.length)return null;
+    if(value.links.some(r=>!object(r)||!keys(r,["requirement","documentIds","reference","note","confirmed","result"])||!evidenceRequirements.includes(r.requirement as typeof evidenceRequirements[number])||!Array.isArray(r.documentIds)||r.documentIds.length>100||new Set(r.documentIds).size!==r.documentIds.length||r.documentIds.some(id=>!str(id,100)||!id)||!str(r.reference)||!str(r.note)||typeof r.confirmed!=="boolean"||!["","충족","미충족","해당없음"].includes(r.result as string)))return null;
+  }
   return value as EvidenceReviewState;
+}
+export function requirementEvidenceIssues(link:RequirementEvidenceLink,documents:EvidenceDocument[],expectedName:string,result:string,birthDate?:string){
+ const issues:string[]=[];
+ if(!["충족","미충족","해당없음"].includes(result))issues.push("검토 결과 미확인");
+ if(link.note.trim().length<5)issues.push("검토 메모 5자 이상 필요");
+ if(result!=="해당없음"&&!link.documentIds.length)issues.push("근거 문서 미연결");
+ if(link.documentIds.length&&!link.reference.trim())issues.push("확인 위치 미입력");
+ for(const id of link.documentIds){const d=documents.find(d=>d.id===id);if(!d){issues.push("연결 문서 없음");continue;}
+  if(!d.fileName.trim())issues.push("문서명 미입력");
+  if(!expectedName.trim()||!d.fields.name?.trim())issues.push("후보자 이름 대조 필요");
+  else if(d.fields.name.normalize("NFKC").trim()!==expectedName.normalize("NFKC").trim())issues.push("후보자 이름 불일치");
+  if(d.fields.birthDate&&(!isRegistrationDate(d.fields.birthDate)||birthDate&&d.fields.birthDate!==birthDate))issues.push("생년월일 오류·불일치");
+ }
+ if(link.confirmed&&link.result!==result)issues.push("검토 결과 변경: 다시 확인 필요");
+ return [...new Set(issues)];
 }
 const norm=(value:string)=>value.normalize("NFKC").trim().replace(/\s+/g," ");
 function comparable(field:EvidenceField,value:string) {

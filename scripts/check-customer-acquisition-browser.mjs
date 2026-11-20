@@ -62,6 +62,38 @@ try {
  await panel.getByRole('button',{name:'실제 DB 비교로 돌아가기',exact:true}).click();await panel.getByRole('alert').first().waitFor();assert.equal(await panel.locator('tbody').count(),0);
  const response=await page.request.get('http://localhost:3005/api/reports/customer-acquisition?year=2026&area=전체&standard=전체&partner=전체');assert.equal(response.status(),503);assert.match(response.headers()['cache-control'],/no-store/);
  const lifecycleResponse=await page.request.get('http://localhost:3005/api/reports/certification-lifecycle?year=2026&area=전체&standard=전체&partner=전체');assert.equal(lifecycleResponse.status(),503);assert.match(lifecycleResponse.headers()['cache-control'],/no-store/);
+ await page.goto('http://localhost:3005/settings#ai',{waitUntil:'networkidle',timeout:120000});
+ const policy=page.getByRole('region',{name:'AI 마케팅 사용 정책',exact:true});
+ await policy.getByText('개발 가상 모드: 정책 저장은 비활성입니다. 실제 DB 적용 후 사용할 수 있습니다.',{exact:true}).waitFor();
+ assert.equal(await policy.getByRole('checkbox',{name:'AI 사용 허용 정책',exact:true}).isEnabled(),false);
+ assert.equal(await policy.getByRole('button',{name:'AI 정책·감사기록 저장',exact:true}).isEnabled(),false);
+ await policy.screenshot({path:'../output/customer-acquisition/qa/ai-policy-settings.png'});
+ // Synthetic policy responses only: no database or provider writes.
+ let mockPolicy={version:'AI-MKT-POLICY-01',mode:'APPLIED',policy:{enabled:false,retentionReviewed:false,privacyReviewed:false,reviewReference:'',revision:0},configMatches:true,keyPresent:true,modelPresent:true,transportEnabled:false,events:[]},posts=0;
+ await page.route('**/api/settings/ai-marketing-policy',async route=>{
+   if(route.request().method()==='POST'){
+     posts++;const input=route.request().postDataJSON();
+     if(posts>1){await route.fulfill({status:409,json:{error:'다른 작업에서 정책이 변경됐습니다. 다시 조회하세요.'}});return;}
+     mockPolicy={...mockPolicy,policy:{enabled:input.enabled,retentionReviewed:input.retentionReviewed,privacyReviewed:input.privacyReviewed,reviewReference:input.reviewReference,revision:1},events:[{id:'1',occurredAt:'2026-11-20T00:00:00Z',actorId:'synthetic-owner',kind:'POLICY_UPDATED',revision:1,reason:input.reason,enabledBefore:false,enabledAfter:true,retentionReviewed:true,privacyReviewed:true,reviewReference:input.reviewReference,configChanged:true}]};
+   }
+   const body=JSON.stringify(mockPolicy);await route.fulfill({status:200,body,headers:{'Content-Type':'application/json','X-Report-Bytes':String(Buffer.byteLength(body))}});
+ });
+ await policy.getByRole('button',{name:'현재 정책 다시 조회',exact:true}).click();
+ await policy.getByRole('checkbox',{name:'AI 사용 허용 정책',exact:true}).check();
+ await policy.getByRole('checkbox',{name:/해당 계정·모델/}).check();
+ await policy.getByRole('checkbox',{name:/집계 최소화/}).check();
+ await policy.getByLabel('AI 검토 근거',{exact:true}).fill('가상 검토 문서와 설정 확인 기록');
+ await policy.getByLabel('AI 정책 변경 사유',{exact:true}).fill('가상 정책 저장 검증');
+ await policy.getByRole('button',{name:'AI 정책·감사기록 저장',exact:true}).click();
+ await policy.getByText('AI 사용 정책과 감사기록을 저장했습니다. 정책 ON도 실제 AI 전송을 시작하지 않습니다.',{exact:true}).waitFor();
+ assert.equal(posts,1);
+ await policy.getByRole('checkbox',{name:'AI 사용 허용 정책',exact:true}).uncheck();
+ await policy.getByLabel('AI 정책 변경 사유',{exact:true}).fill('가상 충돌 보존 확인');
+ await policy.getByRole('button',{name:'AI 정책·감사기록 저장',exact:true}).click();
+ await policy.getByText(/입력은 유지됩니다. 재저장 전에/).waitFor();
+ assert.equal(await policy.getByLabel('AI 정책 변경 사유',{exact:true}).inputValue(),'가상 충돌 보존 확인');
+ assert.equal(await policy.getByRole('button',{name:'AI 정책·감사기록 저장',exact:true}).isEnabled(),false);
+ assert.equal(posts,2);
  assert.equal(outbound.length,0);
  console.log('보고서 브라우저: 신규/갱신/표준/현재등급·규칙 요약·세 CSV·AI 보호 구간/제외/가상 JSON·연결 상태 강제OFF·조건 변경 폐기·실제/가상 분리·외부 전송 0건 통과 (운영 DB 별도)');
 } finally {await browser?.close();server.kill();}

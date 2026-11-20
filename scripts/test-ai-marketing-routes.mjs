@@ -14,7 +14,8 @@ f=previewFixture();assert.equal((await f.GET(request('?partner=개별고객'))).
 function readinessFixture({owner=true,active=true,denied=null,profileError=false}={}){const events=[],exports={};vm.runInNewContext(compile('app/api/reports/ai-marketing-readiness/route.ts'),{exports,require:path=>{
  if(path.endsWith('/api-auth'))return {requireApiStaff:async()=>{events.push('auth');return denied;}};
  if(path.endsWith('/auth-environment'))return {currentAuthEnvironment:()=>({localPrototype:false})};
- if(path.endsWith('/supabase/server'))return {createClient:async()=>({auth:{getUser:async()=>{events.push('user');return {data:{user:{id:'private-owner-id'}},error:null};}},from:()=>({select(){return this;},eq(){return this;},maybeSingle:async()=>({data:{active,is_owner:owner},error:profileError?{message:'private-db-error'}:null})})})};
+ if(path.endsWith('/server/ai-marketing-policy'))return {aiPolicyStorageError:()=> 'SCHEMA_REQUIRED',normalizeStoredAiPolicy:()=>{throw Error('Unexpected policy data');}};
+ if(path.endsWith('/supabase/server'))return {createClient:async()=>({rpc:async()=>({data:null,error:{code:'PGRST202'}}),auth:{getUser:async()=>{events.push('user');return {data:{user:{id:'private-owner-id'}},error:null};}},from:()=>({select(){return this;},eq(){return this;},maybeSingle:async()=>({data:{active,is_owner:owner},error:profileError?{message:'private-db-error'}:null})})})};
  return load(path.replace('@/lib/',''));
  },Date,URL,Response,Headers,TextEncoder,JSON,Error,process:{env:{OPENAI_API_KEY:'private-api-key',OPENAI_MARKETING_MODEL:'private-model'}}});return {GET:exports.GET,events};}
 let ready=readinessFixture();response=await ready.GET(request());assert.equal(response.status,200);body=await response.text();assert.equal(JSON.parse(body).transmissionEnabled,false);assert.equal(JSON.parse(body).apiKeyPresent,true);assert.ok(!body.includes('private-'));assert.match(response.headers.get('Cache-Control'),/no-store/);

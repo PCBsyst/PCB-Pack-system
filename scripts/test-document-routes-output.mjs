@@ -32,6 +32,9 @@ const deps = {
   "@/lib/server/document-request-validation": moduleUrl(`export async function readValidatedDocumentRequest(request, language){return {ok:true,input:{context:${JSON.stringify(context)},job:${JSON.stringify(job)},language:(await request.json()).language||language}};}`),
 };
 for (const name of ["document-template-fields", "document-language-values", "document-training-summary", "document-delivery-values", "document-translation-checks", "docx-output-validation", "private-document-response"]) deps[`@/lib/${name}`] = moduleUrl(compile(`../lib/${name}.ts`));
+const dateModule=moduleUrl(compile('../lib/allocated-number-validation.ts'));
+const evidenceModule=moduleUrl(compile('../lib/evidence-review.ts').replaceAll('"@/lib/allocated-number-validation"',JSON.stringify(dateModule)));
+deps['@/lib/document-evidence-summary']=moduleUrl(compile('../lib/document-evidence-summary.ts').replaceAll('"@/lib/evidence-review"',JSON.stringify(evidenceModule)));
 async function loadRoute(route, overrides = {}) {
   let code = compile(`../app/api/documents/${route}/route.ts`);
   for (const [name, url] of Object.entries({ ...deps, ...overrides })) code = code.replaceAll(`"${name}"`, JSON.stringify(url));
@@ -46,6 +49,14 @@ for (const [route, template] of [
   const bytes = fs.readFileSync(new URL(`../templates/${template}`, import.meta.url)).toString("base64");
   deps["@/lib/server/document-template-loader"] = moduleUrl(`export async function loadDocumentTemplate(){return {bytes:Buffer.from('${bytes}','base64')};} export function templateLoadErrorResponse(){return new Response(null,{status:503});}`);
   const POST = await loadRoute(route);
+  if(route==='application-review'){
+    const evidenceContext={...context,evidenceReview:{version:1,documents:[{id:'source1',kind:'교육수료증',fileName:'가상교육증빙.pdf',sha256:'',reference:'1쪽',fields:{name:context.candidate.name}}],careers:[],audits:[],links:[{requirement:'교육요건',documentIds:['source1'],reference:'1쪽 수료일',note:'증빙 대조 & <시험> 확인',confirmed:true,result:'충족'}]}};
+    const evidencePOST=await loadRoute(route,{'@/lib/server/document-request-validation':moduleUrl(`export async function readValidatedDocumentRequest(request,language){return {ok:true,input:{context:${JSON.stringify(evidenceContext)},job:${JSON.stringify(job)},language:(await request.json()).language||language}};}`)});
+    const evidenceResponse=await evidencePOST(request());assert.equal(evidenceResponse.status,200);
+    const body=new PizZip(await evidenceResponse.arrayBuffer()).file('word/document.xml').asText();
+    for(const value of ['요건별 검토 근거','가상교육증빙.pdf','1쪽 수료일','근거 확인: 확인됨','증빙 대조 &amp; &lt;시험&gt; 확인','학력요건 / 검토 결과: 미확인 / 근거 연결 미기록'])assert.ok(body.includes(value),value);
+    assert.equal((await evidencePOST(request('EN'))).status,422,'번역되지 않은 증빙 근거를 영문에서 누락하지 않음');
+  }
   // New catalog fields must flow into all three real DOCX generators without a hard-coded standard list.
   const expandedJob = { ...job, jobNo: "ENMS260099", standard: "ISO 50001", currentGrade: "검증심사원" };
   const expandedContext = { ...context, jobs: [expandedJob], certificates: { j1: { ...context.certificates.j1, certificationNo: "26850099" } } };

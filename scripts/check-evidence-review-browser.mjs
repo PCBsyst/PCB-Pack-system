@@ -53,6 +53,14 @@ try {
  await panel.getByLabel('이름',{exact:true}).fill('다른가상후보');
  assert.equal(await education.getByRole('checkbox',{name:'교육요건 근거 대조 완료',exact:true}).isEnabled(),false);
  await links.screenshot({path:'../output/evidence-review/qa/requirement-links.png'});
+ await page.waitForFunction(()=>Object.entries(localStorage).some(([key,value])=>key.startsWith('certification-demo:v4:')&&JSON.parse(value).evidenceReview?.documents?.[0]?.fields.name==='다른가상후보'));
+ await page.goto('http://localhost:3004/applications/app-003?tab=package',{waitUntil:'networkidle'});
+ const documentResponse=page.waitForResponse(r=>r.url().endsWith('/api/documents/application-review'));
+ await page.getByRole('button',{name:'DOCX',exact:true}).first().click();
+ const response=await documentResponse;assert.equal(response.status(),200,await response.text().catch(()=>''));
+ const printed=new PizZip(await response.body()).file('word/document.xml').asText();
+ for(const value of ['요건별 검토 근거','가상신청서.docx','가상 문서 1쪽','가상 자료와 교육요건 결과 대조','후보자 이름 불일치','미확인·재확인 필요'])assert.ok(printed.includes(value),value);
+ assert.ok(!printed.includes('w:document>원문'));assert.match(response.headers()['cache-control'],/no-store/);
  assert.equal(outbound.length,0);
  console.log('가상 브라우저: 불일치·중첩·중복·겹침 예제 격리 / 압축 DOCX 읽기·표 값 추출 / 업무 저장·새로고침 복원 / 원문 미저장·외부 전송 0건 통과 (운영 DB 검증 별도)');
 } finally {await browser?.close();server.kill();}

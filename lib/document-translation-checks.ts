@@ -6,6 +6,7 @@ const nonblank = (value: unknown): boolean => typeof value === "string" && !!val
 /** Only require counterparts for existing source comments in documents actually generated. */
 export function documentTranslationIssues(context: PackageContext, jobIds: string[], types: CorporateDocumentType[]): string[] {
   const issues: string[] = [];
+  if(types.includes("APPLICATION_REVIEW")&&context.evidenceReview?.links?.length)issues.push("요건별 증빙 근거는 영문 번역 기능 준비 중입니다. 국문 검토서를 먼저 생성하세요");
   if (types.includes("APPLICATION_REVIEW") || types.includes("CERTIFICATION_DECISION_REPORT")) {
     if (nonblank(context.review.comment) && !nonblank(context.englishText?.reviewComment)) issues.push("서류검토 의견 (영문)");
     if (nonblank(context.review.verificationComment) && !nonblank(context.englishText?.verificationComment)) issues.push("검증 의견 (영문)");

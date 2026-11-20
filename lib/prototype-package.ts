@@ -1,3 +1,4 @@
+import {documentEvidenceSummary} from "@/lib/document-evidence-summary";
 import type { Candidate, CertificationApplication, Job } from "@/types/certification";
 import { parsePackageGeneration } from "@/lib/package-generation";
 import { documentErrorMessage } from "@/lib/document-errors";
@@ -30,7 +31,7 @@ export const deliveryDocumentRows: Array<{ key: DeliveryDocumentKey; form: strin
 ];
 export type DocumentLanguage = "KR" | "EN";
 export type DemoEnglishText = { reviewComment: string; verificationComment: string; panelComments: Record<string, string>; decisionComments: Record<string, string> };
-export type PackageContext = { application: CertificationApplication; candidate: Candidate; jobs: Job[]; reviewRequirements: Record<string, "충족" | "미충족" | "해당없음">; review: DemoReview; invoiceNo: string; invoiceAmount: string; invoiceIssuedAt: string; paidAmount: string; paymentConfirmedAt: string; assessment: DemoAssessment; panelMembers: DemoPanelMember[]; decisions: DemoDecision; certificates: DemoCertificate; deliveryDocuments: DemoDeliveryDocuments; examSchedules?: Record<string, import("@/lib/document-training-summary").DocumentExamSchedule>; decisionDate: string; finalApprover: string; finalApprovalDate: string; englishText: DemoEnglishText };
+export type PackageContext = { evidenceReview?: import("@/lib/evidence-review").EvidenceReviewState; application: CertificationApplication; candidate: Candidate; jobs: Job[]; reviewRequirements: Record<string, "충족" | "미충족" | "해당없음">; review: DemoReview; invoiceNo: string; invoiceAmount: string; invoiceIssuedAt: string; paidAmount: string; paymentConfirmedAt: string; assessment: DemoAssessment; panelMembers: DemoPanelMember[]; decisions: DemoDecision; certificates: DemoCertificate; deliveryDocuments: DemoDeliveryDocuments; examSchedules?: Record<string, import("@/lib/document-training-summary").DocumentExamSchedule>; decisionDate: string; finalApprover: string; finalApprovalDate: string; englishText: DemoEnglishText };
 
 function escapeHtml(value: string | number | undefined) {
   return String(value ?? "-").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
@@ -77,7 +78,7 @@ const fixedEnglish: Array<[string, string]> = [
 
 export function buildDocuments(context: PackageContext, job: Job, language: DocumentLanguage = "KR") {
   const documents = buildKoreanDocuments(context, job);
-  if (language === "KR") return documents.map((document) => ({ ...document, fileName: document.fileName.replace(".doc", "_KR.doc") }));
+  if (language === "KR") return documents.map((document,index) => ({ ...document, html:index===0&&documentEvidenceSummary(context)?document.html.replace("</body>",`<h2>요건별 검토 근거</h2><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${escapeHtml(documentEvidenceSummary(context))}</pre></body>`):document.html, fileName: document.fileName.replace(".doc", "_KR.doc") }));
   return documents.map((document) => {
     let html = document.html.replace('lang="ko"', 'lang="en"').replaceAll(context.candidate.name, context.candidate.nameEn || context.candidate.name);
     if (context.review.comment) html = html.replaceAll(context.review.comment, context.englishText.reviewComment || "-");

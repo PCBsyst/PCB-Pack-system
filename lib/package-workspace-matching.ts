@@ -14,6 +14,7 @@ function equal(left: unknown, right: unknown): boolean {
 /** Compare document inputs only, not stage/UI flags or unselected Job records. */
 export function matchesPackageWorkspace(context: PackageContext, jobIds: string[], state: unknown): boolean {
   if (!record(state)) return false;
+  if (!equal(context.evidenceReview,state.evidenceReview)) return false;
   const globalKeys = ["reviewRequirements", "review", "invoiceNo", "invoiceAmount", "invoiceIssuedAt", "paidAmount",
     "paymentConfirmedAt", "panelMembers", "decisionDate", "finalApprover", "finalApprovalDate", "englishText"] as const;
   if (globalKeys.some((key) => !Object.hasOwn(state, key) || !equal(context[key], state[key]))) return false;

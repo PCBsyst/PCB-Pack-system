@@ -1,4 +1,5 @@
 import PizZip from "pizzip";
+import {documentEvidenceSummary} from "@/lib/document-evidence-summary";
 import { missingDocumentTemplateFields, documentTemplateFieldsError } from "@/lib/document-template-fields";
 import { privateDocumentResponse } from "@/lib/private-document-response";
 import { documentTranslationIssues, documentTranslationMessage } from "@/lib/document-translation-checks";
@@ -52,6 +53,15 @@ async function createDocumentResponse(request: Request) {
   const missingFields = missingDocumentTemplateFields(zip, "APPLICATION_REVIEW");
   if (missingFields.length) return documentTemplateFieldsError(missingFields);
   for (const fileName of Object.keys(zip.files).filter((name) => name.endsWith(".xml"))) { let content = zip.file(fileName)?.asText(); if (!content) continue; for (const [key, value] of Object.entries(values)) content = content.replaceAll(`{{${key}}}`, xml(value)); zip.file(fileName, content); }
+  const evidence=language==="KR"?documentEvidenceSummary(context):"";
+  if(evidence){
+    const content=zip.file("word/document.xml")?.asText();if(!content)return invalidDocxResponse();
+    const appendix='<w:p><w:r><w:br w:type="page"/></w:r></w:p>'+evidence.split("\n").map((line,index)=>`<w:p><w:pPr><w:spacing w:after="100"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Malgun Gothic" w:eastAsia="맑은 고딕"/>${index===0?"<w:b/>":""}<w:sz w:val="20"/></w:rPr><w:t xml:space="preserve">${xml(line)}</w:t></w:r></w:p>`).join("");
+    const finalSection=content.match(/<w:sectPr\b[^>]*>(?:(?!<w:sectPr\b)[\s\S])*?<\/w:sectPr>\s*(?=<\/w:body>)|<w:sectPr\b[^>]*\/>\s*(?=<\/w:body>)/);
+    if(finalSection){const position=finalSection.index!;zip.file("word/document.xml",content.slice(0,position)+appendix+content.slice(position));}
+    else if(!content.includes("<w:sectPr")&&content.includes("</w:body>"))zip.file("word/document.xml",content.replace("</w:body>",appendix+"</w:body>"));
+    else return invalidDocxResponse();
+  }
   if (!validateGeneratedDocx(zip)) return invalidDocxResponse();
   const output = zip.generate({ type: "uint8array", compression: "DEFLATE" }); const body = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength) as ArrayBuffer;
   const safeJobNo = job.jobNo.replace(/[^A-Za-z0-9_-]/g, "_");

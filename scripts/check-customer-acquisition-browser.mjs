@@ -1,0 +1,36 @@
+import {createRequire} from 'node:module';
+import {spawn} from 'node:child_process';
+import {openSync,mkdirSync} from 'node:fs';
+import assert from 'node:assert/strict';
+const require=createRequire(import.meta.url),{chromium}=require('C:/Users/N2411-S05/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+assert.ok(!process.env.NEXT_PUBLIC_SUPABASE_URL,'가상 데이터 전용 검사입니다.');
+mkdirSync('../output/customer-acquisition/qa',{recursive:true});
+const log=openSync('../output/customer-acquisition/qa/server.log','w');
+const server=spawn(process.execPath,['--no-experimental-strip-types','node_modules/next/dist/bin/next','dev','--webpack','--port','3005'],{stdio:['ignore',log,log],windowsHide:true,env:{...process.env,NODE_OPTIONS:`${process.env.NODE_OPTIONS??''} --no-experimental-strip-types`.trim()}});
+let browser;
+try {
+ let ready=false;for(let i=0;i<60;i++){try{if((await fetch('http://localhost:3005/',{signal:AbortSignal.timeout(3000)})).ok){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,1000));}assert.ok(ready,'검사용 서버 준비 실패');
+ browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
+ const page=await browser.newPage({viewport:{width:1440,height:1100}}),outbound=[];page.on('request',r=>{if(!new URL(r.url()).hostname.match(/^(localhost|127\.0\.0\.1)$/))outbound.push(r.url());});
+ await page.goto('http://localhost:3005/reports/monthly',{waitUntil:'networkidle',timeout:120000});
+ const panel=page.getByRole('region',{name:'신규 고객 비교와 자료 준비 상태',exact:true});
+ await panel.getByRole('alert').waitFor();assert.ok((await panel.innerText()).includes('조회 실패를 고객 0명으로 표시하지 않습니다'));
+ assert.equal(await panel.getByRole('button',{name:'비교 집계 CSV',exact:true}).isEnabled(),false);
+ await page.locator('input[type=month]').fill('2026-11');
+ await panel.getByRole('button',{name:'가상 비교 예제 보기',exact:true}).click();
+ await panel.getByText('자료 준비 상태',{exact:true}).waitFor();
+ const firstRow=panel.locator('tbody tr').first();
+ assert.deepEqual(await firstRow.locator('td').allTextContents(),['1월','2','1','3','1','산출 보류']);
+ assert.ok((await panel.innerText()).includes('Job 없는 신청 1건'));
+ assert.ok((await panel.innerText()).includes('미도래'));
+ await panel.screenshot({path:'../output/customer-acquisition/qa/monthly-comparison.png'});
+ const downloading=page.waitForEvent('download');await panel.getByRole('button',{name:'비교 집계 CSV',exact:true}).click();const download=await downloading;assert.match(download.suggestedFilename(),/2026_가상예제\.csv$/);
+ await page.locator('input[type=month]').fill('2025-01');
+ await page.waitForFunction(()=>document.querySelector('section[aria-label="신규 고객 비교와 자료 준비 상태"] tbody tr')?.textContent?.includes('산출 보류'));
+ await firstRow.getByText('2',{exact:true}).waitFor();
+ assert.deepEqual(await firstRow.locator('td').allTextContents(),['1월','0','2','1','0','산출 보류']);
+ await panel.getByRole('button',{name:'실제 DB 비교로 돌아가기',exact:true}).click();await panel.getByRole('alert').waitFor();assert.equal(await panel.locator('tbody').count(),0);
+ const response=await page.request.get('http://localhost:3005/api/reports/customer-acquisition?year=2026&area=전체&standard=전체&partner=전체');assert.equal(response.status(),503);assert.match(response.headers()['cache-control'],/no-store/);
+ assert.equal(outbound.length,0);
+ console.log('신규 비교 브라우저: DB 미연결을 0으로 표시하지 않음·관측값/산출보류 구분·Job 없는 신청·복수 Job·예제 CSV·연도 변경 재집계·실제/가상 분리·외부 전송 0건 통과 (운영 DB 별도)');
+} finally {await browser?.close();server.kill();}

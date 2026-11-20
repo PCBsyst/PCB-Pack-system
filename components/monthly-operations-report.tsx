@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { hasEnvVars } from "@/lib/utils";
 import { ReportBusinessAnalytics } from "@/components/report-business-analytics";
+import { CustomerAcquisitionReport } from "@/components/customer-acquisition-report";
 import { matchesReportFilters, matchesReportMonth } from "@/lib/report-filters";
 import { reportApplicationTypeLabel, reportExportMetadata, serializeReportCsv } from "@/lib/report-export";
 import { buildMonthlyReportPrintHtml } from "@/lib/monthly-report-print";
@@ -156,6 +157,7 @@ export function MonthlyOperationsReport() {
       <Button variant="outline" onClick={reset}><RotateCcw />초기화</Button>
       <label className="text-xs text-slate-500">현재 인증상태<select className={inputClass} value={certificationState} onChange={(event) => setCertificationState(event.target.value)}><option>전체</option>{[...new Set(rows.map((row) => row.certificationState))].sort().map((value) => <option key={value} value={value}>{certificationLabel(value)}</option>)}</select></label>
     </div></section>
+    <CustomerAcquisitionReport year={Number(month.slice(0,4))} filters={{area,standard,partner}} parentRevision={revision}/>
     <p className="text-xs text-muted-foreground">인증상태 필터는 현재 상태를 기준으로 합니다. 선택한 Job의 과거 상태변동도 함께 조회되며, 과거 월말 상태를 의미하지는 않습니다.</p>
     {loading ? <p role="status" className="rounded-lg border bg-white p-5 text-sm text-slate-500">분석 대상 자료를 조회하고 있습니다.</p> : error ? <p role="alert" className="rounded-lg border bg-red-50 p-5 text-sm text-red-800">분석 자료 조회에 실패했습니다. 고객 수·수익·상태변동을 0으로 간주하지 않습니다.</p> : <ReportBusinessAnalytics period={month} jobs={dimensionRows} dateBasis={dateBasis} filters={reportFilters}/>}
     {!loading && !error && <><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5"><Metric label="대상 Job" value={summary.total} /><Metric label="인증발행" value={summary.issued} tone="blue" /><Metric label="인증유효" value={summary.active} tone="green" /><Metric label="인증정지" value={summary.suspended} tone="amber" /><Metric label="인증철회" value={summary.withdrawn} tone="red" /></div></>}

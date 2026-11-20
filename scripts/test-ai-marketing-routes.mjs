@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import vm from 'node:vm';import ts from 'typescript';
+const cache={};function load(name){if(cache[name])return cache[name];const exports={};cache[name]=exports;vm.runInNewContext(ts.transpileModule(readFileSync(`lib/${name}.ts`,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{exports,require:p=>load(p.replace('@/lib/','')),Date,Map,Set,JSON,Error,Response,Headers});return exports;}
+const compile=file=>ts.transpileModule(readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+const {customerAcquisitionSample:sample}=load('customer-acquisition-sample'),{buildCustomerAcquisition:build,allAcquisitionFilters:filters}=load('customer-acquisition'),s=sample(),report=build(s.applications,s.jobs,2025,filters,'2026-11-20');
+function previewFixture({denied=null,sourceStatus=200,invalid=false}={}){const events=[],exports={};vm.runInNewContext(compile('app/api/reports/ai-marketing-preview/route.ts'),{exports,require:path=>{
+ if(path.endsWith('/api-auth'))return {requireApiStaff:async()=>{events.push('auth');return denied;}};
+ if(path.includes('@/app/'))return {GET:async request=>{events.push(request.url);return sourceStatus===200?Response.json(invalid?{}:report):Response.json({error:'자료 조회 실패'},{status:sourceStatus});}};
+ return load(path.replace('@/lib/',''));
+},Date,URL,URLSearchParams,Request,Response,Headers,TextEncoder,JSON,Error});return {GET:exports.GET,events};}
+const request=(suffix='')=>new Request('https://example.test/api/reports/ai-marketing-preview'+suffix,{headers:{Origin:'https://example.test',Cookie:'test-cookie'}});
+let f=previewFixture(),response=await f.GET(request());assert.equal(response.status,200);let body=await response.text();assert.equal(JSON.parse(body).externalTransmissionEnabled,false);assert.equal(JSON.parse(body).status,'NO_ELIGIBLE_GROUPS');assert.match(response.headers.get('Cache-Control'),/no-store/);assert.ok(f.events[1].includes('year=2025'));assert.ok(!body.includes('candidateId'));
+for(const [options,status] of [[{denied:Response.json({error:'denied'},{status:401})},401],[{sourceStatus:503},503],[{invalid:true},503]]){f=previewFixture(options);response=await f.GET(request());assert.equal(response.status,status);assert.match(response.headers.get('Cache-Control'),/no-store/);if(options.denied)assert.equal(f.events.length,1);}
+f=previewFixture();assert.equal((await f.GET(request('?partner=개별고객'))).status,400);assert.equal(f.events.length,1);
+function readinessFixture({owner=true,active=true,denied=null,profileError=false}={}){const events=[],exports={};vm.runInNewContext(compile('app/api/reports/ai-marketing-readiness/route.ts'),{exports,require:path=>{
+ if(path.endsWith('/api-auth'))return {requireApiStaff:async()=>{events.push('auth');return denied;}};
+ if(path.endsWith('/auth-environment'))return {currentAuthEnvironment:()=>({localPrototype:false})};
+ if(path.endsWith('/supabase/server'))return {createClient:async()=>({auth:{getUser:async()=>{events.push('user');return {data:{user:{id:'private-owner-id'}},error:null};}},from:()=>({select(){return this;},eq(){return this;},maybeSingle:async()=>({data:{active,is_owner:owner},error:profileError?{message:'private-db-error'}:null})})})};
+ return load(path.replace('@/lib/',''));
+ },Date,URL,Response,Headers,TextEncoder,JSON,Error,process:{env:{OPENAI_API_KEY:'private-api-key',OPENAI_MARKETING_MODEL:'private-model'}}});return {GET:exports.GET,events};}
+let ready=readinessFixture();response=await ready.GET(request());assert.equal(response.status,200);body=await response.text();assert.equal(JSON.parse(body).transmissionEnabled,false);assert.equal(JSON.parse(body).apiKeyPresent,true);assert.ok(!body.includes('private-'));assert.match(response.headers.get('Cache-Control'),/no-store/);
+for(const [options,status] of [[{owner:false},403],[{active:false},403],[{profileError:true},503],[{denied:Response.json({error:'denied'},{status:401})},401]]){ready=readinessFixture(options);response=await ready.GET(request());assert.equal(response.status,status);assert.ok(!(await response.text()).includes('private-'));assert.match(response.headers.get('Cache-Control'),/no-store/);if(options.denied)assert.equal(ready.events.length,1);}
+for(const file of ['app/api/reports/ai-marketing-preview/route.ts','app/api/reports/ai-marketing-readiness/route.ts']){const source=readFileSync(file,'utf8');assert.ok(!/export async function POST|api\.openai\.com|\bfetch\(/.test(source));}
+console.log('AI 준비 API: 직원 권한 선검사·마감 전체집계 서버 재조회·필터 위조 거절·최고관리자 전용 설정 확인·비밀값 미반환·키 존재해도 전송 OFF·캐시 금지 검사 통과 (인증/DB 모의)');

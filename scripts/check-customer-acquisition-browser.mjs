@@ -35,6 +35,17 @@ try {
  await marketing.getByLabel('월별 비교 표준',{exact:true}).selectOption({label:'ISO · ISO 9001'});
  await marketing.screenshot({path:'../output/customer-acquisition/qa/marketing-signals.png'});
  const marketingDownload=page.waitForEvent('download');await marketing.getByRole('button',{name:'표준·등급 분석 CSV',exact:true}).click();assert.match((await marketingDownload).suggestedFilename(),/표준등급검토_2026_가상예제\.csv$/);
+ const privacy=marketing.getByRole('region',{name:'AI 집계 보호 미리보기',exact:true});
+ assert.equal(await privacy.getByRole('button',{name:'서버 집계 보호 미리보기',exact:true}).isEnabled(),false);
+ await privacy.getByRole('button',{name:'가상 집계 보호 예제',exact:true}).click();
+ await privacy.getByText('완전 가상 집계 예제 · 2024년 / 2025년',{exact:true}).waitFor();
+ assert.deepEqual(await privacy.locator('tbody tr').first().locator('td').allTextContents(),['ISO:QMS','10~14명','15~19명']);
+ assert.ok((await privacy.innerText()).includes('작은 집단 1개'));
+ assert.ok((await privacy.innerText()).includes('승인된 코드에 없는 표준 1개'));
+ const previewDownload=page.waitForEvent('download');await privacy.getByRole('button',{name:'후보 JSON 다운로드 (검토용)',exact:true}).click();assert.match((await previewDownload).suggestedFilename(),/AI집계보호_검토용_2025_가상예제\.json$/);
+ await privacy.getByRole('button',{name:'최고관리자 연결 준비 확인',exact:true}).click();
+ await privacy.getByText('외부 전송: 강제 비활성 · API 호출 없음',{exact:true}).waitFor();
+ await privacy.screenshot({path:'../output/customer-acquisition/qa/ai-privacy-preview.png'});
  const lifecycle=panel.getByRole('region',{name:'유지·갱신 이력 준비 상태',exact:true});
  await lifecycle.getByText('전체 조회 범위의 연결 진단',{exact:true}).waitFor();
  assert.deepEqual(await lifecycle.locator('tbody tr').first().locator('td').allTextContents(),['1월','0','1','0','1','1','0','0','0']);
@@ -47,9 +58,10 @@ try {
  await page.waitForFunction(()=>document.querySelector('section[aria-label="신규 고객 비교와 자료 준비 상태"] tbody tr')?.textContent?.includes('산출 보류'));
  await firstRow.getByText('2',{exact:true}).waitFor();
  assert.deepEqual(await firstRow.locator('td').allTextContents(),['1월','0','2','1','0','산출 보류']);
+ assert.equal(await panel.getByText('완전 가상 집계 예제 · 2024년 / 2025년',{exact:true}).count(),0);
  await panel.getByRole('button',{name:'실제 DB 비교로 돌아가기',exact:true}).click();await panel.getByRole('alert').first().waitFor();assert.equal(await panel.locator('tbody').count(),0);
  const response=await page.request.get('http://localhost:3005/api/reports/customer-acquisition?year=2026&area=전체&standard=전체&partner=전체');assert.equal(response.status(),503);assert.match(response.headers()['cache-control'],/no-store/);
  const lifecycleResponse=await page.request.get('http://localhost:3005/api/reports/certification-lifecycle?year=2026&area=전체&standard=전체&partner=전체');assert.equal(lifecycleResponse.status(),503);assert.match(lifecycleResponse.headers()['cache-control'],/no-store/);
  assert.equal(outbound.length,0);
- console.log('보고서 브라우저: 신규/갱신/표준/현재등급·접수고객 증감/소표본·규칙 요약·세 CSV·연도 변경·미확인 지표 보류·실제/가상 분리·외부 전송 0건 통과 (운영 DB 별도)');
+ console.log('보고서 브라우저: 신규/갱신/표준/현재등급·규칙 요약·세 CSV·AI 보호 구간/제외/가상 JSON·연결 상태 강제OFF·조건 변경 폐기·실제/가상 분리·외부 전송 0건 통과 (운영 DB 별도)');
 } finally {await browser?.close();server.kill();}

@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronRight, LogOut, Menu, Plus, ShieldCheck, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { cn, hasEnvVars } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { navigationGroups, isNavigationActive } from "@/lib/app-navigation";
@@ -11,7 +11,8 @@ import { OperationModeBanner } from "@/components/operation-mode-banner";
 import { IdleSessionGuard } from "@/components/idle-session-guard";
 import { WorkspaceScale } from "@/components/workspace-scale";
 
-export function AppShell({ title, description, actions, children }: { title: string; description?: string; actions?: React.ReactNode; children: React.ReactNode }) {
+export function AppShell(props:Parameters<typeof AppShellContent>[0]){return <Suspense fallback={<div role="status" className="p-6 text-sm text-muted-foreground">업무 화면을 준비하고 있습니다.</div>}><AppShellContent {...props}/></Suspense>;}
+function AppShellContent({ title, description, actions, children }: { title: string; description?: string; actions?: React.ReactNode; children: React.ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const drawer = useRef<HTMLElement>(null);

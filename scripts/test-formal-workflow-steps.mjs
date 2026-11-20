@@ -28,7 +28,8 @@ function fixture(query, { editable = true, local = false, confirmed = true, reas
     const chain = { action: "select", payload: null, update(value) { this.action = "update"; this.payload = value; return this; }, insert(value) { this.action = "insert"; this.payload = value; return this; }, upsert(value) { this.action = "upsert"; this.payload = value; return this; }, in() { return this; }, eq() { return this; }, select() { return this; }, single() { return this; }, maybeSingle() { return this; }, then(resolve, reject) { requests.push({ table, action: this.action }); return Promise.resolve().then(() => query(table, this.action, this.payload)).then(resolve, reject); } }; return chain;
   } };
   const deps = { demo, latestDemo, formalRunning: running, formalSnapshot: snapshot, downloadMounted: mounted, saveAccess: { current: { canEdit: editable } }, setFormalSaving: value => busy.push(value), setNotice: value => notices.push(value), setDemo: update => { const state = update(demo); states.push(state); stages.push(state.stage); }, setActive() {}, stageLabels: { PAYMENT_PENDING: "입금대기", DECISION_PENDING: "심의대기", INVOICE_PENDING: "청구대기" }, createAuditLog: () => ({}), application: { primaryOwner: "담당자" }, usesSupabaseWorkspace: !local, linkedJobs: [{ id: "j" }], cycleIds: { j: "c" }, createClient: () => client, ...checks };
-  deps.window = { confirm: () => confirmed, prompt: () => reason };
+  deps.window = { confirm: () => confirmed, prompt: () => reason, location:{href:"https://example.test/applications/a?tab=invoice&view=keep"}, history:{state:{},replaceState(_state,_title,url){deps.window.location.href=String(url);}} };
+  deps.tabSlugs={"서류검토":"review","인보이스·입금":"invoice","인증심의":"decision","Job·패키지":"package"};
   deps.fieldsLoading = false; deps.fieldsError = ""; deps.catalog = [];
   deps.assessmentItems = ["지식"];
   deps.panelMemberIds = { "위원1": "p1", "위원2": "p2", "위원3": "p3" };
@@ -39,12 +40,13 @@ function fixture(query, { editable = true, local = false, confirmed = true, reas
   deps.canRunWorkflowAction = stageChecks.canRunWorkflowAction;
   deps.canEdit = editable;
   const actions = new Function(...Object.keys(deps), `${code};return {${names.join(",")}};`)(...Object.values(deps));
-  return { actions, demo, latestDemo, mounted, notices, busy, stages, states, requests, running };
+  return { actions, demo, latestDemo, mounted, notices, busy, stages, states, requests, running,window:deps.window };
 }
 const invoiceRow = { id: "invoice", amount: 100, payment_status: "UNPAID" };
 const normal = async (table, action) => ({ data: table === "invoice_jobs" ? [{ job_id: "j" }] : action === "select" ? invoiceRow : [{ id: "invoice" }], error: null });
 let f = fixture(normal);
 await f.actions.confirmPayment(); assert.deepEqual(f.stages, ["DECISION_PENDING"]); assert.equal(f.busy.at(-1), false);
+assert.equal(new URL(f.window.location.href).searchParams.get('tab'),'decision');assert.equal(new URL(f.window.location.href).searchParams.get('view'),'keep');
 f = fixture(async () => ({ data: [], error: null })); await f.actions.confirmPayment(); assert.equal(f.stages.length, 0); assert.match(f.notices.at(-1), /인보이스 1건/);
 f = fixture(async table => table === "document_reviews" ? { error: null } : { data: [], error: null }); f.demo.stage = "DOCUMENT_REVIEW"; await f.actions.finishReview(); assert.equal(f.stages.length, 0); assert.match(f.notices.at(-1), /회차 검토일/);
 f = fixture(async () => { throw new Error("network"); }); await f.actions.confirmPayment(); assert.equal(f.stages.length, 0); assert.equal(f.running.current, false); assert.match(f.notices.at(-1), /일부 기록/);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ApplicationDetail } from "@/components/application-detail";
 import { prototypeCandidateId, prototypeJobId, readPrototypeApplications, type PrototypeApplicationRecord } from "@/lib/prototype-storage";
 import type { Candidate, CertificationApplication, Job } from "@/types/certification";
@@ -9,9 +9,13 @@ export function PrototypeApplicationWorkspace({ id }: { id: string }) {
   const [record, setRecord] = useState<PrototypeApplicationRecord | null | undefined>(undefined);
   useEffect(() => setRecord(readPrototypeApplications().find((item) => item.id === id) ?? null), [id]);
 
+  const detail=useMemo(()=>record?prototypeApplicationContext(record):null,[record]);
   if (record === undefined) return <p className="text-sm text-slate-500">신규 신청 업무화면을 준비하는 중입니다.</p>;
   if (!record) return <div className="rounded-lg border bg-white p-6 text-sm text-slate-600">이 브라우저에 해당 신청 데이터가 없습니다.</div>;
 
+  return <ApplicationDetail key={detail!.application.id} application={detail!.application} candidate={detail!.candidate} linkedJobs={detail!.linkedJobs} invoices={[]}/>;
+}
+function prototypeApplicationContext(record:PrototypeApplicationRecord){
   const candidateId = prototypeCandidateId(record);
   const jobId = prototypeJobId(record);
   const candidate: Candidate = {
@@ -63,5 +67,5 @@ export function PrototypeApplicationWorkspace({ id }: { id: string }) {
     invoiceIds: [],
   };
 
-  return <ApplicationDetail key={application.id} application={application} candidate={candidate} linkedJobs={[job]} invoices={[]}/>;
+  return {application,candidate,linkedJobs:[job]};
 }

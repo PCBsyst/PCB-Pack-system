@@ -14,7 +14,7 @@ try {
  const page=await browser.newPage({viewport:{width:1440,height:1100}}),outbound=[];page.on('request',r=>{if(!new URL(r.url()).hostname.match(/^(localhost|127\.0\.0\.1)$/))outbound.push(r.url());});
  await page.goto('http://localhost:3005/reports/monthly',{waitUntil:'networkidle',timeout:120000});
  const panel=page.getByRole('region',{name:'신규 고객 비교와 자료 준비 상태',exact:true});
- await panel.getByRole('alert').waitFor();assert.ok((await panel.innerText()).includes('조회 실패를 고객 0명으로 표시하지 않습니다'));
+ await panel.getByRole('alert').first().waitFor();assert.ok((await panel.innerText()).includes('조회 실패를 고객 0명으로 표시하지 않습니다'));
  assert.equal(await panel.getByRole('button',{name:'비교 집계 CSV',exact:true}).isEnabled(),false);
  await page.locator('input[type=month]').fill('2026-11');
  await panel.getByRole('button',{name:'가상 비교 예제 보기',exact:true}).click();
@@ -25,12 +25,21 @@ try {
  assert.ok((await panel.innerText()).includes('미도래'));
  await panel.screenshot({path:'../output/customer-acquisition/qa/monthly-comparison.png'});
  const downloading=page.waitForEvent('download');await panel.getByRole('button',{name:'비교 집계 CSV',exact:true}).click();const download=await downloading;assert.match(download.suggestedFilename(),/2026_가상예제\.csv$/);
+ const lifecycle=panel.getByRole('region',{name:'유지·갱신 이력 준비 상태',exact:true});
+ await lifecycle.getByText('전체 조회 범위의 연결 진단',{exact:true}).waitFor();
+ assert.deepEqual(await lifecycle.locator('tbody tr').first().locator('td').allTextContents(),['1월','0','1','0','1','1','0','0','0']);
+ assert.ok((await lifecycle.innerText()).includes('고객 유지율·갱신율: 산출 보류'));
+ assert.ok((await lifecycle.innerText()).includes('현재 ACTIVE이면서 유효기간이 지난 기록: 1건'));
+ assert.ok((await lifecycle.innerText()).includes('별도 가상 시나리오'));
+ await lifecycle.screenshot({path:'../output/customer-acquisition/qa/lifecycle-readiness.png'});
+ const lifecycleDownload=page.waitForEvent('download');await lifecycle.getByRole('button',{name:'인증 이력 점검 CSV',exact:true}).click();assert.match((await lifecycleDownload).suggestedFilename(),/인증이력점검_2026_가상예제\.csv$/);
  await page.locator('input[type=month]').fill('2025-01');
  await page.waitForFunction(()=>document.querySelector('section[aria-label="신규 고객 비교와 자료 준비 상태"] tbody tr')?.textContent?.includes('산출 보류'));
  await firstRow.getByText('2',{exact:true}).waitFor();
  assert.deepEqual(await firstRow.locator('td').allTextContents(),['1월','0','2','1','0','산출 보류']);
- await panel.getByRole('button',{name:'실제 DB 비교로 돌아가기',exact:true}).click();await panel.getByRole('alert').waitFor();assert.equal(await panel.locator('tbody').count(),0);
+ await panel.getByRole('button',{name:'실제 DB 비교로 돌아가기',exact:true}).click();await panel.getByRole('alert').first().waitFor();assert.equal(await panel.locator('tbody').count(),0);
  const response=await page.request.get('http://localhost:3005/api/reports/customer-acquisition?year=2026&area=전체&standard=전체&partner=전체');assert.equal(response.status(),503);assert.match(response.headers()['cache-control'],/no-store/);
+ const lifecycleResponse=await page.request.get('http://localhost:3005/api/reports/certification-lifecycle?year=2026&area=전체&standard=전체&partner=전체');assert.equal(lifecycleResponse.status(),503);assert.match(lifecycleResponse.headers()['cache-control'],/no-store/);
  assert.equal(outbound.length,0);
- console.log('신규 비교 브라우저: DB 미연결을 0으로 표시하지 않음·관측값/산출보류 구분·Job 없는 신청·복수 Job·예제 CSV·연도 변경 재집계·실제/가상 분리·외부 전송 0건 통과 (운영 DB 별도)');
+ console.log('보고서 브라우저: 신규 비교·갱신/이전인증 연결·만료 후 ACTIVE 유지·산출보류·두 CSV·연도 변경·DB 미연결을 0으로 표시하지 않음·실제/가상 분리·외부 전송 0건 통과 (운영 DB 별도)');
 } finally {await browser?.close();server.kill();}

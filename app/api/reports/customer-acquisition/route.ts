@@ -24,7 +24,9 @@ export async function GET(request:Request) {
     if(!jobs||request.signal.aborted)return failure("조회가 중단됐습니다.",408);
     const records=normalizeAcquisitionRecords(applications,jobs);
     const body=JSON.stringify(buildCustomerAcquisition(records.applications,records.jobs,year,filters,asOf));
+    const size=new TextEncoder().encode(body).length;
+    if(size>1024*1024)return failure("분석 결과가 큽니다. 분야·표준 조건을 줄여 주세요.",413);
     // Internal aggregate only: no customer identifiers, names, file text or external AI calls.
-    return privateDocumentResponse(new Response(body,{headers:{"Content-Type":"application/json; charset=utf-8","X-Report-Bytes":String(new TextEncoder().encode(body).length)}}));
+    return privateDocumentResponse(new Response(body,{headers:{"Content-Type":"application/json; charset=utf-8","X-Report-Bytes":String(size)}}));
   } catch {return failure("비교 자료의 전체 조회와 연결을 확인하지 못했습니다. 일부 자료를 0건으로 간주하지 않습니다.",503);}
 }

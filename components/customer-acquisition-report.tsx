@@ -2,6 +2,7 @@
 import {useEffect,useRef,useState} from "react";
 import {Button} from "@/components/ui/button";
 import {CertificationLifecyclePanel} from "@/components/certification-lifecycle-panel";
+import {MarketingSignalsPanel} from "@/components/marketing-signals-panel";
 import {hasEnvVars} from "@/lib/utils";
 import {buildCustomerAcquisition,type CustomerAcquisitionReport,type AcquisitionFilters} from "@/lib/customer-acquisition";
 import {customerAcquisitionSample} from "@/lib/customer-acquisition-sample";
@@ -51,6 +52,7 @@ export function CustomerAcquisitionReport({year,filters,parentRevision}:{year:nu
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{data.months.map(row=><div key={row.month} className="rounded border p-3"><div className="mb-2 flex justify-between gap-2 text-xs"><strong>{row.month}월</strong><span>{row.status==="NOT_ARRIVED"?"미도래":row.status==="PROVISIONAL"?"진행 중 · 동일 일자 비교":"마감 월"}</span></div>{row.current&&row.previous?<><Bar label={`${data.year-1}년`} value={row.previous.firstObservedCandidates} max={maximum} previous/><Bar label={`${data.year}년`} value={row.current.firstObservedCandidates} max={maximum}/><p className="mt-2 text-[11px] text-muted-foreground">비교 종료 {row.previousEnd} / {row.currentEnd}</p></>:<p className="py-3 text-xs text-muted-foreground">아직 비교 시점이 도래하지 않았습니다.</p>}</div>)}</div>
       <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-xs"><thead><tr className="border-b">{["월","전년도 관측 첫접수(명)","올해 관측 첫접수(명)","올해 관측 첫 표준(건)","기존고객 표준추가(건)","확정 신규·증감률"].map(label=><th key={label} className="p-2">{label}</th>)}</tr></thead><tbody>{data.months.map(row=><tr key={row.month} className="border-b"><td className="p-2">{row.month}월</td><td className="p-2">{row.previous?.firstObservedCandidates??"미도래"}</td><td className="p-2">{row.current?.firstObservedCandidates??"미도래"}</td><td className="p-2">{row.current?.firstObservedStandardPairs??"미도래"}</td><td className="p-2">{row.current?.observedExistingStandardAdditions??"미도래"}</td><td className="p-2">{row.status==="NOT_ARRIVED"?"미도래":"산출 보류"}</td></tr>)}</tbody></table></div>
       <p className="text-xs text-muted-foreground">전체 고객은 후보자별로 한 번만 집계합니다. 표준 건수는 후보자·분야·표준 조합 기준입니다. 동일 날짜의 여러 표준 신청은 초기 동시 신청으로 보고 기존 고객 추가로 세지 않습니다. 취소 신청은 제외하며 보완·심사 중 접수도 포함합니다. 소규모 내부 집계이며 외부 AI용 익명 자료로 간주하지 않습니다.</p>
+      <MarketingSignalsPanel report={data} example={example}/>
     </>}
     <CertificationLifecyclePanel year={year} filters={filters} example={example} parentRevision={parentRevision+revision}/>
   </section>;

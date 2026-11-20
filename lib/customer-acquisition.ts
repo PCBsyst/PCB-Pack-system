@@ -1,6 +1,7 @@
 import { isRegistrationDate } from "@/lib/allocated-number-validation";
+import {buildMarketingSignals,readMarketingSignals} from "@/lib/marketing-signals";
 
-export const acquisitionVersion="ACQ-01";
+export const acquisitionVersion="ACQ-02";
 export type AcquisitionApplication={id:string;candidateId:string;receivedAt:string;area:string;partner:string;status:string};
 export type AcquisitionJob={id:string;applicationId:string;candidateId:string;standard:string;grade:string};
 export type AcquisitionFilters={area:string;standard:string;partner:string};
@@ -57,7 +58,7 @@ export function buildCustomerAcquisition(applications:AcquisitionApplication[],j
     return {firstObservedCandidates:candidates.size,firstObservedStandardPairs:standards.size,observedExistingStandardAdditions:additions.size};
   };
   const eligibleDates=active.map(app=>app.receivedAt).sort();
-  return {version:acquisitionVersion,year,asOf,filters,historyStatus:"UNVERIFIED" as const,
+  return {version:acquisitionVersion,year,asOf,filters,historyStatus:"UNVERIFIED" as const,marketSignals:buildMarketingSignals(active,jobs,windows,filters),
     readiness:{applicationCount:applications.length,jobCount:jobs.length,eligibleApplications:active.length,joblessApplications:active.filter(app=>!(byApplication.get(app.id)?.length)).length,
       cancelledApplications:applications.filter(app=>app.status==="CANCELLED").length,futureApplications:applications.filter(app=>app.receivedAt>asOf).length,
       observedFrom:eligibleDates[0]??null,observedThrough:eligibleDates.at(-1)??null,firstHistory:"UNVERIFIED" as const,historicalState:"NOT_VALIDATED" as const,renewalLinks:"NOT_VALIDATED" as const},
@@ -79,5 +80,6 @@ export function readCustomerAcquisitionReport(value:unknown,year:number,filters:
     if(!row||Object.entries(windows[index]).some(([key,v])=>row[key as keyof typeof row]!==v)||[row.newCustomers,row.newStandardCustomers,row.newCustomerYoY,row.retentionRate,row.renewalRate].some(v=>v!==null))throw Error("미확인 지표가 확정값으로 반환되었습니다.");
     for(const summary of [row.current,row.previous]){if(row.status==="NOT_ARRIVED"){if(summary!==null)throw Error("미도래 월 응답 오류");}else if(!summary||![summary.firstObservedCandidates,summary.firstObservedStandardPairs,summary.observedExistingStandardAdditions].every(integer)||summary.observedExistingStandardAdditions>summary.firstObservedStandardPairs)throw Error("월별 집계값을 확인하지 못했습니다.");}
   });
+  readMarketingSignals(report.marketSignals,windows);
   return report;
 }

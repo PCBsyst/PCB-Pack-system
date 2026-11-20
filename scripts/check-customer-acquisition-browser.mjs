@@ -25,6 +25,16 @@ try {
  assert.ok((await panel.innerText()).includes('미도래'));
  await panel.screenshot({path:'../output/customer-acquisition/qa/monthly-comparison.png'});
  const downloading=page.waitForEvent('download');await panel.getByRole('button',{name:'비교 집계 CSV',exact:true}).click();const download=await downloading;assert.match(download.suggestedFilename(),/2026_가상예제\.csv$/);
+ const marketing=panel.getByRole('region',{name:'표준·등급 추세와 마케팅 검토 요약',exact:true});
+ await marketing.getByRole('heading',{name:'표준별 접수 고객 변화',exact:true}).waitFor();
+ const qmsRow=marketing.locator('tbody tr').filter({hasText:'ISO 9001'}).first();
+ assert.deepEqual((await qmsRow.locator('td').allTextContents()).slice(2,6),['1명','3명','+2명','+200%']);
+ assert.ok((await marketing.innerText()).includes('기준기간 0명'));
+ assert.ok((await marketing.innerText()).includes('마케팅 우선순위를 자동으로 정하지 않았습니다'));
+ assert.ok((await marketing.innerText()).includes('심사원'));
+ await marketing.getByLabel('월별 비교 표준',{exact:true}).selectOption({label:'ISO · ISO 9001'});
+ await marketing.screenshot({path:'../output/customer-acquisition/qa/marketing-signals.png'});
+ const marketingDownload=page.waitForEvent('download');await marketing.getByRole('button',{name:'표준·등급 분석 CSV',exact:true}).click();assert.match((await marketingDownload).suggestedFilename(),/표준등급검토_2026_가상예제\.csv$/);
  const lifecycle=panel.getByRole('region',{name:'유지·갱신 이력 준비 상태',exact:true});
  await lifecycle.getByText('전체 조회 범위의 연결 진단',{exact:true}).waitFor();
  assert.deepEqual(await lifecycle.locator('tbody tr').first().locator('td').allTextContents(),['1월','0','1','0','1','1','0','0','0']);
@@ -41,5 +51,5 @@ try {
  const response=await page.request.get('http://localhost:3005/api/reports/customer-acquisition?year=2026&area=전체&standard=전체&partner=전체');assert.equal(response.status(),503);assert.match(response.headers()['cache-control'],/no-store/);
  const lifecycleResponse=await page.request.get('http://localhost:3005/api/reports/certification-lifecycle?year=2026&area=전체&standard=전체&partner=전체');assert.equal(lifecycleResponse.status(),503);assert.match(lifecycleResponse.headers()['cache-control'],/no-store/);
  assert.equal(outbound.length,0);
- console.log('보고서 브라우저: 신규 비교·갱신/이전인증 연결·만료 후 ACTIVE 유지·산출보류·두 CSV·연도 변경·DB 미연결을 0으로 표시하지 않음·실제/가상 분리·외부 전송 0건 통과 (운영 DB 별도)');
+ console.log('보고서 브라우저: 신규/갱신/표준/현재등급·접수고객 증감/소표본·규칙 요약·세 CSV·연도 변경·미확인 지표 보류·실제/가상 분리·외부 전송 0건 통과 (운영 DB 별도)');
 } finally {await browser?.close();server.kill();}

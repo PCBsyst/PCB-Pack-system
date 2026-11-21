@@ -1,0 +1,37 @@
+{
+  "reviewedAt": "2026-11-21",
+  "renderer": "Chrome A4 print",
+  "manualPageReview": true,
+  "sourceSha256": "b40f3106ff2d53759379bc23b3b402d176262bdb51820b72279b499f27065ae8",
+  "cases": [
+    {
+      "name": "normal",
+      "pages": 2,
+      "htmlSha256": "356028acd09806b49c512c7c413e920ded1b4b5482ba864c6d686d49b6edbf01",
+      "externalRequests": 0
+    },
+    {
+      "name": "long",
+      "pages": 4,
+      "htmlSha256": "138cf4045f4a773abeb71e2682ef16a5272871a06dcbc33e6e63342694fe9d3d",
+      "externalRequests": 0
+    },
+    {
+      "name": "missing",
+      "pages": 2,
+      "htmlSha256": "9966e9b19c35770d04df84944a350037ba1cf09c5ea147cb37d14b8443b87820",
+      "externalRequests": 0
+    }
+  ],
+  "browserIntegration": {
+    "generation": true,
+    "download": true,
+    "printCallStubbed": true,
+    "formalCompletionUnchanged": true
+  },
+  "limitations": [
+    "국문 디자인 검토본이며 정식 DOCX와 별도",
+    "운영 DB RLS MFA 및 실제 개인정보 검증 별도",
+    "PDF 저장은 브라우저 인쇄창에서 사용자가 수행"
+  ]
+}

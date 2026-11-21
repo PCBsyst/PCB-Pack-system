@@ -4,12 +4,16 @@ import { boundedDownloadBlob } from "@/lib/bounded-download";
 import { documentErrorMessage } from "@/lib/document-errors";
 import { decisionHtmlVersion } from "@/lib/decision-report-html";
 import { applicationReviewHtmlVersion } from "@/lib/application-review-html";
+import { deliveryConfirmationHtmlVersion } from "@/lib/delivery-confirmation-html";
 
 export async function fetchDecisionReportHtml(context:PackageContext,job:Job,language:DocumentLanguage,signal?:AbortSignal) {
   return fetchReportHtml(context,job,language,"decision-report-html",decisionHtmlVersion,"Decision_Review",signal);
 }
 export async function fetchApplicationReviewHtml(context:PackageContext,job:Job,language:DocumentLanguage,signal?:AbortSignal) {
   return fetchReportHtml(context,job,language,"application-review-html",applicationReviewHtmlVersion,"Application_Review",signal);
+}
+export async function fetchDeliveryConfirmationHtml(context:PackageContext,job:Job,language:DocumentLanguage,signal?:AbortSignal) {
+  return fetchReportHtml(context,job,language,"delivery-confirmation-html",deliveryConfirmationHtmlVersion,"Delivery_Confirmation",signal);
 }
 async function fetchReportHtml(context:PackageContext,job:Job,language:DocumentLanguage,endpoint:string,version:string,fileLabel:string,signal?:AbortSignal) {
   const response = await fetch(`/api/documents/${endpoint}`,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json"},body:JSON.stringify({context,job,language}),signal});

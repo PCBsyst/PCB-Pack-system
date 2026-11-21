@@ -2,12 +2,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { PackageContext, DocumentLanguage } from "@/lib/prototype-package";
 import type { Job } from "@/types/certification";
-import { fetchDecisionReportHtml, fetchApplicationReviewHtml } from "@/lib/decision-report-download";
+import { fetchDecisionReportHtml, fetchApplicationReviewHtml, fetchDeliveryConfirmationHtml } from "@/lib/decision-report-download";
 import { Button } from "@/components/ui/button";
 
 type Report = Awaited<ReturnType<typeof fetchDecisionReportHtml>> & {snapshot:string};
-export function DecisionReportPreview({context,job,language,setNotice,documentKind="DECISION"}:{context:PackageContext;job:Job;language:DocumentLanguage;setNotice:(value:string)=>void;documentKind?:"DECISION"|"APPLICATION_REVIEW"}) {
-  const reportLabel=documentKind==="APPLICATION_REVIEW"?"신청서류 검토서":"인증결정보고서";
+export function DecisionReportPreview({context,job,language,setNotice,documentKind="DECISION"}:{context:PackageContext;job:Job;language:DocumentLanguage;setNotice:(value:string)=>void;documentKind?:"DECISION"|"APPLICATION_REVIEW"|"DELIVERY_CONFIRMATION"}) {
+  const reportLabel=documentKind==="DELIVERY_CONFIRMATION"?"문서전달확인서":documentKind==="APPLICATION_REVIEW"?"신청서류 검토서":"인증결정보고서";
   const snapshot = JSON.stringify({context,job,language,documentKind}), current = useRef(snapshot); current.current = snapshot;
   const busy = useRef(false), mounted = useRef(true), controller = useRef<AbortController|null>(null), frame = useRef<HTMLIFrameElement>(null);
   const [pending,setPending] = useState(false), [report,setReport] = useState<Report|null>(null), [readyHash,setReadyHash] = useState("");
@@ -18,7 +18,7 @@ export function DecisionReportPreview({context,job,language,setNotice,documentKi
     busy.current=true;setPending(true);setReport(null);setReadyHash("");
     const requested=snapshot;controller.current=new AbortController();setNotice(`${reportLabel} HTML을 저장 기록과 대조해 생성하고 있습니다.`);
     try {
-      const value=await (documentKind==="APPLICATION_REVIEW"?fetchApplicationReviewHtml:fetchDecisionReportHtml)(context,job,language,controller.current.signal);
+      const value=await (documentKind==="DELIVERY_CONFIRMATION"?fetchDeliveryConfirmationHtml:documentKind==="APPLICATION_REVIEW"?fetchApplicationReviewHtml:fetchDecisionReportHtml)(context,job,language,controller.current.signal);
       if(!mounted.current || current.current!==requested) return;
       setReport({...value,snapshot:requested});setNotice("HTML 디자인 검토본을 생성했습니다. 기존 정식 DOCX와 패키지 완료 기록은 변경하지 않았습니다.");
     } catch(error) { if(mounted.current && current.current===requested) setNotice(error instanceof Error && error.name!=="AbortError"?error.message:"문서 생성을 중단했습니다. 현재 입력을 저장한 후 다시 시도해 주세요."); }

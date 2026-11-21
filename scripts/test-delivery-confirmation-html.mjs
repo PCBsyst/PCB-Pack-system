@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+import {decisionReportSample} from './fixtures/decision-report.mjs';
+const modules={};function load(name){if(modules[name])return modules[name];const exports={};modules[name]=exports;vm.runInNewContext(ts.transpileModule(readFileSync(`lib/${name}.ts`,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{exports,require:path=>load(path.replace('@/lib/',''))});return exports;}
+const {buildDeliveryConfirmationHtml:build}=load('delivery-confirmation-html');
+let {context,job,metadata}=decisionReportSample();
+const keys=['application','career','education','diploma','auditLog','agreement','examNotice','examAnswers','decisionReport','certificate','survey','deliveryConfirmation'];
+context.deliveryDocuments[job.id]=Object.fromEntries(keys.map(key=>[key,{applicability:'REQUIRED',received:true,date:'2026-11-20',comment:'가상 '+key+' 기록'}]));
+context.deliveryDocuments[job.id].auditLog.applicability='NOT_APPLICABLE';context.deliveryDocuments[job.id].career.applicability='CONDITIONAL';
+context.deliveryDocuments.other={application:{comment:'다른 Job의 비공개 기록'}};
+let html=build(context,job,metadata);
+for(const value of ['문서전달확인서','시험통보서','시험답안지','고객 설문지','2026-11-20','2026-11-02','2026-11-06','2026-11-18','2026-11-19','2029-11-18','해당 없음','조건부','26130099'])assert.ok(html.includes(value),value);
+for(const key of keys)assert.ok(html.includes('가상 '+key+' 기록'));
+for(const value of ['not-rendered@example.test','not-rendered','다른 Job의 비공개 기록','가상 심의위원 A'])assert.ok(!html.includes(value),value);
+assert.ok(!html.split('05 청구 및 원본 송부 기록')[1].includes('2026-11-19'),'발행일을 원본 송부일로 대체하지 않음');
+context.certificates[job.id].originalSentAt='2026-11-23';context.certificates[job.id].trackingNumber='TRACK-ONLY';html=build(context,job,metadata);assert.ok(html.includes('2026-11-23'));assert.ok(html.includes('TRACK-ONLY'));assert.ok(!html.includes('수령 완료'));
+context.examSchedules[job.id].providerType='NON_PARTNER';context.examSchedules[job.id].providerDesignationNo='EXCLUDE-OLD-NUMBER';context.deliveryDocuments[job.id].application.comment='<img src="https://example.test/private"><script>alert(1)</script>';html=build(context,job,metadata);assert.ok(!html.includes('EXCLUDE-OLD-NUMBER'));assert.ok(html.includes('&lt;script&gt;'));assert.ok(!/<script|<img|<iframe|<form/i.test(html));
+context.deliveryDocuments[job.id].education.comment=Array.from({length:32},(_,i)=>`${i+1}. 장문 원문 전체 보존 확인`).join('\n');html=build(context,job,metadata);assert.ok(html.includes('비고 1 참조'));assert.ok(html.includes('교육수료증 비고 1'));assert.ok(html.includes('32. 장문 원문 전체 보존 확인'));
+context.deliveryDocuments={};context.certificates={};context.examSchedules={};html=build(context,job,metadata);assert.ok(html.includes('미입력'));assert.ok(!html.includes('undefined'));assert.throws(()=>build(context,job,{...metadata,recordHash:'bad'}));
+console.log('문서전달 HTML: 12종·기록일/실제 일정·적용 구분·발행/송부/수령 구분·다른 Job/불필요 개인정보 제외·삽입 차단 통과');

@@ -1,0 +1,52 @@
+{
+  "reviewedAt": "2026-11-21",
+  "renderer": "Microsoft Word",
+  "manualPageReview": true,
+  "templates": [
+    {
+      "file": "FGPC-008-01-application-review-kr.docx",
+      "sha256": "ca9c1bd1e7496bf9e4adb27a526abf70cd7a2044d0dfc636a823c90d263eacf0",
+      "allItemsAndFieldsPreserved": true,
+      "corporateHeaderRebuilt": true
+    },
+    {
+      "file": "FGPC-012-01-decision-report-kr.docx",
+      "sha256": "b08ed4e377f4b50f60f0ee163fb5c493dc7976530fe8e9e5cfeb54bfa569b1f8",
+      "allItemsAndFieldsPreserved": true,
+      "corporateHeaderRebuilt": true
+    }
+  ],
+  "notes": [
+    "가상 API 출력물 및 의견 24줄 출력 스트레스 문서만 사용",
+    "LibreOffice 미설치로 기본 렌더러 실패 후 설치된 Word 사용",
+    "서버 PDF 변환 추가 아님",
+    "운영 DB RLS MFA 및 실제 고객 데이터 검증 별도"
+  ],
+  "cases": [
+    {
+      "pages": 6,
+      "renderer": "Microsoft Word",
+      "name": "OHS260001_Application_Review_KR.docx"
+    },
+    {
+      "pages": 2,
+      "renderer": "Microsoft Word",
+      "name": "OHS260001_Certification_Decision_Report_KR.docx"
+    },
+    {
+      "pages": 2,
+      "renderer": "Microsoft Word",
+      "name": "OHS260001_Document_Delivery_Confirmation_KR.docx"
+    },
+    {
+      "pages": 7,
+      "renderer": "Microsoft Word",
+      "name": "STRESS_Application_Review_KR.docx"
+    },
+    {
+      "pages": 3,
+      "renderer": "Microsoft Word",
+      "name": "STRESS_Certification_Decision_Report_KR.docx"
+    }
+  ]
+}

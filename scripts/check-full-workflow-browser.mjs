@@ -47,6 +47,7 @@ async function checkDeliveryPreview(){
  await card.screenshot({path:`${dir}/delivery-preview.png`});
  await card.getByRole('button',{name:'미리보기 닫기',exact:true}).click();
  assert.equal(await card.locator('iframe').count(),0);
+ const bundleEvent=page.waitForEvent('download');await card.getByRole('button',{name:'국문 HTML 3종 ZIP',exact:true}).click();const bundle=await bundleEvent;await bundle.saveAs(`${dir}/html-bundle.zip`);const bundleZip=new PizZip(readFileSync(`${dir}/html-bundle.zip`));assert.equal(Object.keys(bundleZip.files).length,4);assert.equal((await state()).stage,'PACKAGE_READY');
  console.log('통과: 문서전달 HTML 미리보기·실제 다운로드·인쇄 호출·완료 상태 유지');
 }
 try{

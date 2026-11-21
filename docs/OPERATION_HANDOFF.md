@@ -177,3 +177,11 @@
 - 서류검토서와 문서전달확인서의 기본 CSS를 공통 모듈로 분리했다. 분리 전후 서류검토서 HTML 문자열이 동일함을 대조했다. 기존 인증결정보고서 디자인은 유지한다.
 - 전체 가상 UI 흐름에서 두 신규 미리보기의 생성·다운로드·인쇄 호출·닫기 및 정식 DOCX ZIP 3종/완료 상태를 확인했다. 인쇄 호출은 테스트 대체 함수를 사용했고, 별도 Chrome A4 출력은 실제 PDF로 검증했다. 자동검사 137개 및 TypeScript 포함 운영용 webpack 빌드를 통과했다.
 - 근거: docs/qa/delivery-confirmation-html-v1.json. 재현: scripts/check-full-workflow-browser.mjs 및 scripts/render-delivery-confirmation-html.mjs. 운영 DB/RLS/MFA·실제 개인정보·PC 저장 완료 검수는 별도이며 SQL·설치·AI 전송은 없다.
+
+## 국문 HTML 3종 묶음 다운로드 (2026-11-21)
+
+- 문서전달확인서 HTML 카드에 `국문 HTML 3종 ZIP` 버튼을 추가했다. Job별 검토서·인증결정보고서·문서전달확인서 HTML과 개인 원문을 별도 복제하지 않는 해시 명세를 한 ZIP으로 제공한다. 동일한 생성시각과 기록 스냅샷을 사용한다.
+- DOCUMENT_GENERATION 및 PACKAGE_DOWNLOAD 권한, 저장 기록 대조, 국문 한정, 생성·감사 실패 시 전체 응답 차단을 적용한다. 접근이력은 HTML_PACKAGE_PREVIEW:KR이며 정식 패키지 생성/완료 이력은 변경하지 않는다.
+- 수신 시 크기 상한·ZIP 및 문서별 SHA-256·정확한 3종 구성과 명세를 확인한다. 중복 클릭, 요청 중 입력 변경 및 화면 종료 시 다운로드를 막는다. ZIP은 디자인 검토본이며 PDF 파일은 포함하지 않는다.
+- 가상 전체 업무 흐름에서 실제 ZIP 다운로드(HTML 3개+manifest.json) 및 정식 단계 유지, 기존 DOCX ZIP 완료를 확인했다. 감사/권한/저장 불일치/변조 차단과 입력 변경 중 ZIP 미다운로드를 검사했다. 회귀검사 138개 및 TypeScript 포함 운영용 webpack 빌드 통과.
+- 추가 SQL·설치·외부 AI 전송은 없다. 운영 DB/RLS 및 실제 고객 데이터 검수는 별도다.

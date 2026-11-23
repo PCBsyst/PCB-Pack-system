@@ -1,3 +1,5 @@
+import {fetchHtmlPackage} from "@/lib/html-package-download";
+import {combineReviewHtml} from "@/lib/combined-html-review";
 import type { DocumentLanguage, PackageContext } from "@/lib/prototype-package";
 import type { Job } from "@/types/certification";
 import { boundedDownloadBlob } from "@/lib/bounded-download";
@@ -26,4 +28,11 @@ async function fetchReportHtml(context:PackageContext,job:Job,language:DocumentL
   const html = await blob.text();
   if (!html.startsWith("<!doctype html>") || !html.includes('name="report-template"') || /<script\b|<iframe\b|<form\b/i.test(html)) throw new Error("안전한 HTML 보고서 구성을 확인하지 못했습니다.");
   return {html,blob,hash,fileName:`${job.jobNo.replace(/[^A-Za-z0-9_-]/g,"_")}_${fileLabel}_${language}.html`};
+}
+
+export async function fetchCombinedReviewHtml(context:PackageContext,job:Job,language:DocumentLanguage,signal?:AbortSignal){
+ if(language!=="KR")throw Error("통합 검토는 국문만 지원합니다.");
+ const bundle=await fetchHtmlPackage(context,job,signal),html=combineReviewHtml(bundle.documents),blob=new Blob([html],{type:"text/html;charset=utf-8"});
+ const hash=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",await blob.arrayBuffer()))).map(v=>v.toString(16).padStart(2,"0")).join("");
+ return {html,blob,hash,fileName:`${job.jobNo.replace(/[^A-Za-z0-9_-]/g,"_")}_Combined_Review_KR.html`};
 }

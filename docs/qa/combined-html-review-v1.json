@@ -1,0 +1,37 @@
+{
+  "reviewedAt": "2026-11-22",
+  "renderer": "Chrome A4 print",
+  "manualPageReview": true,
+  "sourceSha256": "80753237fc1c91445d8baecdd5028149260fe180e64e3036cb117e62cde4d583",
+  "cases": [
+    {
+      "name": "normal",
+      "pages": 6,
+      "htmlSha256": "a1099352adc134db61dc6fc6efc639cf866bf5e6fd5614bdbe37558df2f7d101",
+      "externalRequests": 0
+    },
+    {
+      "name": "long",
+      "pages": 10,
+      "htmlSha256": "0d826f7c536f2c6517433a1ae19937bc14f0c244e7fbf73d741d50db91565ec8",
+      "externalRequests": 0
+    },
+    {
+      "name": "missing",
+      "pages": 6,
+      "htmlSha256": "1c36fb42b28ad2db9ba9b9d27b0c58ac92e39776aa946e4619f553ccb19664ac",
+      "externalRequests": 0
+    }
+  ],
+  "browserIntegration": {
+    "threeArticles": true,
+    "download": true,
+    "printCallStubbed": true,
+    "formalCompletionUnchanged": true
+  },
+  "limitations": [
+    "디자인 검토본이며 정식 DOCX 패키지와 별도",
+    "운영 DB RLS 및 실제 고객 검수 별도",
+    "사용자가 인쇄창에서 PDF 저장 수행"
+  ]
+}

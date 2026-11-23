@@ -15,5 +15,5 @@ export async function fetchHtmlPackage(context:PackageContext,job:Job,signal?:Ab
  const manifest=JSON.parse(zip.file('manifest.json')!.asText());
  if(manifest.version!=='HTML-PACK-01 v1'||manifest.status!=='DESIGN_PREVIEW'||!Array.isArray(manifest.documents)||manifest.documents.length!==3)throw Error('HTML 묶음 명세를 확인하지 못했습니다.');
  for(const name of names){const entries=manifest.documents.filter((d:{name:string})=>d.name===name),data=zip.file(name)!.asUint8Array();if(data.length>5*1024*1024||entries.length!==1||await digest(data.buffer.slice(data.byteOffset,data.byteOffset+data.byteLength) as ArrayBuffer)!==entries[0].sha256)throw Error('HTML 문서 무결성 확인에 실패했습니다.');}
- return {blob,fileName:`${job.jobNo.replace(/[^A-Za-z0-9_-]/g,'_')}_HTML_Review_KR.zip`};
+ return {blob,documents:names.map(name=>({name,html:zip.file(name)!.asText()})),fileName:`${job.jobNo.replace(/[^A-Za-z0-9_-]/g,'_')}_HTML_Review_KR.zip`};
 }

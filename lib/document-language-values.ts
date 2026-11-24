@@ -7,6 +7,7 @@ const english: Record<string, string> = {
   "교육요건": "Education requirements", "학력요건": "Academic requirements", "업무경력요건": "Work experience requirements", "심사·실무경력요건": "Audit and practical experience requirements",
   "심사원보": "Provisional auditor", "내부심사원": "Internal auditor", "심사원": "Auditor", "선임심사원": "Lead auditor", "검증심사원": "Verification auditor",
   "최초": "Initial", "갱신": "Renewal", "전환": "Transfer", "등급변경": "Grade change", "기타": "Other", "없음": "None",
+  "신청서": "Application form", "계약서": "Agreement", "졸업증명서": "Graduation certificate", "경력증명서": "Work experience certificate", "교육수료증": "Training certificate", "심사이력": "Audit log",
 };
 
 /** Translate known fixed choices only; never machine-translate names or free text. */

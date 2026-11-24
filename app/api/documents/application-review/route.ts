@@ -53,7 +53,7 @@ async function createDocumentResponse(request: Request) {
   const missingFields = missingDocumentTemplateFields(zip, "APPLICATION_REVIEW");
   if (missingFields.length) return documentTemplateFieldsError(missingFields);
   for (const fileName of Object.keys(zip.files).filter((name) => name.endsWith(".xml"))) { let content = zip.file(fileName)?.asText(); if (!content) continue; for (const [key, value] of Object.entries(values)) content = content.replaceAll(`{{${key}}}`, xml(value)); zip.file(fileName, content); }
-  const evidence=language==="KR"?documentEvidenceSummary(context):"";
+  const evidence=documentEvidenceSummary(context,language);
   if(evidence){
     const content=zip.file("word/document.xml")?.asText();if(!content)return invalidDocxResponse();
     // Break on the appendix heading itself: a separate break-only paragraph

@@ -104,3 +104,4 @@ unsupportedEvidence.evidenceReview = {links: [{requirement: '교육요건'}]};
 assert.equal((await POST(request(unsupportedEvidence))).status, 422);
 assert.equal((await packagePOST(packageRequest(unsupportedEvidence))).status, 422);
 console.log('영문 검토서: 일반/장문·미번역 차단·신청구분·해당없음·실제 국영문 6종 ZIP/해시 통과 (인증/DB 모의)');
+export {context,job,POST,request,packagePOST,packageRequest};

@@ -6,7 +6,7 @@ export type EvidenceDocument = {id:string;kind:string;fileName:string;sha256:str
 export type CareerEvidence = {id:string;documentId:string;organization:string;role:string;start:string;end:string;ongoing:boolean;reference:string;confirmed:boolean};
 export type AuditEvidence = {id:string;documentId:string;client:string;standard:string;role:string;start:string;end:string;days:string;reference:string;confirmed:boolean};
 export const evidenceRequirements=["교육요건","학력요건","업무경력요건","심사·실무경력요건"] as const;
-export type RequirementEvidenceLink={requirement:typeof evidenceRequirements[number];documentIds:string[];reference:string;note:string;confirmed:boolean;result:string};
+export type RequirementEvidenceLink={requirement:typeof evidenceRequirements[number];documentIds:string[];reference:string;note:string;confirmed:boolean;result:string;english?:{reference:string;note:string;confirmed:boolean;result:string}};
 export type EvidenceReviewState = {version:1;documents:EvidenceDocument[];careers:CareerEvidence[];audits:AuditEvidence[];links?:RequirementEvidenceLink[]};
 export const emptyEvidenceReview = ():EvidenceReviewState=>({version:1,documents:[],careers:[],audits:[]});
 const object=(value:unknown):value is Record<string,unknown>=>Boolean(value)&&typeof value==="object"&&!Array.isArray(value);
@@ -23,9 +23,22 @@ export function readEvidenceReview(value:unknown):EvidenceReviewState|null {
   if(audits.some(r=>!keys(r,["id","documentId","client","standard","role","start","end","days","reference","confirmed"])||!["documentId","client","standard","role","start","end","days","reference"].every(key=>str(r[key]))||typeof r.confirmed!=="boolean"))return null;
   if(value.links!==undefined){
     if(!Array.isArray(value.links)||value.links.length>4||new Set(value.links.map(r=>object(r)?r.requirement:null)).size!==value.links.length)return null;
-    if(value.links.some(r=>!object(r)||!keys(r,["requirement","documentIds","reference","note","confirmed","result"])||!evidenceRequirements.includes(r.requirement as typeof evidenceRequirements[number])||!Array.isArray(r.documentIds)||r.documentIds.length>100||new Set(r.documentIds).size!==r.documentIds.length||r.documentIds.some(id=>!str(id,100)||!id)||!str(r.reference)||!str(r.note)||typeof r.confirmed!=="boolean"||!["","충족","미충족","해당없음"].includes(r.result as string)))return null;
+    if(value.links.some(r=>!object(r)||!keys(r,["requirement","documentIds","reference","note","confirmed","result","english"])||!evidenceRequirements.includes(r.requirement as typeof evidenceRequirements[number])||!Array.isArray(r.documentIds)||r.documentIds.length>100||new Set(r.documentIds).size!==r.documentIds.length||r.documentIds.some(id=>!str(id,100)||!id)||!str(r.reference)||!str(r.note)||typeof r.confirmed!=="boolean"||!["","충족","미충족","해당없음"].includes(r.result as string)||r.english!==undefined&&(!object(r.english)||!keys(r.english,["reference","note","confirmed","result"])||!str(r.english.reference)||!str(r.english.note)||typeof r.english.confirmed!=="boolean"||!["","충족","미충족","해당없음"].includes(r.english.result as string))))return null;
   }
   return value as EvidenceReviewState;
+}
+/** Fixed labels stay local. Free-text counterparts require explicit staff review. */
+export function evidenceEnglishIssues(link:RequirementEvidenceLink,result:string){
+ const issues:string[]=[];
+ if(link.reference.trim()&&!link.english?.reference.trim())issues.push("확인 위치 (영문)");
+ if(link.note.trim()&&!link.english?.note.trim())issues.push("검토 메모 (영문)");
+ if(!link.english?.confirmed||link.english.result!==result)issues.push("영문 근거 확인");
+ return issues;
+}
+export function reviseEvidenceLink(row:RequirementEvidenceLink,patch:Partial<RequirementEvidenceLink>):RequirementEvidenceLink{
+ const next={...row,...patch};
+ if(row.english&&["documentIds","reference","note","result"].some(key=>Object.hasOwn(patch,key)))next.english={...row.english,confirmed:false};
+ return next;
 }
 export function requirementEvidenceIssues(link:RequirementEvidenceLink,documents:EvidenceDocument[],expectedName:string,result:string,birthDate?:string){
  const issues:string[]=[];

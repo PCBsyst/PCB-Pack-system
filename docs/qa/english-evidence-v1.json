@@ -1,0 +1,30 @@
+{
+  "reviewedAt": "2026-11-24",
+  "samples": {
+    "normal": {
+      "pages": 6,
+      "allPagesVisuallyReviewed": true,
+      "pdfSha256": "740ee4d436a2438c36650d64e7bf1ff57f1bc6dbe67625975de02172aba09381"
+    },
+    "long": {
+      "pages": 6,
+      "allPagesVisuallyReviewed": true,
+      "pdfSha256": "37d5723ecb4337a8073eb9c04588b50e3ab63fb56b9a53f6e05acfe3356cd047"
+    }
+  },
+  "renderer": "Microsoft Word PDF export and pypdfium2 page images",
+  "realDocumentAndPackageRoutesWithMockedAuthAndDatabase": true,
+  "bilingualPackageDocumentCount": 6,
+  "missingOrUnconfirmedEnglishRejectedWith422": true,
+  "sourceEditsInvalidateEnglishConfirmationAndRetainText": true,
+  "regressionTests": 143,
+  "notes": [
+    "Optional English fields in existing evidence JSON; no SQL required.",
+    "Canonical render_docx.py fails because LibreOffice is absent; installed Word used for QA.",
+    "No source files or document text sent to external AI. Only synthetic data tested.",
+    "Linked filenames remain original; unlinked metadata and extracted customer contact fields excluded from appendix.",
+    "Operational database and actual PC save verification separate."
+  ],
+  "browserEnglishInputInvalidationSaveReloadPassed": true,
+  "browserFullKoreanWorkflowPassed": true
+}

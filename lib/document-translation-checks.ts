@@ -1,12 +1,17 @@
 import type { PackageContext } from "@/lib/prototype-package";
 import type { CorporateDocumentType } from "@/lib/document-template-registry";
+import {evidenceEnglishIssues,readEvidenceReview} from "@/lib/evidence-review";
 
 const nonblank = (value: unknown): boolean => typeof value === "string" && !!value.trim();
 
 /** Only require counterparts for existing source comments in documents actually generated. */
 export function documentTranslationIssues(context: PackageContext, jobIds: string[], types: CorporateDocumentType[]): string[] {
   const issues: string[] = [];
-  if(types.includes("APPLICATION_REVIEW")&&context.evidenceReview?.links?.length)issues.push("요건별 증빙 근거는 영문 번역 기능 준비 중입니다. 국문 검토서를 먼저 생성하세요");
+  if(types.includes("APPLICATION_REVIEW")){
+    const evidence=readEvidenceReview(context.evidenceReview);
+    if(!evidence)issues.push("증빙 근거 기록 형식 확인");
+    else for(const link of evidence.links??[])for(const issue of evidenceEnglishIssues(link,context.reviewRequirements[link.requirement]??""))issues.push(`${link.requirement} ${issue}`);
+  }
   if (types.includes("APPLICATION_REVIEW") || types.includes("CERTIFICATION_DECISION_REPORT")) {
     if (nonblank(context.review.comment) && !nonblank(context.englishText?.reviewComment)) issues.push("서류검토 의견 (영문)");
     if (nonblank(context.review.verificationComment) && !nonblank(context.englishText?.verificationComment)) issues.push("검증 의견 (영문)");

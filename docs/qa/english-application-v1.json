@@ -1,0 +1,35 @@
+{
+  "reviewedAt": "2026-11-24",
+  "sourceSha256": "ca9c1bd1e7496bf9e4adb27a526abf70cd7a2044d0dfc636a823c90d263eacf0",
+  "templateSha256": "2dea00ec991dba61929f2f7970717cd2d5db8cf1c923930b8c4c568fa0a9b415",
+  "renderer": "Microsoft Word PDF export and pypdfium2 page images",
+  "samples": {
+    "normal": {
+      "pages": 5,
+      "everyPageVisuallyReviewed": true,
+      "pdfSha256": "39dd2220fee04088e65eaf5e8c69178add6cba974e98bcf896a6c90345f56195"
+    },
+    "long": {
+      "pages": 7,
+      "everyPageVisuallyReviewed": true,
+      "pdfSha256": "1f5698f774219dfd1a17cc8360b789e962235235453f68d2840bfa02096650ae"
+    }
+  },
+  "samePlaceholdersAndPreservedPackageParts": true,
+  "realDocumentAndPackageRoutesWithMockedAuthenticationAndDatabase": true,
+  "bilingualPackage": {
+    "documentCount": 6,
+    "complete": true,
+    "missingCount": 0,
+    "fileAndZipHashesVerified": true
+  },
+  "englishReviewAndVerificationMissingRejectedWith422": true,
+  "untranslatedEvidenceLinksRejectedWith422": true,
+  "regressionTests": 142,
+  "notes": [
+    "Canonical render_docx.py unavailable because LibreOffice is absent; installed Word used without saving source.",
+    "Only synthetic data used. Proper names retained as entered; no machine translation or external AI calls.",
+    "Existing source rules and blank application slots retained; output does not establish candidate consent or validate policy accuracy.",
+    "No production database/RLS or actual user PC save verification."
+  ]
+}

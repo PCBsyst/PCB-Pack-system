@@ -31,21 +31,21 @@ async function createDocumentResponse(request: Request) {
   }
   const localized = documentLanguageValues(context, job.id, language);
   const records = context.deliveryDocuments[job.id];
-  const mark = (key: keyof typeof records) => records?.[key]?.applicability === "NOT_APPLICABLE" ? "해당 없음" : records?.[key]?.received ? "■" : "□";
+  const mark = (key: keyof typeof records) => records?.[key]?.applicability === "NOT_APPLICABLE" ? documentChoice("해당 없음", language) : records?.[key]?.received ? "■" : "□";
   const reviewComment = [localized.requirementSummary, documentTrainingSummary(context.examSchedules?.[job.id], language), localized.reviewComment, localized.verificationComment].filter(Boolean).join("\n");
   const values: Record<string, unknown> = {
     jobNo: job.jobNo, candidateName: localized.candidateName, candidateNameEn: context.candidate.nameEn,
     birthDate: context.candidate.birthDate, nationality: context.candidate.nationality, address: context.candidate.address,
     email: context.candidate.email, phone: context.candidate.phone, initialMark: context.application.applicationType === "최초" ? "☒" : "☐",
     renewalMark: context.application.applicationType === "갱신" ? "☒" : "☐", standard: job.standard, grade: documentChoice(job.currentGrade, language),
-    specialRequirements: context.application.applicationType === "최초" || context.application.applicationType === "갱신" ? "없음" : `신청구분: ${context.application.applicationType}`,
+    specialRequirements: context.application.applicationType === "최초" || context.application.applicationType === "갱신" ? documentChoice("없음", language) : `${language === "EN" ? "Application type" : "신청구분"}: ${documentChoice(context.application.applicationType, language)}`,
     academicDocumentMark: mark("diploma"), careerDocumentMark: mark("career"), educationDocumentMark: mark("education"),
     auditLogDocumentMark: mark("auditLog"), otherDocumentMark: records ? mark("agreement") : "□", receivedAt: context.application.receivedAt,
     reviewResult: documentChoice(context.review.result, language), reviewComment, reviewer: context.review.reviewer, reviewedAt: context.review.reviewedAt,
     verifier: context.review.verifier, verifiedAt: context.review.verifiedAt, verificationResult: documentChoice(context.review.verificationResult, language),
   };
   let template;
-  try { template = await loadDocumentTemplate("APPLICATION_REVIEW", language, language === "KR" ? "FGPC-008-01-application-review-kr.docx" : undefined); }
+  try { template = await loadDocumentTemplate("APPLICATION_REVIEW", language, language === "KR" ? "FGPC-008-01-application-review-kr.docx" : "FGPC-008-01-application-review-en.docx"); }
   catch { return templateLoadErrorResponse(); }
   let zip;
   try { zip = new PizZip(template.bytes); }

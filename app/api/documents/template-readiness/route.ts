@@ -6,6 +6,7 @@ import { corporateTemplateRegistry } from "@/lib/document-template-registry";
 const builtInFiles: Record<string, string> = {
   "decision-report-en": "FGPC-012-01-decision-report-en.docx",
   "application-review-kr": "FGPC-008-01-application-review-kr.docx",
+  "application-review-en": "FGPC-008-01-application-review-en.docx",
   "decision-report-kr": "FGPC-012-01-decision-report-kr.docx",
   "delivery-confirmation-en": "FGPC-012-03-delivery-confirmation-en.docx",
   "delivery-confirmation-kr": "FGPC-012-03-delivery-confirmation-kr.docx",

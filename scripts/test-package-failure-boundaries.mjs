@@ -44,5 +44,5 @@ for (const [mode, expectedStatus] of [["denied",403],["invalid-json",400],["init
 Object.assign(state, { mode: "", documentCalls: 0, recordChecks: 0, accessCalls: 0, receiptCalls: 0 });
 const recovered = await POST(new Request("https://example.com/package", { method: "POST", body: JSON.stringify(input) }));
 assert.equal(recovered.status, 200); assert.equal(state.receiptCalls, 1); assert.equal(state.recordChecks, 2);
-assert.equal(recovered.headers.get("X-Package-Complete"), "false"); // 미등록 양식을 완료로 오인하지 않는다.
+assert.equal(recovered.headers.get("X-Package-Complete"), "true"); // 국문·영문 6종이 준비된 정상 재시도.
 console.log("패키지 실패 경계 12개: 권한·입력·원본 변경·문서 손상·접근/생성이력 실패 시 ZIP 미응답·내부 예외 비노출·정상 재시도 통과 (인증/DB/문서 생성 모의)");

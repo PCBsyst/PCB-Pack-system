@@ -1,0 +1,9 @@
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import vm from 'node:vm';import ts from 'typescript';import {decisionReportSample} from './fixtures/decision-report.mjs';
+const exports={};vm.runInNewContext(ts.transpileModule(readFileSync('lib/review-output-checklist.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports});const check=exports.reviewOutputChecklist;
+const {context,job}=decisionReportSample(),review='Application_Review_KR.html',decision='Decision_Review_KR.html',delivery='Delivery_Confirmation_KR.html';
+let before=JSON.stringify(context);assert.equal(check(context,job,[review])[0].items.length,0);assert.equal(JSON.stringify(context),before);assert.equal(check(context,job,[]).length,0);
+context.review.reviewer='';let result=check(context,job,[review]);assert.ok(result[0].items.includes('검토자'));assert.equal(check(context,job,[decision])[0].items.length,0);
+context.panelMembers[1].name=' '+context.panelMembers[0].name+' ';result=check(context,job,[decision]);assert.ok(result[0].items.includes('서로 다른 심의위원 2명 이상'));context.assessment[job.id]['심사이력']='해당없음';assert.ok(!check(context,job,[decision])[0].items.includes('심사이력 평가 기록'));
+context.deliveryDocuments[job.id]={auditLog:{applicability:'NOT_APPLICABLE',received:false,date:'',comment:''},education:{applicability:'REQUIRED',received:true,date:'',comment:''},career:{applicability:'CONDITIONAL',received:false,date:'',comment:''}};context.certificates[job.id].trackingNumber='가상번호';result=check(context,job,[delivery]);assert.ok(result[0].items.includes('교육수료증 기록일'));assert.ok(result[0].items.includes('원본 송부일'));assert.ok(!result[0].items.some(v=>v.includes('심사이력표')||v.includes('경력증명서')));
+assert.ok(!JSON.stringify(result).includes('가상번호'));assert.ok(!JSON.stringify(result).includes(context.candidate.name));
+console.log('출력 기록 점검: 선택 범위·원문 비변경·중복 위원·평가 해당없음·조건부/제외·송부 상호 누락·원문 노출 없음 통과');

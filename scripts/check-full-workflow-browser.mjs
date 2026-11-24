@@ -30,6 +30,7 @@ async function checkReviewPreview(){
  console.log('통과: 서류검토 HTML 미리보기·실제 다운로드·인쇄 호출·완료 상태 유지');
 }
 async function checkCombinedPreview(){
+ await page.getByText(/출력 전 기록 점검 · 확인 권장/).first().waitFor();
  const card=page.locator('section').filter({has:page.getByText(/· 국문 3종 통합 검토$/)}).last();
  const responsePromise=page.waitForResponse(r=>r.url().endsWith('/api/documents/html-package'));
  await card.getByRole('button',{name:'HTML 미리보기 생성',exact:true}).click();

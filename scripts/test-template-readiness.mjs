@@ -11,7 +11,7 @@ assert.equal(valid([null, null, null, null, null, null]), false);
 assert.equal(valid([...builtin.slice(1), builtin[1]]), false);
 assert.equal(valid(builtin.map((row) => ({ ...row, source: "UNKNOWN" }))), false);
 assert.equal(builtin.length, 6);
-assert.equal(count(builtin, { KR: true, EN: true }, 2).available, 8);
+assert.equal(count(builtin, { KR: true, EN: true }, 2).available, 10);
 assert.equal(count(builtin, { KR: true, EN: true }, 2).expected, 12);
 assert.equal(count(builtin, { KR: true, EN: false }, 1).missing.length, 0);
 assert.equal(count(builtin, { KR: false, EN: false }, 1).expected, 0);

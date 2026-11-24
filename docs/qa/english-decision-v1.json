@@ -1,0 +1,28 @@
+{
+  "reviewedAt": "2026-11-24",
+  "templateSha256": "3d9b7e7686a534145952c6f48a25b05158e398f081c54ce7b20d129c0faabdc4",
+  "koreanSourceSha256": "b08ed4e377f4b50f60f0ee163fb5c493dc7976530fe8e9e5cfeb54bfa569b1f8",
+  "renderer": "Microsoft Word PDF export + pypdfium2 page images",
+  "samples": {
+    "normal": {
+      "pages": 2,
+      "allPagesVisuallyReviewed": true,
+      "pdfSha256": "7fd96ddaa0ecc409b733031a3ba0fb812880b42a00b67dd29ae94363aa446bad"
+    },
+    "long": {
+      "pages": 5,
+      "allPagesVisuallyReviewed": true,
+      "pdfSha256": "a770defe285427bea28e54905d35204c8cb0990e239101cd8b8c1ca53e2a98a0"
+    }
+  },
+  "actualRouteWithMockedAuthenticationAndDatabase": true,
+  "missingEnglishCommentRejectedWith422": true,
+  "samePlaceholdersAndCorporateMedia": true,
+  "notes": [
+    "LibreOffice absent: bundled render_docx.py unavailable; native Word fallback used.",
+    "Synthetic data only; proper names retained as entered, no machine translation.",
+    "All 35 long review notes and 40 panel comment beginnings retained.",
+    "Built-in bilingual package now has 5 of 6 documents; English application review still absent.",
+    "No production DB, real customer data or actual user PC save verification."
+  ]
+}

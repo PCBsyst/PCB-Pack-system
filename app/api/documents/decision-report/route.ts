@@ -73,7 +73,7 @@ async function createDocumentResponse(request: Request) {
   };
 
   let template;
-  try { template = await loadDocumentTemplate("CERTIFICATION_DECISION_REPORT", language, language === "KR" ? "FGPC-012-01-decision-report-kr.docx" : undefined); }
+  try { template = await loadDocumentTemplate("CERTIFICATION_DECISION_REPORT", language, language === "KR" ? "FGPC-012-01-decision-report-kr.docx" : "FGPC-012-01-decision-report-en.docx"); }
   catch { return templateLoadErrorResponse(); }
   let zip;
   try { zip = new PizZip(template.bytes); }

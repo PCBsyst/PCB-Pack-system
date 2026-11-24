@@ -7,14 +7,14 @@ import {decisionReportSample} from './fixtures/decision-report.mjs';
 const require=createRequire(import.meta.url),runtime='C:/Users/N2411-S05/.cache/codex-runtimes/codex-primary-runtime/dependencies';
 const {chromium}=require(runtime+'/node/node_modules/playwright');
 const modules={};function load(name){if(modules[name])return modules[name];const exports={};modules[name]=exports;vm.runInNewContext(ts.transpileModule(readFileSync('lib/'+name+'.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{exports,require:name=>load(name.replace('@/lib/',''))});return exports;}
-const {combineReviewHtml}=load('combined-html-review');const build=(context,job,metadata)=>combineReviewHtml([{name:'Application_Review_KR.html',html:load('application-review-html').buildApplicationReviewHtml(context,job,metadata)},{name:'Decision_Review_KR.html',html:load('decision-report-html').buildDecisionReportHtml(context,job,'KR',metadata)},{name:'Delivery_Confirmation_KR.html',html:load('delivery-confirmation-html').buildDeliveryConfirmationHtml(context,job,metadata)}]);const dir='../output/combined-html-review/qa';mkdirSync(dir,{recursive:true});
+const {combineReviewHtml}=load('combined-html-review');const build=(context,job,metadata,selected)=>combineReviewHtml([{name:'Application_Review_KR.html',html:load('application-review-html').buildApplicationReviewHtml(context,job,metadata)},{name:'Decision_Review_KR.html',html:load('decision-report-html').buildDecisionReportHtml(context,job,'KR',metadata)},{name:'Delivery_Confirmation_KR.html',html:load('delivery-confirmation-html').buildDeliveryConfirmationHtml(context,job,metadata)}],selected);const dir='../output/combined-html-review/qa';mkdirSync(dir,{recursive:true});
 const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
 try{
- for(const name of ['normal','long','missing']){
+ for(const name of ['normal','long','missing','selected']){
   const {context,job,metadata}=decisionReportSample({long:name==='long'});
   if(name==='missing'){context.reviewRequirements={};context.review={};context.candidate={};context.deliveryDocuments={};context.examSchedules={};}
   metadata.generatedAt='2026-11-21T03:00:00.000Z';
-  const html=build(context,job,metadata);writeFileSync(`${dir}/${name}.html`,html);
+  const html=build(context,job,metadata,name==='selected'?['Application_Review_KR.html','Delivery_Confirmation_KR.html']:undefined);writeFileSync(`${dir}/${name}.html`,html);
   const page=await browser.newPage({viewport:{width:1100,height:1200}}),external=[];
   page.on('request',request=>external.push(request.url()));await page.setContent(html);await page.evaluate(()=>document.fonts.ready);
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),'가로 넘침 없음');

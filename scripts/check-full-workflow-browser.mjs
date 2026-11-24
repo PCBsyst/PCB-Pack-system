@@ -45,6 +45,12 @@ async function checkCombinedPreview(){
  await reportFrame.waitForFunction(()=>document.documentElement.dataset.printRequested==='yes');
  assert.equal((await state()).stage,'PACKAGE_READY','HTML 검토·인쇄는 정식 패키지 완료를 변경하지 않음');
  await card.screenshot({path:`${dir}/combined-preview.png`});
+ await card.getByRole('checkbox',{name:'인증결정보고서',exact:true}).uncheck();
+ await page.waitForFunction(()=>!document.querySelector('iframe[title*="3종 통합 검토"]'));
+ await card.getByRole('button',{name:'HTML 미리보기 생성',exact:true}).click();
+ const selectedHandle=await card.locator('iframe').elementHandle(),selectedFrame=await selectedHandle.contentFrame();
+ await selectedFrame.waitForSelector('article.bundle-document');assert.equal(await selectedFrame.locator('article.bundle-document').count(),2);
+ const titles=await selectedFrame.locator('h1').allTextContents();assert.ok(!titles.includes('인증결정보고서'));assert.ok(titles.includes('신청서류 검토서'));assert.ok(titles.includes('문서전달확인서'));
  await card.getByRole('button',{name:'미리보기 닫기',exact:true}).click();
  assert.equal(await card.locator('iframe').count(),0);
  console.log('통과: 통합 HTML 미리보기·실제 다운로드·인쇄 호출·완료 상태 유지');

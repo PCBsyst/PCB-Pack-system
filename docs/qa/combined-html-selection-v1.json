@@ -1,0 +1,17 @@
+{
+  "reviewedAt": "2026-11-24",
+  "sourceSha256": "333e8d4ec21ebc4b3bf18849dc2eb9c678ef339c1c719cd47f5db3e215f05414",
+  "selectedDocuments": [
+    "신청서류 검토서",
+    "문서전달확인서"
+  ],
+  "pages": 4,
+  "manualPageReview": true,
+  "browserSelectionChange": true,
+  "emptySelectionRejected": true,
+  "notes": [
+    "정식 패키지 구성이나 권한을 바꾸는 기능 아님",
+    "원본 3종은 서버에서 검증 후 선택한 문서만 HTML 출력",
+    "실제 PDF PC 저장 완료 및 운영 DB 검수 별도"
+  ]
+}

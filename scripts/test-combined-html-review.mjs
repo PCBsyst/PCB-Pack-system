@@ -5,3 +5,5 @@ const docs=names.map((name,i)=>({name,html:`<!doctype html><html><head><style>h1
 const html=build([...docs].reverse());assert.ok(html.indexOf('문서 0')<html.indexOf('문서 1'));assert.ok(html.indexOf('문서 1')<html.indexOf('문서 2'));assert.match(html,/break-before:page/);assert.match(html,/counter\(pages\)/);assert.equal((html.match(/class="bundle-document"/g)||[]).length,3);
 assert.throws(()=>build(docs.slice(1)));assert.throws(()=>build([docs[0],docs[0],docs[2]]));for(const bad of ['<script>alert(1)</script>','<iframe></iframe>','<form></form>','<img onerror="alert(1)">'])assert.throws(()=>build([{...docs[0],html:docs[0].html.replace('</main>',bad+'</main>')},...docs.slice(1)]));
 console.log('통합 HTML: 3종 순서·문서별 페이지 나눔·전체 쪽수·누락/중복/능동 콘텐츠 차단 통과');
+
+for(const selection of [[],[names[0],names[0]],['unknown']])assert.throws(()=>build(docs,selection));const subset=build(docs,[names[2],names[0]]);assert.ok(subset.includes('문서 0'));assert.ok(!subset.includes('문서 1'));assert.ok(subset.includes('문서 2'));assert.equal((subset.match(/class="bundle-document"/g)||[]).length,2);

@@ -764,7 +764,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
 
     {active === "Job·패키지" && <Section title="Job별 인증정보 및 기록 패키지" description="화면은 한글로 운영하며, 기록 문서는 국문·영문으로 각각 생성합니다.">
       <PackageGenerationHistory applicationId={application.id} />
-      <PackageTemplateReadiness languages={languages} jobCount={linkedJobs.length}/>
+      <PackageTemplateReadiness languages={languages} jobCount={linkedJobs.length} context={packageContext} jobs={linkedJobs}/>
       <PackageDateConsistency jobs={linkedJobs} context={packageContext}/>
       <div className="mb-5 rounded-lg border bg-card p-4" role="status" aria-live="polite">
         <p className="text-sm font-semibold">{saveStatus === "SAVED" ? "현재 업무 입력 저장 완료" : saveStatus === "ERROR" ? "현재 업무 입력 저장 실패" : saveStatus === "LOADING" ? "저장된 업무 입력 확인 중" : "변경한 업무 입력 저장 대기"}</p>
@@ -772,7 +772,7 @@ export function ApplicationDetail({ application, candidate, linkedJobs, invoices
         {saveStatus !== "SAVED" && <Button className="mt-3" size="sm" variant="outline" disabled={!canEdit} onClick={saveDraft}><Save/>현재 입력 저장</Button>}
       </div>
       <PackagePreflight jobs={linkedJobs} certificates={demo.certificates} documents={demo.deliveryDocuments} />
-      <PackageTranslationPreflight jobs={linkedJobs} context={packageContext} languages={languages}/>
+
       <div className="mb-5 space-y-3"><h3 className="text-sm font-semibold">국문 3종 통합 검토 및 인쇄</h3>{languages.KR && linkedJobs.map(job => <DecisionReportPreview key={`combined-html-${job.id}`} context={packageContext} job={job} language="KR" documentKind="BUNDLE" setNotice={setNotice}/>)}</div>
       <div className="mb-5 space-y-3"><h3 className="text-sm font-semibold">신청서류 검토서 HTML 디자인 검토</h3>{languages.KR && linkedJobs.map(job => <DecisionReportPreview key={`review-html-${job.id}`} context={packageContext} job={job} language="KR" documentKind="APPLICATION_REVIEW" setNotice={setNotice}/>)}</div>
       <div className="mb-5 space-y-3"><div><h3 className="text-sm font-semibold">인증결정보고서 HTML 디자인 검토</h3><p className="mt-1 text-xs text-muted-foreground">새 HTML·PDF 출력 디자인을 확인합니다. 기존 기업 양식 DOCX는 아래에서 계속 내려받을 수 있습니다.</p></div>{linkedJobs.map(job => (["KR","EN"] as DocumentLanguage[]).filter(language=>languages[language]).map(language=><DecisionReportPreview key={`decision-html-${job.id}-${language}`} context={packageContext} job={job} language={language} setNotice={setNotice}/>))}</div>
@@ -845,29 +845,6 @@ function PackagePreflight({ jobs, certificates, documents }: { jobs: Job[]; cert
       <p className="mt-2 text-xs text-muted-foreground">원본 추적: {certificate?.originalSentAt || "송부일 미입력"} · {certificate?.trackingNumber || "운송장 미입력"} (인증 완료 기준과 별도)</p>
     </div>;
   })}</div>;
-}
-
-
-function PackageTranslationPreflight({ jobs, context, languages }: { jobs: Job[]; context: Parameters<typeof documentTranslationIssues>[0]; languages: Record<DocumentLanguage, boolean> }) {
-  const types = [
-    { type: "APPLICATION_REVIEW" as const, label: "서류검토서" },
-    { type: "CERTIFICATION_DECISION_REPORT" as const, label: "인증결정보고서" },
-    { type: "DELIVERY_CONFIRMATION" as const, label: "문서전달확인서" },
-  ];
-  return <div className="mb-5 space-y-3 rounded-lg border bg-card p-4 text-card-foreground">
-    <h4 className="text-sm font-semibold">생성 언어·영문 의견 점검</h4>
-    {!languages.KR && !languages.EN ? <p className="text-sm text-amber-700 dark:text-amber-300">생성 언어를 하나 이상 선택해 주세요.</p> : <p className="text-xs text-muted-foreground">선택 언어: {[languages.KR && "국문", languages.EN && "영문"].filter(Boolean).join(" / ")}. 번역의 정확성과 최종 문서 내용은 담당자가 검토해야 합니다.</p>}
-    {!languages.EN && <p className="text-xs text-muted-foreground">영문을 선택하지 않아 번역 입력 점검은 적용하지 않습니다.</p>}
-    {languages.EN && jobs.map((job) => <div key={job.id} className="rounded-md border p-3">
-      <p className="text-sm font-semibold">{job.jobNo} · {job.standard}</p>
-      <ul className="mt-2 space-y-2 text-xs">{types.map(({ type, label }) => {
-        const issues = documentTranslationIssues(context, [job.id], [type]);
-        return <li key={type}><span className="font-medium">{label}</span>: {issues.length ? <a className="text-amber-700 underline underline-offset-2 dark:text-amber-300" href="#english-document-input">입력 필요 — {issues.join(" / ")} → 영문 의견 입력</a> : <span className="text-muted-foreground">필요한 영문 의견 입력 확인</span>}</li>;
-      })}</ul>
-    </div>)}
-    {languages.EN && !jobs.length && <p className="text-xs text-amber-700 dark:text-amber-300">연결된 Job이 없어 양식별 점검을 진행할 수 없습니다.</p>}
-    <p className="text-xs text-muted-foreground">기존 국문 의견이 있는 항목만 영문 입력을 요구합니다. 저장 상태·양식 등록·생성 권한은 별도 점검 대상입니다.</p>
-  </div>;
 }
 
 function createAuditLog(category: DateAuditLog["category"], jobId: string, field: string, before: string, after: string, reason: string, actor: string): DateAuditLog { return { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, category, jobId, field, before, after, reason, actor, occurredAt: new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) }; }

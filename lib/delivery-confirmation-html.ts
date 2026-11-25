@@ -2,6 +2,7 @@ import type { PackageContext, DeliveryDocumentKey } from "@/lib/prototype-packag
 import type { Job } from "@/types/certification";
 import { documentDeliveryValues } from "@/lib/document-delivery-values";
 import { documentHtmlStyles } from "@/lib/document-html-layout";
+import {buildEnglishDeliveryConfirmationHtml} from "@/lib/delivery-confirmation-html-en";
 
 export const deliveryConfirmationHtmlVersion="HTML-DC-01 v1";
 export const deliveryConfirmationHtmlCsp="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'";
@@ -9,8 +10,9 @@ const escape=(v:unknown)=>String(v??"").replaceAll('&','&amp;').replaceAll('<','
 const rows:ReadonlyArray<readonly [DeliveryDocumentKey,string]>=[['application','신청서'],['career','경력증명서'],['education','교육수료증'],['diploma','학력 증빙자료'],['auditLog','심사이력표'],['agreement','인증계약서'],['examNotice','시험통보서'],['examAnswers','시험답안지'],['decisionReport','인증결정보고서'],['certificate','개인인증서'],['survey','고객 설문지'],['deliveryConfirmation','문서전달확인서']];
 
 /** Display stored records only. Never infer dispatch, delivery or unrecorded dates. */
-export function buildDeliveryConfirmationHtml(context:PackageContext,job:Job,metadata:{generatedAt:string;recordHash:string;sample:boolean}) {
+export function buildDeliveryConfirmationHtml(context:PackageContext,job:Job,metadata:{generatedAt:string;recordHash:string;sample:boolean},language:"KR"|"EN"="KR") {
  if(!/^\d{4}-\d{2}-\d{2}T/.test(metadata.generatedAt)||!Number.isFinite(Date.parse(metadata.generatedAt))||!/^[a-f0-9]{64}$/.test(metadata.recordHash))throw Error('문서 생성 식별정보 오류');
+ if(language==="EN")return buildEnglishDeliveryConfirmationHtml(context,job,metadata,deliveryConfirmationHtmlVersion,deliveryConfirmationHtmlCsp);
  const value=(v:unknown)=>escape(typeof v==='string'&&v.trim()&&v!=='-'?v:'미입력');
  const field=(label:string,v:unknown)=>`<div class="field"><dt>${escape(label)}</dt><dd>${value(v)}</dd></div>`;
  const section=(title:string,body:string,className='')=>`<section class="${escape(className)}"><h2>${title}</h2>${body}</section>`;

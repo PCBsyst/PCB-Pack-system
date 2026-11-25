@@ -1,0 +1,34 @@
+{
+  "reviewedAt": "2026-11-25",
+  "renderer": "Chrome A4 and pypdfium2 page images",
+  "samples": {
+    "normal": {
+      "pages": 2,
+      "everyPageVisuallyReviewed": true,
+      "pdfSha256": "dc0b691db7dd531d6d12c983ca99bde96186247614538db950ae10c20e2b4c5a"
+    },
+    "long": {
+      "pages": 3,
+      "everyPageVisuallyReviewed": true,
+      "pdfSha256": "90071d90b0a7de9a3eef83758e7741f86a1ec1bac28d5b182a1459d8129bcd2e"
+    },
+    "missing": {
+      "pages": 2,
+      "everyPageVisuallyReviewed": true,
+      "pdfSha256": "e69eab1aa0b3016a11ad64745471de3a240320dec90a5830c3f966fd3f32e488"
+    }
+  },
+  "koreanHtmlByteIdenticalTo44648a1ForAllSamples": true,
+  "externalRequests": 0,
+  "regressionTests": 145,
+  "notes": [
+    "All 12 printed note counterparts required when source notes exist. Unprinted review/panel translations not required.",
+    "Job scope and minimum personal data maintained; recorded issue/dispatch dates not treated as customer receipt.",
+    "No SQL, installations or external AI transmission.",
+    "Operational DB/RLS and actual user PC PDF save verification separate."
+  ],
+  "browserMissingNoteRejectedWith422": true,
+  "browserEnglishPreviewDownloadPrintCallPassed": true,
+  "browserNoteSaveReloadAndPreviewInvalidationPassed": true,
+  "existingKoreanWorkflowPassed": true
+}

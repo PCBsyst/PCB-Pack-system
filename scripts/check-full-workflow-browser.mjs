@@ -48,8 +48,25 @@ async function checkEnglishReviewPreview(){
  assert.equal((await state()).stage,'PACKAGE_READY');await card.screenshot({path:`${dir}/review-preview-en.png`});
  await row.getByLabel(/교육\s*수료증 비고 \(영문\)$/).fill('Updated synthetic note.');await card.locator('iframe').waitFor({state:'detached'});
  await save();await page.reload({waitUntil:'networkidle'});assert.equal((await state()).deliveryDocuments[jobId].education.commentEn,'Updated synthetic note.');
- await page.getByRole('checkbox',{name:/^영문/}).first().uncheck();
+ await checkEnglishDeliveryPreview();await page.getByRole('checkbox',{name:/^영문/}).first().uncheck();
  console.log('통과: 영문 검토 HTML·비고 누락 차단·입력/저장·다운로드/인쇄 호출·변경 시 프레임 폐기·새로고침 유지');
+}
+async function checkEnglishDeliveryPreview(){
+ await page.getByRole('checkbox',{name:/^영문/}).first().check();
+ const row=page.locator(`tr[id="delivery-${jobId}-decisionReport"]`);
+ await row.locator('td').last().locator('input').first().fill('가상 보고서 확인 메모');await save();
+ const card=page.locator('section').filter({has:page.getByText(/· 영문 문서전달확인서$/)}).last();
+ let responsePromise=page.waitForResponse(r=>r.url().endsWith('/api/documents/delivery-confirmation-html'));
+ await card.getByRole('button',{name:'HTML 미리보기 생성',exact:true}).click();assert.equal((await responsePromise).status(),422);
+ await row.locator('summary').click();await row.getByLabel(/인증결정보고서 비고 \(영문\)$/).fill('Synthetic decision report checked.');await save();
+ responsePromise=page.waitForResponse(r=>r.url().endsWith('/api/documents/delivery-confirmation-html'));
+ await card.getByRole('button',{name:'HTML 미리보기 생성',exact:true}).click();assert.equal((await responsePromise).status(),200);
+ const frame=await (await card.locator('iframe').elementHandle()).contentFrame();await frame.waitForSelector('h1');
+ const text=await frame.locator('body').innerText();for(const value of ['Document Delivery Confirmation','Examination notice','Synthetic decision report checked.','SYNTHETIC-TRACK-001'])assert.ok(text.includes(value),value);
+ const downloadPromise=page.waitForEvent('download');await card.getByRole('button',{name:'HTML 다운로드',exact:true}).click();await (await downloadPromise).saveAs(`${dir}/delivery-preview-en.html`);
+ await frame.evaluate(()=>{window.print=()=>document.documentElement.dataset.printRequested='yes';});await card.getByRole('button',{name:'인쇄·PDF로 저장',exact:true}).click();await frame.waitForFunction(()=>document.documentElement.dataset.printRequested==='yes');assert.equal((await state()).stage,'PACKAGE_READY');
+ await card.screenshot({path:`${dir}/delivery-preview-en.png`});await row.getByLabel(/인증결정보고서 비고 \(영문\)$/).fill('Updated synthetic decision note.');await card.locator('iframe').waitFor({state:'detached'});await save();await page.reload({waitUntil:'networkidle'});assert.equal((await state()).deliveryDocuments[jobId].decisionReport.commentEn,'Updated synthetic decision note.');
+ console.log('통과: 영문 문서전달 HTML·비고 누락 차단·실제 일정/운송장·다운로드/인쇄 호출·변경 시 폐기·저장/새로고침 유지');
 }
 async function checkCombinedPreview(){
  await page.getByText(/출력 전 기록 점검 · 확인 권장/).first().waitFor();

@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {createRequire} from 'node:module';
+import vm from 'node:vm';
+import ts from 'typescript';
+import {decisionReportSample} from './fixtures/decision-report.mjs';
+const require=createRequire(import.meta.url),cache={};
+function load(name){if(!name.startsWith('@/'))return require(name);if(cache[name])return cache[name];const exports={};cache[name]=exports;vm.runInNewContext(ts.transpileModule(readFileSync(name.slice(2)+'.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:load,Response,Request,Headers,TextEncoder});return exports;}
+const {buildApplicationReviewHtml:build}=load('@/lib/application-review-html');
+const {applicationReviewHtmlIssues:issues,reviseDeliveryRecord:revise}=load('@/lib/application-review-localization');
+const {context,job,metadata}=decisionReportSample();
+const record={applicability:'REQUIRED',received:true,date:'2026-11-02',comment:'국문 원본 비고',commentEn:'Evidence & date <checked>'};
+context.deliveryDocuments[job.id]={education:record};
+let html=build(context,job,metadata,'EN');
+for(const text of ['lang="en"','Application Document Review','Sample Candidate','Secondary Verification','Education requirements','Evidence &amp; date &lt;checked&gt;','Note 1 Training certificate'])assert.ok(html.includes(text),text);
+for(const text of [context.review.comment,context.review.verificationComment,record.comment,'가상 심의위원 A','26130099'])assert.ok(!html.includes(text),text);
+assert.equal(issues(context,job.id).length,0);
+assert.equal(revise(record,{comment:'국문 변경'}).commentEn,'');assert.equal(revise(record,{date:'2026-11-03'}).commentEn,record.commentEn);
+assert.equal(JSON.parse(JSON.stringify(record)).commentEn,record.commentEn);
+context.deliveryDocuments[job.id].education.commentEn='';assert.ok(issues(context,job.id).includes('교육수료증 비고 (영문)'));assert.throws(()=>build(context,job,metadata,'EN'));
+assert.ok(build(context,job,metadata).includes(record.comment));
+context.deliveryDocuments[job.id].education.commentEn='<img src="https://example.test/leak">';context.englishText.reviewComment='<script>alert(1)</script>';
+html=build(context,job,metadata,'EN');assert.ok(html.includes('&lt;script&gt;'));assert.ok(html.includes('&lt;img'));assert.ok(!/<script|<img|<iframe|<form/i.test(html));
+context.englishText.reviewComment='';assert.ok(issues(context,job.id).includes('서류검토 의견 (영문)'));
+console.log('영문 검토 HTML: 전용 의견·제출 비고 번역/미입력 차단·원문 변경 시 영문 비고 폐기·JSON 유지·삽입 방지·불필요한 심의/인증 정보 제외 통과');

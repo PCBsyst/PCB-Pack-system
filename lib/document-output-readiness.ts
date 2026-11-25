@@ -1,3 +1,4 @@
+import {applicationReviewHtmlIssues} from "@/lib/application-review-localization";
 import type {PackageContext,DocumentLanguage} from '@/lib/prototype-package';
 import type {Job} from '@/types/certification';
 import type {TemplateReadinessRow} from '@/lib/template-readiness';
@@ -12,6 +13,6 @@ export function documentOutputReadiness(rows:TemplateReadinessRow[]|null,context
   const translationIssues=definition.language==='EN'?documentTranslationIssues(context,[job.id],[definition.documentType]):[];
   return {jobId:job.id,jobNo:job.jobNo,id:definition.id,label:definition.label,language:definition.language,source,
    issues:[...(source==='UNKNOWN'?['양식 조회 미확인']:source==='MISSING'?['정식 DOCX 양식 미등록']:[]),...translationIssues],
-   htmlSupported:definition.language==='KR'||definition.documentType==='CERTIFICATION_DECISION_REPORT',translationIssues};
+   htmlSupported:definition.language==='KR'||definition.documentType==='CERTIFICATION_DECISION_REPORT'||definition.documentType==='APPLICATION_REVIEW',htmlIssues:definition.language==='EN'&&definition.documentType==='APPLICATION_REVIEW'?applicationReviewHtmlIssues(context,job.id):translationIssues,translationIssues};
  }));
 }

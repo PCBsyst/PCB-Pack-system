@@ -1,0 +1,35 @@
+{
+  "reviewedAt": "2026-11-25",
+  "samples": {
+    "normal": {
+      "pages": 2,
+      "everyPageVisuallyReviewed": true,
+      "pdfSha256": "c0d08648e40c7151f84117d53e28eb8a7dac21fcb8ad2176b6b86fc02edbbabe"
+    },
+    "long": {
+      "pages": 3,
+      "everyPageVisuallyReviewed": true,
+      "pdfSha256": "4069daa49c4a176d76ad243f29db93a9aa3cfcc45936d7c21717f2fc2409a667"
+    },
+    "missing": {
+      "pages": 2,
+      "everyPageVisuallyReviewed": true,
+      "pdfSha256": "385a0b4e7f0be3e46441004d09e50c47282cf1d2305e7c2f1fbceb81f055f3da"
+    }
+  },
+  "renderer": "Chrome A4 print with pypdfium2 images",
+  "koreanHtmlByteIdenticalTo58219d6": true,
+  "externalRequests": 0,
+  "regressionTests": 144,
+  "notes": [
+    "English review, verification, evidence and document notes use saved counterparts.",
+    "Missing required translations rejected before audit/output.",
+    "Original note edits clear English counterparts; existing notes unchanged for other field edits.",
+    "PDFs are internal layout QA; actual user PC save and operational DB verification separate.",
+    "English HTML bundle and English delivery confirmation preview remain separate future work."
+  ],
+  "browserEnglishPreviewDownloadPrintCallPassed": true,
+  "browserNoteMissingRejectedWith422": true,
+  "browserNoteSaveReloadAndPreviewInvalidationPassed": true,
+  "existingKoreanWorkflowPassed": true
+}

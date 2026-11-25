@@ -3,14 +3,16 @@ import type { PackageContext } from "@/lib/prototype-package";
 import type { Job } from "@/types/certification";
 import { documentEvidenceSummary } from "@/lib/document-evidence-summary";
 import { documentTrainingSummary } from "@/lib/document-training-summary";
+import {buildEnglishApplicationReviewHtml} from "@/lib/application-review-html-en";
 
 export const applicationReviewHtmlVersion = "HTML-AR-01 v1";
 export const applicationReviewHtmlCsp = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'";
 const escape = (value: unknown) => String(value ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#39;");
 
 /** A separate view of saved application/review records, never a rendering of an uploaded original. */
-export function buildApplicationReviewHtml(context: PackageContext, job: Job, metadata: {generatedAt:string;recordHash:string;sample:boolean}) {
+export function buildApplicationReviewHtml(context: PackageContext, job: Job, metadata: {generatedAt:string;recordHash:string;sample:boolean},language:"KR"|"EN"="KR") {
   if (!/^\d{4}-\d{2}-\d{2}T/.test(metadata.generatedAt) || !Number.isFinite(Date.parse(metadata.generatedAt)) || !/^[a-f0-9]{64}$/.test(metadata.recordHash)) throw Error("문서 생성 식별정보 오류");
+  if(language==="EN")return buildEnglishApplicationReviewHtml(context,job,metadata,applicationReviewHtmlVersion,applicationReviewHtmlCsp);
   const value = (input:unknown) => escape(typeof input === "string" && input.trim() ? input : "미입력");
   const field = (label:string,input:unknown) => `<div class="field"><dt>${escape(label)}</dt><dd>${value(input)}</dd></div>`;
   const section = (title:string,body:string,className="") => `<section class="${escape(className)}"><h2>${title}</h2>${body}</section>`;

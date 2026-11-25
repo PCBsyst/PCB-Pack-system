@@ -3,7 +3,7 @@ const cache={};function load(name){if(cache[name])return cache[name];const expor
 const build=load('document-output-readiness').documentOutputReadiness,rows=load('template-readiness').templateReadiness(new Set()),{context,job}=decisionReportSample();
 let matrix=build(rows,context,[job],{KR:true,EN:true});assert.equal(matrix.length,6);let en=matrix.find(r=>r.id==='decision-report-en');assert.ok(!en.issues.includes('정식 DOCX 양식 미등록'));assert.equal(en.htmlSupported,true);assert.equal(matrix.find(r=>r.id==='delivery-confirmation-en').htmlSupported,false);
 assert.ok(!matrix.find(r=>r.id==='application-review-en').issues.includes('정식 DOCX 양식 미등록'));
-assert.equal(matrix.find(r=>r.id==='application-review-en').htmlSupported,false);
+assert.equal(matrix.find(r=>r.id==='application-review-en').htmlSupported,true);
 const missingRows=rows.map(row=>row.id==='application-review-en'?{...row,source:'MISSING'}:row);
 assert.ok(build(missingRows,context,[job],{KR:false,EN:true}).find(r=>r.id==='application-review-en').issues.includes('정식 DOCX 양식 미등록'));
 context.englishText.reviewComment='';matrix=build(rows,context,[job],{KR:false,EN:true});assert.ok(matrix.find(r=>r.id==='decision-report-en').translationIssues.includes('서류검토 의견 (영문)'));assert.equal(matrix.length,3);
